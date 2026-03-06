@@ -85,6 +85,7 @@ export default function MaterialRequisitionPage() {
   // 自主领料 - 从库存选产品弹窗
   const [inventoryPickerOpen, setInventoryPickerOpen] = useState(false);
   const [inventoryPickerSearch, setInventoryPickerSearch] = useState("");
+  const [inventoryPickerSelected, setInventoryPickerSelected] = useState<Set<number>>(new Set()); // 多选状态
 
   // 批号选择器状态
   const [batchPickerOpen, setBatchPickerOpen] = useState(false);
@@ -247,7 +248,7 @@ export default function MaterialRequisitionPage() {
 
   // 自主领料 - 从库存选择产品后处理
   const handleInventoryProductSelect = (inv: any) => {
-    // 从库存记录中获取产品规格（inventory 本身没有 specification 字段，从 products 表关联获取）
+    // 单选模式（兼容旧逻辑，实际已改为多选，此函数保留备用）
     const product = (productsData as any[]).find((p: any) => p.id === inv.productId);
     const spec = product?.specification || inv.specification || inv.spec || "";
     setFormData((f) => ({
@@ -259,7 +260,7 @@ export default function MaterialRequisitionPage() {
       unit: inv.unit || product?.unit || "",
     }));
     setInventoryPickerOpen(false);
-    // 自动添加一行物料明细
+    setInventoryPickerSelected(new Set());
     const newItem: MaterialItem = {
       materialCode: inv.materialCode || "",
       materialName: inv.itemName || "",
@@ -273,6 +274,48 @@ export default function MaterialRequisitionPage() {
     };
     setItems([newItem]);
     toast.success(`已选择产品：${inv.itemName}，已自动填入一行物料明细`);
+  };
+
+  // 多选确认：将所有勾选的库存记录批量添加到物料明细
+  const handleInventoryMultiConfirm = () => {
+    if (inventoryPickerSelected.size === 0) {
+      toast.warning("请至少勾选一条记录");
+      return;
+    }
+    const selectedInvList = (inventoryWithSpec as any[]).filter((inv: any) => inventoryPickerSelected.has(inv.id));
+    const newItems: MaterialItem[] = selectedInvList.map((inv: any) => {
+      const product = (productsData as any[]).find((p: any) => p.id === inv.productId);
+      const spec = product?.specification || inv.specification || inv.spec || "";
+      return {
+        materialCode: inv.materialCode || "",
+        materialName: inv.itemName || "",
+        specification: spec,
+        requiredQty: 0,
+        unit: inv.unit || product?.unit || "",
+        actualQty: 0,
+        batchNo: inv.batchNo || inv.lotNo || "",
+        availableQty: Number(inv.quantity) || 0,
+        remark: "",
+      };
+    });
+    // 用第一条记录更新产品信息卡片
+    if (selectedInvList.length > 0) {
+      const first = selectedInvList[0];
+      const product = (productsData as any[]).find((p: any) => p.id === first.productId);
+      const spec = product?.specification || first.specification || first.spec || "";
+      setFormData((f) => ({
+        ...f,
+        selfServiceItemName: first.itemName || "",
+        selfServiceItemSpec: spec,
+        selfServiceItemCode: first.materialCode || "",
+        selfServiceInventoryId: String(first.id),
+        unit: first.unit || product?.unit || "",
+      }));
+    }
+    setItems((prev) => [...prev, ...newItems]);
+    setInventoryPickerOpen(false);
+    setInventoryPickerSelected(new Set());
+    toast.success(`已添加 ${newItems.length} 条物料明细`);
   };
 
   // 当 BOM 数据加载完成时，自动填充物料明细（扣减已领数量）
@@ -912,11 +955,11 @@ export default function MaterialRequisitionPage() {
         />
 
         {/* 自主领料 - 从仓库选择产品弹窗 */}
-        <DraggableDialog open={inventoryPickerOpen} onOpenChange={setInventoryPickerOpen}>
+        <DraggableDialog open={inventoryPickerOpen} onOpenChange={(open) => { setInventoryPickerOpen(open); if (!open) setInventoryPickerSelected(new Set()); }}>
           <DraggableDialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>从仓库选择产品</DialogTitle>
-              <DialogDescription>从库存中选择需要领取的产品</DialogDescription>
+              <DialogDescription>从库存中选择需要领取的产品（支持多选）</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div className="relative">
@@ -932,14 +975,27 @@ export default function MaterialRequisitionPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/60 text-xs sticky top-0">
-                      <TableHead className="py-2 pl-3">产品名称</TableHead>
+                      <TableHead className="py-2 pl-3 w-8">
+                        <input
+                          type="checkbox"
+                          className="cursor-pointer"
+                          checked={inventoryWithSpec.length > 0 && inventoryWithSpec.every((inv: any) => inventoryPickerSelected.has(inv.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setInventoryPickerSelected(new Set((inventoryWithSpec as any[]).map((inv: any) => inv.id)));
+                            } else {
+                              setInventoryPickerSelected(new Set());
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="py-2">产品名称</TableHead>
                       <TableHead className="py-2">物料编码</TableHead>
                       <TableHead className="py-2">规格型号</TableHead>
                       <TableHead className="py-2">批号</TableHead>
                       <TableHead className="py-2 text-right">库存数量</TableHead>
                       <TableHead className="py-2">单位</TableHead>
                       <TableHead className="py-2">状态</TableHead>
-                      <TableHead className="py-2">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -951,8 +1007,36 @@ export default function MaterialRequisitionPage() {
                       </TableRow>
                     ) : (
                       inventoryWithSpec.map((inv: any) => (
-                        <TableRow key={inv.id} className="text-xs cursor-pointer hover:bg-muted/50">
-                          <TableCell className="py-1.5 pl-3 font-medium">{inv.itemName}</TableCell>
+                        <TableRow
+                          key={inv.id}
+                          className={`text-xs cursor-pointer hover:bg-muted/50 ${
+                            inventoryPickerSelected.has(inv.id) ? "bg-blue-50" : ""
+                          }`}
+                          onClick={() => {
+                            setInventoryPickerSelected((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(inv.id)) next.delete(inv.id);
+                              else next.add(inv.id);
+                              return next;
+                            });
+                          }}
+                        >
+                          <TableCell className="py-1.5 pl-3 w-8" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              className="cursor-pointer"
+                              checked={inventoryPickerSelected.has(inv.id)}
+                              onChange={() => {
+                                setInventoryPickerSelected((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(inv.id)) next.delete(inv.id);
+                                  else next.add(inv.id);
+                                  return next;
+                                });
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell className="py-1.5 font-medium">{inv.itemName}</TableCell>
                           <TableCell className="py-1.5 font-mono text-muted-foreground">{inv.materialCode || "-"}</TableCell>
                           <TableCell className="py-1.5 text-muted-foreground">{inv.specification || "-"}</TableCell>
                           <TableCell className="py-1.5 font-mono text-blue-600">{inv.batchNo || inv.lotNo || "-"}</TableCell>
@@ -967,16 +1051,6 @@ export default function MaterialRequisitionPage() {
                               {inv.status === "qualified" ? "合格" : inv.status === "quarantine" ? "待检" : "不合格"}
                             </span>
                           </TableCell>
-                          <TableCell className="py-1.5">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                              onClick={() => handleInventoryProductSelect(inv)}
-                            >
-                              选择
-                            </Button>
-                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -984,8 +1058,22 @@ export default function MaterialRequisitionPage() {
                 </Table>
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setInventoryPickerOpen(false)}>取消</Button>
+            <DialogFooter className="flex items-center justify-between gap-2">
+              <span className="text-sm text-muted-foreground">
+                {inventoryPickerSelected.size > 0 ? (
+                  <span className="text-blue-600 font-medium">已勾选 {inventoryPickerSelected.size} 条</span>
+                ) : "点击行或勾选复选框可多选"}
+              </span>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => { setInventoryPickerOpen(false); setInventoryPickerSelected(new Set()); }}>取消</Button>
+                <Button
+                  onClick={handleInventoryMultiConfirm}
+                  disabled={inventoryPickerSelected.size === 0}
+                  className="bg-primary text-primary-foreground"
+                >
+                  确认添加（{inventoryPickerSelected.size}）
+                </Button>
+              </div>
             </DialogFooter>
           </DraggableDialogContent>
         </DraggableDialog>
