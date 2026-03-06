@@ -133,10 +133,11 @@ function BOMTreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
   return (
     <div style={{ marginLeft: depth > 0 ? 16 : 0 }}>
       <div
-        className={`flex items-center gap-1.5 py-1.5 px-2 rounded border mb-0.5 ${
+        className={`flex items-center gap-1.5 py-1 px-2 rounded border mb-0.5 ${
           depth === 0 ? "bg-primary/5 border-primary/20" : "bg-background border-muted hover:bg-muted/30"
         }`}
       >
+        {/* 展开/收起按钮 */}
         {hasChildren ? (
           <Button variant="ghost" size="icon" className="h-4 w-4 shrink-0" onClick={() => setIsOpen(!isOpen)}>
             {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
@@ -144,20 +145,31 @@ function BOMTreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
         ) : (
           <div className="w-4 shrink-0" />
         )}
+        {/* 图标 + 类型标签 */}
         <LevelIcon className={`h-3 w-3 shrink-0 ${config.color.split(" ")[0]}`} />
         <Badge variant="outline" className={`text-[10px] px-1 py-0 shrink-0 leading-4 ${config.color}`}>{config.label}</Badge>
-        <span className="font-mono text-xs text-muted-foreground shrink-0">{node.materialCode}</span>
-        <span className="text-xs font-medium truncate">{node.materialName}</span>
-        {node.specification && (
-          <span className="text-xs text-muted-foreground truncate hidden md:inline">{node.specification}</span>
-        )}
-        <div className="ml-auto flex items-center gap-2 shrink-0 text-xs">
-          <span>{node.quantity} {node.unit || ""}</span>
-          {node.level !== 1 && (
+        {/* 列1：产品名称（含物料编码）——占剩余空间的 35% */}
+        <div className="flex items-center gap-1 min-w-0" style={{ width: "35%" }}>
+          <span className="font-mono text-[10px] text-muted-foreground shrink-0">{node.materialCode}</span>
+          <span className="text-xs font-medium truncate">{node.materialName}</span>
+        </div>
+        {/* 列2：型号规格——占 25% */}
+        <div className="text-xs text-muted-foreground truncate" style={{ width: "25%" }}>
+          {node.specification || <span className="text-muted-foreground/40">—</span>}
+        </div>
+        {/* 列3：用量——占 15%，右对齐 */}
+        <div className="text-xs text-right shrink-0" style={{ width: "15%" }}>
+          {node.quantity} {node.unit || ""}
+        </div>
+        {/* 列4：单价 + 小计——占 20%，右对齐 */}
+        <div className="text-xs text-right shrink-0 flex items-center justify-end gap-1.5" style={{ width: "20%" }}>
+          {node.level !== 1 ? (
             <>
               <span className="text-muted-foreground">@{parseFloat(node.unitPrice || "0").toFixed(2)}</span>
               <span className="font-medium text-primary">¥{subtotal.toFixed(2)}</span>
             </>
+          ) : (
+            <span className="text-muted-foreground text-[10px]">{node.quantity} 套</span>
           )}
         </div>
       </div>
