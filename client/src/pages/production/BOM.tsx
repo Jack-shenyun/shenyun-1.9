@@ -641,6 +641,10 @@ function CreateBOMDialog({
   const [level3DialogOpen, setLevel3DialogOpen] = useState(false);
   const [editingLevel2, setEditingLevel2] = useState<BomLevel2Item | null>(null);
   const [semiSearch, setSemiSearch] = useState("");
+  // 多选弹窗状态
+  const [semiPickerOpen, setSemiPickerOpen] = useState(false);
+  const [semiPickerSearch, setSemiPickerSearch] = useState("");
+  const [semiPickerSelected, setSemiPickerSelected] = useState<Set<string>>(new Set());
 
   // 选中的产品信息
   const selectedProduct = allProducts.find((p: any) => String(p.id) === selectedProductId);
@@ -681,6 +685,33 @@ function CreateBOMDialog({
     ]);
   };
 
+  // 批量添加二级物料（多选弹窗确认）
+  const confirmSemiPicker = () => {
+    const toAdd = semiFinishedProducts.filter((p: any) =>
+      semiPickerSelected.has(p.code) && !level2Items.some((item) => item.materialCode === p.code)
+    );
+    if (toAdd.length > 0) {
+      setLevel2Items([
+        ...level2Items,
+        ...toAdd.map((product: any) => ({
+          tempId: genTempId(),
+          materialCode: product.code,
+          materialName: product.name,
+          specification: product.specification || "",
+          quantity: "1",
+          unit: product.unit || "",
+          unitPrice: "0",
+          remark: "",
+          productId: product.id,
+          children: [],
+        })),
+      ]);
+    }
+    setSemiPickerOpen(false);
+    setSemiPickerSelected(new Set());
+    setSemiPickerSearch("");
+  };
+
   // 更新二级物料字段
   const updateLevel2 = (tempId: string, field: keyof BomLevel2Item, value: any) => {
     setLevel2Items(level2Items.map((item) => (item.tempId === tempId ? { ...item, [field]: value } : item)));
@@ -707,6 +738,16 @@ function CreateBOMDialog({
   // 过滤半成品
   const filteredSemiProducts = semiFinishedProducts.filter((p: any) => {
     const search = semiSearch.toLowerCase();
+    return (
+      p.code?.toLowerCase().includes(search) ||
+      p.name?.toLowerCase().includes(search) ||
+      p.specification?.toLowerCase().includes(search)
+    );
+  });
+
+  // 弹窗多选过滤
+  const filteredSemiPickerProducts = semiFinishedProducts.filter((p: any) => {
+    const search = semiPickerSearch.toLowerCase();
     return (
       p.code?.toLowerCase().includes(search) ||
       p.name?.toLowerCase().includes(search) ||
@@ -891,70 +932,23 @@ function CreateBOMDialog({
           {/* ===== Step 2: 添加二级物料 ===== */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Component className="h-4 w-4 text-orange-600" />
-                第二步：选择二级物料（半成品/组件）
+              <CardTitle className="text-base flex items-center gap-2 justify-between">
+                <div className="flex items-center gap-2">
+                  <Component className="h-4 w-4 text-orange-600" />
+                  第二步：选择二级物料（半成品/组件）
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => { setSemiPickerOpen(true); setSemiPickerSearch(""); }}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  选择物料
+                </Button>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {/* 搜索半成品 */}
-              <div className="relative mb-3">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="搜索半成品/组件编码、名称、规格..."
-                  value={semiSearch}
-                  onChange={(e) => setSemiSearch(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <div className="max-h-48 overflow-y-auto border rounded-md mb-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/60">
-                      <TableHead className="text-center font-bold">编码</TableHead>
-                      <TableHead className="text-center font-bold">名称</TableHead>
-                      <TableHead className="text-center font-bold">规格</TableHead>
-                      <TableHead className="text-center font-bold">单位</TableHead>
-                      <TableHead className="text-center font-bold">分类</TableHead>
-                      <TableHead className="text-center font-bold">操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredSemiProducts.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-xs text-muted-foreground py-4">
-                          暂无半成品/组件产品
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      filteredSemiProducts.slice(0, 30).map((p: any) => (
-                        <TableRow key={p.id} className="hover:bg-muted/30">
-                          <TableCell className="text-center text-xs font-mono">{p.code}</TableCell>
-                          <TableCell className="text-center text-xs">{p.name}</TableCell>
-                          <TableCell className="text-center text-xs text-muted-foreground">{p.specification || "-"}</TableCell>
-                          <TableCell className="text-center text-xs">{p.unit || "-"}</TableCell>
-                          <TableCell className="text-center text-xs">
-                            <Badge variant="outline" className="text-xs">{productCategoryLabels[p.productCategory] || "-"}</Badge>
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 text-xs"
-                              onClick={() => addLevel2(p)}
-                              disabled={level2Items.some((item) => item.materialCode === p.code)}
-                            >
-                              <Plus className="h-3 w-3 mr-1" />
-                              添加
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
               {/* 已选二级物料列表 */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm font-medium">
@@ -962,7 +956,7 @@ function CreateBOMDialog({
                 </div>
                 {level2Items.length === 0 ? (
                   <div className="text-center py-6 text-muted-foreground text-sm border rounded-lg">
-                    请从上方列表选择半成品/组件
+                    点击右上角「选择物料」按钮添加半成品/组件
                   </div>
                 ) : (
                   <div className="border rounded-lg overflow-hidden">
@@ -1074,6 +1068,105 @@ function CreateBOMDialog({
             {batchCreate.isPending ? "提交中..." : "确认创建 BOM"}
           </Button>
         </DialogFooter>
+
+        {/* 二级物料多选弹窗 */}
+        <DraggableDialog open={semiPickerOpen} onOpenChange={(v) => { setSemiPickerOpen(v); if (!v) { setSemiPickerSelected(new Set()); setSemiPickerSearch(""); } }}>
+          <DraggableDialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>选择二级物料（半成品/组件）</DialogTitle>
+            </DialogHeader>
+            <div className="py-2">
+              <div className="relative mb-3">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="搜索编码、名称、规格..."
+                  value={semiPickerSearch}
+                  onChange={(e) => setSemiPickerSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="max-h-80 overflow-y-auto border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/60">
+                      <TableHead className="w-10 text-center">
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5"
+                          checked={filteredSemiPickerProducts.length > 0 && filteredSemiPickerProducts.every((p: any) => semiPickerSelected.has(p.code))}
+                          onChange={(e) => {
+                            const next = new Set(semiPickerSelected);
+                            filteredSemiPickerProducts.forEach((p: any) => {
+                              if (e.target.checked) next.add(p.code); else next.delete(p.code);
+                            });
+                            setSemiPickerSelected(next);
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="font-bold">编码</TableHead>
+                      <TableHead className="font-bold">名称</TableHead>
+                      <TableHead className="font-bold">规格</TableHead>
+                      <TableHead className="font-bold">单位</TableHead>
+                      <TableHead className="font-bold">分类</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSemiPickerProducts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-xs text-muted-foreground py-6">暂无半成品/组件</TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredSemiPickerProducts.map((p: any) => {
+                        const alreadyAdded = level2Items.some((item) => item.materialCode === p.code);
+                        const isChecked = semiPickerSelected.has(p.code);
+                        return (
+                          <TableRow
+                            key={p.id}
+                            className={cn(
+                              "cursor-pointer hover:bg-muted/30",
+                              isChecked && "bg-blue-50",
+                              alreadyAdded && "opacity-40"
+                            )}
+                            onClick={() => {
+                              if (alreadyAdded) return;
+                              const next = new Set(semiPickerSelected);
+                              if (isChecked) next.delete(p.code); else next.add(p.code);
+                              setSemiPickerSelected(next);
+                            }}
+                          >
+                            <TableCell className="text-center">
+                              <input
+                                type="checkbox"
+                                className="h-3.5 w-3.5"
+                                checked={isChecked}
+                                disabled={alreadyAdded}
+                                onChange={() => {}}
+                              />
+                            </TableCell>
+                            <TableCell className="text-xs font-mono">{p.code}</TableCell>
+                            <TableCell className="text-xs font-medium">{p.name}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{p.specification || "-"}</TableCell>
+                            <TableCell className="text-xs">{p.unit || "-"}</TableCell>
+                            <TableCell className="text-xs">
+                              <Badge variant="outline" className="text-[10px]">{productCategoryLabels[p.productCategory] || "-"}</Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-sm text-muted-foreground">已勾选 {semiPickerSelected.size} 项</span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => { setSemiPickerOpen(false); setSemiPickerSelected(new Set()); setSemiPickerSearch(""); }}>取消</Button>
+                  <Button size="sm" disabled={semiPickerSelected.size === 0} onClick={confirmSemiPicker}>确认添加（{semiPickerSelected.size}）</Button>
+                </div>
+              </div>
+            </div>
+          </DraggableDialogContent>
+        </DraggableDialog>
 
         {/* 三级物料配置弹窗 */}
         <Level3MaterialDialog
