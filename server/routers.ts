@@ -23,7 +23,7 @@ import {
   getInventoryTransactions, createInventoryTransaction, updateInventoryTransaction, deleteInventoryTransaction,
   getOperationLogs, createOperationLog, clearOperationLogs,
   getQualityInspections, getQualityInspectionById, createQualityInspection, updateQualityInspection, deleteQualityInspection,
-  getBomByProductId, createBomItem, updateBomItem, deleteBomItem,
+  getBomByProductId, getBomList, createBomItem, updateBomItem, deleteBomItem,
   getDashboardStats,
   getSalesOrderApprovalState,
   getWorkflowCenterData,
@@ -61,9 +61,7 @@ import {
   getOvertimeRequests, getOvertimeRequestById, createOvertimeRequest, updateOvertimeRequest, deleteOvertimeRequest,
   getLeaveRequests, getLeaveRequestById, createLeaveRequest, updateLeaveRequest, deleteLeaveRequest,
   getOutingRequests, getOutingRequestById, createOutingRequest, updateOutingRequest, deleteOutingRequest,
-  getRecycleBinEntries,
-  getLeaveRequests, getLeaveRequestById, createLeaveRequest, updateLeaveRequest, deleteLeaveRequest,
-  getOutingRequests, getOutingRequestById, createOutingRequest, updateOutingRequest, deleteOutingRequest,
+  getProductSupplierPrices, getProductSupplierPriceById, createProductSupplierPrice, updateProductSupplierPrice, deleteProductSupplierPrice,
   getRecycleBinEntries,  removeRecycleBinEntry,
   restoreRecycleBinEntry,
   getNextOrderNo,
@@ -832,6 +830,49 @@ export const appRouter = router({
       }),
   }),
 
+  // ==================== 产品-供应商价格关联 ====================
+  productSupplierPrices: router({
+    list: protectedProcedure.input(z.object({ productId: z.number().optional(), supplierId: z.number().optional() }).optional()).query(async ({ input }) => {
+      return await getProductSupplierPrices(input);
+    }),
+    getById: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+      return await getProductSupplierPriceById(input.id);
+    }),
+    create: protectedProcedure.input(z.object({
+      productId: z.number(),
+      supplierId: z.number(),
+      purchasePrice: z.string().optional(),
+      currency: z.string().optional(),
+      moq: z.number().optional(),
+      leadTimeDays: z.number().optional(),
+      isDefault: z.number().optional(),
+      validFrom: z.string().optional(),
+      validTo: z.string().optional(),
+      remark: z.string().optional(),
+    })).mutation(async ({ input, ctx }) => {
+      const id = await createProductSupplierPrice({ ...input, createdBy: ctx.user?.id });
+      return { id };
+    }),
+    update: protectedProcedure.input(z.object({
+      id: z.number(),
+      data: z.object({
+        purchasePrice: z.string().optional(),
+        currency: z.string().optional(),
+        moq: z.number().optional(),
+        leadTimeDays: z.number().optional(),
+        isDefault: z.number().optional(),
+        validFrom: z.string().optional(),
+        validTo: z.string().optional(),
+        remark: z.string().optional(),
+      }),
+    })).mutation(async ({ input }) => {
+      await updateProductSupplierPrice(input.id, input.data); return { success: true };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+      await deleteProductSupplierPrice(input.id); return { success: true };
+    }),
+  }),
+
   // ==================== 销售订单 ====================
   salesOrders: router({
     list: protectedProcedure
@@ -1252,6 +1293,7 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({
         orderNo: z.string(),
+        orderType: z.enum(["finished", "semi_finished", "rework"]).optional(),
         productId: z.number(),
         plannedQty: z.string(),
         unit: z.string().optional(),
@@ -1277,6 +1319,7 @@ export const appRouter = router({
         id: z.number(),
         data: z.object({
           orderNo: z.string().optional(),
+          orderType: z.enum(["finished", "semi_finished", "rework"]).optional(),
           productId: z.number().optional(),
           plannedQty: z.string().optional(),
           completedQty: z.string().optional(),
@@ -1511,7 +1554,7 @@ export const appRouter = router({
       .input(z.object({ search: z.string().optional(), productId: z.number().optional(), limit: z.number().optional(), offset: z.number().optional() }).optional())
       .query(async ({ input }) => {
         if (input?.productId) return await getBomByProductId(input.productId);
-        return [];
+        return await getBomList();
       }),
     getByProductId: protectedProcedure
       .input(z.object({ productId: z.number() }))
@@ -1522,6 +1565,8 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({
         productId: z.number(),
+        parentId: z.number().nullable().optional(),
+        level: z.number().optional(),
         materialCode: z.string(),
         materialName: z.string(),
         specification: z.string().optional(),
@@ -1539,6 +1584,8 @@ export const appRouter = router({
         id: z.number(),
         data: z.object({
           productId: z.number().optional(),
+          parentId: z.number().nullable().optional(),
+          level: z.number().optional(),
           materialCode: z.string().optional(),
           materialName: z.string().optional(),
           specification: z.string().optional(),
@@ -3022,6 +3069,7 @@ export const appRouter = router({
     }),
     create: protectedProcedure.input(z.object({
       recordNo: z.string(),
+      recordType: z.enum(["general", "temperature_humidity", "material_usage", "clean_room", "first_piece"]).optional(),
       productionOrderId: z.number().optional(),
       productionOrderNo: z.string().optional(),
       productId: z.number().optional(),
@@ -3035,6 +3083,25 @@ export const appRouter = router({
       scrapQty: z.string().optional(),
       status: z.enum(["in_progress", "completed", "abnormal"]).optional(),
       remark: z.string().optional(),
+      // 温湿度
+      temperature: z.string().optional(),
+      humidity: z.string().optional(),
+      temperatureLimit: z.string().optional(),
+      humidityLimit: z.string().optional(),
+      // 材料使用
+      materialCode: z.string().optional(),
+      materialName: z.string().optional(),
+      materialSpec: z.string().optional(),
+      usedQty: z.string().optional(),
+      usedUnit: z.string().optional(),
+      materialBatchNo: z.string().optional(),
+      // 清场
+      cleanedBy: z.string().optional(),
+      checkedBy: z.string().optional(),
+      cleanResult: z.enum(["pass", "fail"]).optional(),
+      // 首件检验
+      firstPieceResult: z.enum(["qualified", "unqualified"]).optional(),
+      firstPieceInspector: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
       const { recordDate, ...rest } = input;
       const id = await createProductionRecord({
@@ -3047,10 +3114,34 @@ export const appRouter = router({
     update: protectedProcedure.input(z.object({
       id: z.number(),
       data: z.object({
+        recordType: z.enum(["general", "temperature_humidity", "material_usage", "clean_room", "first_piece"]).optional(),
+        productionOrderId: z.number().optional(),
+        productionOrderNo: z.string().optional(),
+        productId: z.number().optional(),
+        productName: z.string().optional(),
+        batchNo: z.string().optional(),
+        workstationName: z.string().optional(),
+        recordDate: z.string().optional(),
+        plannedQty: z.string().optional(),
         actualQty: z.string().optional(),
         scrapQty: z.string().optional(),
         status: z.enum(["in_progress", "completed", "abnormal"]).optional(),
         remark: z.string().optional(),
+        temperature: z.string().optional(),
+        humidity: z.string().optional(),
+        temperatureLimit: z.string().optional(),
+        humidityLimit: z.string().optional(),
+        materialCode: z.string().optional(),
+        materialName: z.string().optional(),
+        materialSpec: z.string().optional(),
+        usedQty: z.string().optional(),
+        usedUnit: z.string().optional(),
+        materialBatchNo: z.string().optional(),
+        cleanedBy: z.string().optional(),
+        checkedBy: z.string().optional(),
+        cleanResult: z.enum(["pass", "fail"]).optional(),
+        firstPieceResult: z.enum(["qualified", "unqualified"]).optional(),
+        firstPieceInspector: z.string().optional(),
       }),
     })).mutation(async ({ input }) => {
       await updateProductionRecord(input.id, input.data); return { success: true };
@@ -3127,7 +3218,8 @@ export const appRouter = router({
       supplierName: z.string().optional(),
       sendDate: z.string().optional(),
       expectedReturnDate: z.string().optional(),
-      status: z.enum(["draft", "sent", "processing", "returned", "qualified", "unqualified"]).optional(),
+      sterilizationBatchNo: z.string().optional(),
+      status: z.enum(["draft", "sent", "processing", "arrived", "returned", "qualified", "unqualified"]).optional(),
       remark: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
       const { sendDate, expectedReturnDate, ...rest } = input;
@@ -3147,7 +3239,8 @@ export const appRouter = router({
         sendDate: z.string().optional(),
         expectedReturnDate: z.string().optional(),
         actualReturnDate: z.string().optional(),
-        status: z.enum(["draft", "sent", "processing", "returned", "qualified", "unqualified"]).optional(),
+        sterilizationBatchNo: z.string().optional(),
+        status: z.enum(["draft", "sent", "processing", "arrived", "returned", "qualified", "unqualified"]).optional(),
         remark: z.string().optional(),
       }),
     })).mutation(async ({ input }) => {
@@ -3182,7 +3275,12 @@ export const appRouter = router({
       productId: z.number().optional(),
       productName: z.string().optional(),
       batchNo: z.string().optional(),
+      sterilizationBatchNo: z.string().optional(),
+      sterilizedQty: z.string().optional(),
+      inspectionRejectQty: z.string().optional(),
+      sampleQty: z.string().optional(),
       quantity: z.string().optional(),
+      quantityModifyReason: z.string().optional(),
       unit: z.string().optional(),
       targetWarehouseId: z.number().optional(),
       applicantId: z.number().optional(),
@@ -3202,6 +3300,10 @@ export const appRouter = router({
       id: z.number(),
       data: z.object({
         quantity: z.string().optional(),
+        sterilizedQty: z.string().optional(),
+        inspectionRejectQty: z.string().optional(),
+        sampleQty: z.string().optional(),
+        quantityModifyReason: z.string().optional(),
         targetWarehouseId: z.number().optional(),
         status: z.enum(["draft", "pending", "approved", "completed", "rejected"]).optional(),
         remark: z.string().optional(),

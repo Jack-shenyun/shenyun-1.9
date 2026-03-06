@@ -97,6 +97,8 @@ import {
   Clock,
   Calendar,
   MapPin,
+  Thermometer,
+  Settings2,
 } from "lucide-react";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -174,6 +176,8 @@ const menuConfig = [
       { icon: GitBranch, label: "MRP物料计划", path: "/production/mrp" },
       { icon: Tags, label: "UDI标签管理", path: "/production/udi" },
       { icon: Wrench, label: "设备管理", path: "/production/equipment" },
+      { icon: Thermometer, label: "生产环境管理", path: "/production/environment" },
+      { icon: Settings2, label: "生产工序管理", path: "/production/process" },
     ],
   },
   {

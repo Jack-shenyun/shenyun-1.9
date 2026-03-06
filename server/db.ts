@@ -54,6 +54,7 @@ import {
   overtimeRequests, InsertOvertimeRequest, OvertimeRequest,
   leaveRequests, InsertLeaveRequest, LeaveRequest,
   outingRequests, InsertOutingRequest, OutingRequest,
+  productSupplierPrices, InsertProductSupplierPrice, ProductSupplierPrice,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1878,7 +1879,49 @@ export async function getBomByProductId(productId: number) {
   const db = await getDb();
   if (!db) return [];
 
-  return await db.select().from(bom).where(eq(bom.productId, productId));
+  return await db
+    .select({
+      id: bom.id,
+      productId: bom.productId,
+      parentId: bom.parentId,
+      level: bom.level,
+      materialCode: bom.materialCode,
+      materialName: bom.materialName,
+      specification: bom.specification,
+      quantity: bom.quantity,
+      unit: bom.unit,
+      version: bom.version,
+      status: bom.status,
+      createdAt: bom.createdAt,
+      updatedAt: bom.updatedAt,
+    })
+    .from(bom)
+    .where(eq(bom.productId, productId))
+    .orderBy(bom.level, bom.id);
+}
+
+// 获取 BOM 列表（按产品分组聚合，一条 BOM 对应一个产品规格）
+export async function getBomList() {
+  const db = await getDb();
+  if (!db) return [];
+  // 使用原生 SQL 按产品分组聚合
+  const result = await db.execute(sql`
+    SELECT 
+      b.productId,
+      b.version,
+      p.name AS productName,
+      p.code AS productCode,
+      p.specification AS productSpec,
+      COUNT(*) AS itemCount,
+      MIN(b.createdAt) AS createdAt,
+      MAX(b.updatedAt) AS updatedAt,
+      GROUP_CONCAT(DISTINCT b.status) AS statuses
+    FROM bom b
+    LEFT JOIN products p ON b.productId = p.id
+    GROUP BY b.productId, b.version
+    ORDER BY b.productId
+  `);
+  return (result as any)[0] || [];
 }
 
 export async function createBomItem(data: InsertBom) {
@@ -4688,4 +4731,38 @@ export async function deleteOutingRequest(id: number, deletedBy?: number) {
     sourceTable: "outing_requests",
     deletedBy,
   });
+}
+
+// ==================== 产品-供应商价格关联 CRUD ====================
+export async function getProductSupplierPrices(params?: { productId?: number; supplierId?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (params?.productId) conditions.push(eq(productSupplierPrices.productId, params.productId));
+  if (params?.supplierId) conditions.push(eq(productSupplierPrices.supplierId, params.supplierId));
+  let query = db.select().from(productSupplierPrices);
+  if (conditions.length > 0) query = query.where(and(...conditions)) as typeof query;
+  return await query.orderBy(desc(productSupplierPrices.isDefault), desc(productSupplierPrices.createdAt));
+}
+export async function getProductSupplierPriceById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(productSupplierPrices).where(eq(productSupplierPrices.id, id)).limit(1);
+  return result[0];
+}
+export async function createProductSupplierPrice(data: InsertProductSupplierPrice) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(productSupplierPrices).values(data);
+  return result[0].insertId;
+}
+export async function updateProductSupplierPrice(id: number, data: Partial<InsertProductSupplierPrice>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(productSupplierPrices).set(data).where(eq(productSupplierPrices.id, id));
+}
+export async function deleteProductSupplierPrice(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(productSupplierPrices).where(eq(productSupplierPrices.id, id));
 }

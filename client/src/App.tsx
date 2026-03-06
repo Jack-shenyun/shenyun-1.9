@@ -47,6 +47,8 @@ import ProductionRecordPage from "./pages/production/ProductionRecord";
 import ProductionRoutingCardPage from "./pages/production/ProductionRoutingCard";
 import SterilizationOrderPage from "./pages/production/SterilizationOrder";
 import ProductionWarehouseEntryPage from "./pages/production/ProductionWarehouseEntry";
+import EnvironmentPage from "./pages/production/Environment";
+import ProcessPage from "./pages/production/Process";
 
 // 质量部模块
 import LabPage from "./pages/quality/Lab";
@@ -135,6 +137,8 @@ function Router() {
       <Route path="/production/mrp" component={MRPPage} />
       <Route path="/production/udi" component={UDIPage} />
       <Route path="/production/equipment" component={EquipmentPage} />
+      <Route path="/production/environment" component={EnvironmentPage} />
+      <Route path="/production/process" component={ProcessPage} />
 
       {/* 质量部 */}
       <Route path="/quality/lab" component={LabPage} />

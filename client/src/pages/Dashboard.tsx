@@ -239,8 +239,8 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            {/* 快捷入口 */}
-            <Card className="rounded-2xl border-slate-200/80 shadow-sm">
+            {/* 快捷入口 - 手机端隐藏 */}
+            <Card className="rounded-2xl border-slate-200/80 shadow-sm hidden md:block">
               <CardHeader className="pb-2 px-4 pt-4">
                 <CardTitle className="text-sm font-bold text-slate-900">快捷入口</CardTitle>
               </CardHeader>
@@ -304,8 +304,8 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            {/* 最近使用 */}
-            <Card className="rounded-2xl border-slate-200/80 shadow-sm">
+            {/* 最近使用 - 手机端隐藏 */}
+            <Card className="rounded-2xl border-slate-200/80 shadow-sm hidden md:block">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg font-bold text-slate-900">最近使用</CardTitle>
               </CardHeader>

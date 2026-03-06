@@ -78,6 +78,20 @@
       "when": 1772597502321,
       "tag": "0010_damp_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1772789594205,
+      "tag": "0011_plain_thor_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1772798412756,
+      "tag": "0012_fantastic_nekra",
+      "breakpoints": true
     }
   ]
 }

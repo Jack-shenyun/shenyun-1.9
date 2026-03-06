@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
-  Warehouse, Plus, Search, MoreHorizontal, Edit, Trash2, Eye, CheckCircle, XCircle,
+  Warehouse, Plus, Search, MoreHorizontal, Edit, Trash2, Eye, CheckCircle, XCircle, Bell, Calculator, AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
@@ -30,6 +30,28 @@ const statusMap: Record<string, { label: string; variant: "outline" | "default" 
   approved:  { label: "已审批", variant: "secondary" },
   completed: { label: "已入库", variant: "secondary" },
   rejected:  { label: "已拒绝", variant: "destructive" },
+};
+
+const emptyForm = {
+  entryNo: "",
+  productionOrderId: "",
+  productionOrderNo: "",
+  sterilizationOrderId: "",
+  sterilizationOrderNo: "",
+  productId: "",
+  productName: "",
+  batchNo: "",
+  sterilizationBatchNo: "",
+  // 公式字段
+  sterilizedQty: "",       // 灭菌后数量
+  inspectionRejectQty: "", // 检验报废数量
+  sampleQty: "",           // 留样数量
+  quantity: "",            // 入库数量（可手动修改）
+  quantityModifyReason: "", // 修改原因
+  unit: "件",
+  targetWarehouseId: "",
+  applicationDate: "",
+  remark: "",
 };
 
 export default function ProductionWarehouseEntryPage() {
@@ -59,23 +81,22 @@ export default function ProductionWarehouseEntryPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
   const [viewingEntry, setViewingEntry] = useState<any>(null);
+  const [quantityManuallyEdited, setQuantityManuallyEdited] = useState(false);
   const focusHandledRef = useRef(false);
 
-  const [formData, setFormData] = useState({
-    entryNo: "",
-    productionOrderId: "",
-    productionOrderNo: "",
-    sterilizationOrderId: "",
-    sterilizationOrderNo: "",
-    productId: "",
-    productName: "",
-    batchNo: "",
-    quantity: "",
-    unit: "件",
-    targetWarehouseId: "",
-    applicationDate: "",
-    remark: "",
-  });
+  const [formData, setFormData] = useState({ ...emptyForm });
+
+  // 自动计算入库数量公式：灭菌后数量 - 检验报废数量 - 留样数量
+  useEffect(() => {
+    if (quantityManuallyEdited) return; // 手动修改后不再自动覆盖
+    const s = parseFloat(formData.sterilizedQty) || 0;
+    const r = parseFloat(formData.inspectionRejectQty) || 0;
+    const sp = parseFloat(formData.sampleQty) || 0;
+    if (s > 0) {
+      const calc = Math.max(0, s - r - sp);
+      setFormData((f) => ({ ...f, quantity: String(calc) }));
+    }
+  }, [formData.sterilizedQty, formData.inspectionRejectQty, formData.sampleQty, quantityManuallyEdited]);
 
   const filteredEntries = (entries as any[]).filter((e) => {
     const matchSearch = !searchTerm ||
@@ -93,26 +114,14 @@ export default function ProductionWarehouseEntryPage() {
 
   const handleAdd = () => {
     setEditingEntry(null);
-    setFormData({
-      entryNo: genNo(),
-      productionOrderId: "",
-      productionOrderNo: "",
-      sterilizationOrderId: "",
-      sterilizationOrderNo: "",
-      productId: "",
-      productName: "",
-      batchNo: "",
-      quantity: "",
-      unit: "件",
-      targetWarehouseId: "",
-      applicationDate: new Date().toISOString().split("T")[0],
-      remark: "",
-    });
+    setQuantityManuallyEdited(false);
+    setFormData({ ...emptyForm, entryNo: genNo(), applicationDate: new Date().toISOString().split("T")[0] });
     setDialogOpen(true);
   };
 
   const handleEdit = (entry: any) => {
     setEditingEntry(entry);
+    setQuantityManuallyEdited(true); // 编辑时不自动覆盖
     setFormData({
       entryNo: entry.entryNo,
       productionOrderId: entry.productionOrderId ? String(entry.productionOrderId) : "",
@@ -122,7 +131,12 @@ export default function ProductionWarehouseEntryPage() {
       productId: entry.productId ? String(entry.productId) : "",
       productName: entry.productName || "",
       batchNo: entry.batchNo || "",
+      sterilizationBatchNo: entry.sterilizationBatchNo || "",
+      sterilizedQty: entry.sterilizedQty || "",
+      inspectionRejectQty: entry.inspectionRejectQty || "",
+      sampleQty: entry.sampleQty || "",
       quantity: entry.quantity || "",
+      quantityModifyReason: entry.quantityModifyReason || "",
       unit: entry.unit || "件",
       targetWarehouseId: entry.targetWarehouseId ? String(entry.targetWarehouseId) : "",
       applicationDate: entry.applicationDate ? String(entry.applicationDate).split("T")[0] : "",
@@ -131,11 +145,7 @@ export default function ProductionWarehouseEntryPage() {
     setDialogOpen(true);
   };
 
-  const handleView = (entry: any) => {
-    setViewingEntry(entry);
-    setViewDialogOpen(true);
-  };
-
+  const handleView = (entry: any) => { setViewingEntry(entry); setViewDialogOpen(true); };
   const handleDelete = (entry: any) => {
     if (!canDelete) { toast.error("您没有删除权限"); return; }
     deleteMutation.mutate({ id: entry.id });
@@ -149,7 +159,6 @@ export default function ProductionWarehouseEntryPage() {
       productionOrderNo: po?.orderNo || "",
       productId: po?.productId ? String(po.productId) : f.productId,
       batchNo: po?.batchNo || f.batchNo,
-      quantity: po?.plannedQty || f.quantity,
     }));
   };
 
@@ -159,11 +168,13 @@ export default function ProductionWarehouseEntryPage() {
       ...f,
       sterilizationOrderId: soId,
       sterilizationOrderNo: so?.orderNo || "",
+      sterilizationBatchNo: so?.sterilizationBatchNo || f.sterilizationBatchNo,
       productName: so?.productName || f.productName,
       batchNo: so?.batchNo || f.batchNo,
-      quantity: so?.quantity || f.quantity,
+      sterilizedQty: so?.quantity || f.sterilizedQty, // 灭菌后数量默认取灭菌单数量
       unit: so?.unit || f.unit,
     }));
+    setQuantityManuallyEdited(false);
   };
 
   const handleProductChange = (productId: string) => {
@@ -171,9 +182,26 @@ export default function ProductionWarehouseEntryPage() {
     setFormData((f) => ({ ...f, productId, productName: product?.name || "" }));
   };
 
+  // 判断入库数量是否被手动修改（与公式计算值不同）
+  const calcQty = () => {
+    const s = parseFloat(formData.sterilizedQty) || 0;
+    const r = parseFloat(formData.inspectionRejectQty) || 0;
+    const sp = parseFloat(formData.sampleQty) || 0;
+    return s > 0 ? Math.max(0, s - r - sp) : null;
+  };
+  const isQtyModified = () => {
+    const calc = calcQty();
+    if (calc === null) return false;
+    return parseFloat(formData.quantity) !== calc;
+  };
+
   const handleSubmit = () => {
     if (!formData.entryNo || !formData.quantity) {
       toast.error("请填写必填项", { description: "入库单号和数量为必填" });
+      return;
+    }
+    if (isQtyModified() && !formData.quantityModifyReason.trim()) {
+      toast.error("请填写修改原因", { description: "入库数量与公式计算值不同，需填写修改原因" });
       return;
     }
     const payload = {
@@ -185,7 +213,12 @@ export default function ProductionWarehouseEntryPage() {
       productId: formData.productId ? Number(formData.productId) : undefined,
       productName: formData.productName || undefined,
       batchNo: formData.batchNo || undefined,
+      sterilizationBatchNo: formData.sterilizationBatchNo || undefined,
+      sterilizedQty: formData.sterilizedQty || undefined,
+      inspectionRejectQty: formData.inspectionRejectQty || undefined,
+      sampleQty: formData.sampleQty || undefined,
       quantity: formData.quantity,
+      quantityModifyReason: isQtyModified() ? formData.quantityModifyReason : undefined,
       unit: formData.unit || undefined,
       targetWarehouseId: formData.targetWarehouseId ? Number(formData.targetWarehouseId) : undefined,
       applicationDate: formData.applicationDate || undefined,
@@ -197,6 +230,10 @@ export default function ProductionWarehouseEntryPage() {
         id: editingEntry.id,
         data: {
           quantity: payload.quantity,
+          sterilizedQty: payload.sterilizedQty,
+          inspectionRejectQty: payload.inspectionRejectQty,
+          sampleQty: payload.sampleQty,
+          quantityModifyReason: payload.quantityModifyReason,
           targetWarehouseId: payload.targetWarehouseId,
           remark: payload.remark,
         },
@@ -204,6 +241,22 @@ export default function ProductionWarehouseEntryPage() {
     } else {
       createMutation.mutate(payload);
     }
+  };
+
+  // 确认入库 → 通知销售部
+  const handleCompleteEntry = (entry: any) => {
+    updateMutation.mutate(
+      { id: entry.id, data: { status: "completed" } },
+      {
+        onSuccess: () => {
+          refetch();
+          toast.success("入库完成，已通知销售部", {
+            description: `产品「${entry.productName || "-"}」批号 ${entry.batchNo || "-"}，数量 ${entry.quantity} ${entry.unit} 已入库，销售部待办已创建`,
+            duration: 6000,
+          });
+        },
+      }
+    );
   };
 
   const draftCount = (entries as any[]).filter((e) => e.status === "draft").length;
@@ -234,7 +287,7 @@ export default function ProductionWarehouseEntryPage() {
             </div>
             <div>
               <h2 className="text-xl font-bold tracking-tight">生产入库申请</h2>
-              <p className="text-sm text-muted-foreground">生产完成（含灭菌合格）后的成品入库申请，审批通过后完成入库</p>
+              <p className="text-sm text-muted-foreground">入库数量 = 灭菌后数量 − 检验报废数量 − 留样数量，入库完成后自动通知销售部</p>
             </div>
           </div>
           <Button onClick={handleAdd}><Plus className="h-4 w-4 mr-1" />新建入库申请</Button>
@@ -276,7 +329,8 @@ export default function ProductionWarehouseEntryPage() {
                   <TableHead>入库单号</TableHead>
                   <TableHead>产品名称</TableHead>
                   <TableHead>批号</TableHead>
-                  <TableHead className="text-right">数量</TableHead>
+                  <TableHead>灭菌批号</TableHead>
+                  <TableHead className="text-right">入库数量</TableHead>
                   <TableHead>目标仓库</TableHead>
                   <TableHead>关联灭菌单</TableHead>
                   <TableHead>申请日期</TableHead>
@@ -286,19 +340,30 @@ export default function ProductionWarehouseEntryPage() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
                 ) : filteredEntries.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">暂无入库申请</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">暂无入库申请</TableCell></TableRow>
                 ) : filteredEntries.map((entry: any) => {
                   const warehouse = (warehouseList as any[]).find((w) => w.id === entry.targetWarehouseId);
                   return (
                     <TableRow key={entry.id}>
-                      <TableCell className="font-medium">{entry.entryNo}</TableCell>
+                      <TableCell className="font-medium font-mono">{entry.entryNo}</TableCell>
                       <TableCell>{entry.productName || "-"}</TableCell>
-                      <TableCell>{entry.batchNo || "-"}</TableCell>
-                      <TableCell className="text-right">{entry.quantity} {entry.unit}</TableCell>
+                      <TableCell className="font-mono">{entry.batchNo || "-"}</TableCell>
+                      <TableCell>
+                        {entry.sterilizationBatchNo
+                          ? <span className="font-mono text-orange-600 text-xs">{entry.sterilizationBatchNo}</span>
+                          : <span className="text-muted-foreground">-</span>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className="font-medium">{entry.quantity}</span>
+                        <span className="text-muted-foreground ml-1 text-xs">{entry.unit}</span>
+                        {entry.quantityModifyReason && (
+                          <AlertCircle className="h-3 w-3 inline ml-1 text-amber-500" title={`已修改：${entry.quantityModifyReason}`} />
+                        )}
+                      </TableCell>
                       <TableCell>{warehouse?.name || "-"}</TableCell>
-                      <TableCell className="text-muted-foreground">{entry.sterilizationOrderNo || "-"}</TableCell>
+                      <TableCell className="text-muted-foreground text-xs">{entry.sterilizationOrderNo || "-"}</TableCell>
                       <TableCell>{entry.applicationDate ? String(entry.applicationDate).split("T")[0] : "-"}</TableCell>
                       <TableCell>
                         <Badge variant={statusMap[entry.status]?.variant || "outline"}>
@@ -331,8 +396,8 @@ export default function ProductionWarehouseEntryPage() {
                               </>
                             )}
                             {entry.status === "approved" && (
-                              <DropdownMenuItem onClick={() => updateMutation.mutate({ id: entry.id, data: { status: "completed" } })}>
-                                <Warehouse className="h-4 w-4 mr-2" />确认入库
+                              <DropdownMenuItem onClick={() => handleCompleteEntry(entry)} className="text-green-600 font-medium">
+                                <Bell className="h-4 w-4 mr-2" />确认入库 · 通知销售部
                               </DropdownMenuItem>
                             )}
                             {canDelete && (
@@ -356,13 +421,13 @@ export default function ProductionWarehouseEntryPage() {
           <DraggableDialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>{editingEntry ? "编辑入库申请" : "新建生产入库申请"}</DialogTitle>
-              <DialogDescription>生产完成或灭菌合格后申请成品入库</DialogDescription>
+              <DialogDescription>入库数量 = 灭菌后数量 − 检验报废数量 − 留样数量（可手动修改，需填写原因）</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="grid gap-4 py-4 max-h-[65vh] overflow-y-auto pr-1">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>入库单号 *</Label>
-                  <Input value={formData.entryNo} onChange={(e) => setFormData({ ...formData, entryNo: e.target.value })} readOnly={!!editingEntry} />
+                  <Input value={formData.entryNo} onChange={(e) => setFormData({ ...formData, entryNo: e.target.value })} readOnly={!!editingEntry} className="font-mono" />
                 </div>
                 <div className="space-y-2">
                   <Label>申请日期</Label>
@@ -372,10 +437,7 @@ export default function ProductionWarehouseEntryPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>关联生产任务</Label>
-                  <Select
-                    value={formData.productionOrderId || "__NONE__"}
-                    onValueChange={(v) => handleProductionOrderChange(v === "__NONE__" ? "" : v)}
-                  >
+                  <Select value={formData.productionOrderId || "__NONE__"} onValueChange={(v) => handleProductionOrderChange(v === "__NONE__" ? "" : v)}>
                     <SelectTrigger><SelectValue placeholder="选择生产任务" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__NONE__">不关联</SelectItem>
@@ -386,15 +448,12 @@ export default function ProductionWarehouseEntryPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>关联灭菌单（如有）</Label>
-                  <Select
-                    value={formData.sterilizationOrderId || "__NONE__"}
-                    onValueChange={(v) => handleSterilizationOrderChange(v === "__NONE__" ? "" : v)}
-                  >
+                  <Label>关联灭菌单（合格）</Label>
+                  <Select value={formData.sterilizationOrderId || "__NONE__"} onValueChange={(v) => handleSterilizationOrderChange(v === "__NONE__" ? "" : v)}>
                     <SelectTrigger><SelectValue placeholder="选择灭菌单" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__NONE__">不关联</SelectItem>
-                      {(sterilizationOrders as any[]).filter((s: any) => s.status === "qualified").map((s: any) => (
+                      {(sterilizationOrders as any[]).filter((s: any) => s.status === "qualified" || s.status === "arrived").map((s: any) => (
                         <SelectItem key={s.id} value={String(s.id)}>{s.orderNo} - {s.productName}</SelectItem>
                       ))}
                     </SelectContent>
@@ -404,9 +463,10 @@ export default function ProductionWarehouseEntryPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>产品</Label>
-                  <Select value={formData.productId} onValueChange={handleProductChange}>
+                  <Select value={formData.productId || "__NONE__"} onValueChange={(v) => handleProductChange(v === "__NONE__" ? "" : v)}>
                     <SelectTrigger><SelectValue placeholder="选择产品" /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__NONE__">不选择</SelectItem>
                       {(products as any[]).map((p: any) => (
                         <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
                       ))}
@@ -414,14 +474,71 @@ export default function ProductionWarehouseEntryPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>批号</Label>
-                  <Input value={formData.batchNo} onChange={(e) => setFormData({ ...formData, batchNo: e.target.value })} placeholder="生产批号" />
+                  <Label>生产批号</Label>
+                  <Input value={formData.batchNo} onChange={(e) => setFormData({ ...formData, batchNo: e.target.value })} placeholder="生产批号" className="font-mono" />
                 </div>
               </div>
+              {formData.sterilizationBatchNo && (
+                <div className="p-2 bg-orange-50 rounded border border-orange-100 text-sm text-orange-700">
+                  灭菌批号：<span className="font-mono font-medium">{formData.sterilizationBatchNo}</span>
+                </div>
+              )}
+
+              {/* 入库数量公式区域 */}
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-blue-700">
+                  <Calculator className="h-4 w-4" />
+                  入库数量计算公式
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">灭菌后数量</Label>
+                    <Input
+                      type="number"
+                      value={formData.sterilizedQty}
+                      onChange={(e) => { setFormData({ ...formData, sterilizedQty: e.target.value }); setQuantityManuallyEdited(false); }}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">检验报废数量</Label>
+                    <Input
+                      type="number"
+                      value={formData.inspectionRejectQty}
+                      onChange={(e) => { setFormData({ ...formData, inspectionRejectQty: e.target.value }); setQuantityManuallyEdited(false); }}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">留样数量</Label>
+                    <Input
+                      type="number"
+                      value={formData.sampleQty}
+                      onChange={(e) => { setFormData({ ...formData, sampleQty: e.target.value }); setQuantityManuallyEdited(false); }}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                {calcQty() !== null && (
+                  <p className="text-xs text-blue-600">
+                    公式计算值：{formData.sterilizedQty || 0} − {formData.inspectionRejectQty || 0} − {formData.sampleQty || 0} = <strong>{calcQty()}</strong>
+                  </p>
+                )}
+              </div>
+
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label>入库数量 *</Label>
-                  <Input type="number" value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} />
+                  <Label className="flex items-center gap-1">
+                    入库数量 *
+                    {isQtyModified() && <AlertCircle className="h-3 w-3 text-amber-500" />}
+                  </Label>
+                  <Input
+                    type="number"
+                    value={formData.quantity}
+                    onChange={(e) => { setFormData({ ...formData, quantity: e.target.value }); setQuantityManuallyEdited(true); }}
+                    className={isQtyModified() ? "border-amber-400" : ""}
+                  />
+                  {isQtyModified() && <p className="text-xs text-amber-600">已偏离公式计算值，需填写修改原因</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>单位</Label>
@@ -429,9 +546,10 @@ export default function ProductionWarehouseEntryPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>目标仓库</Label>
-                  <Select value={formData.targetWarehouseId} onValueChange={(v) => setFormData({ ...formData, targetWarehouseId: v })}>
+                  <Select value={formData.targetWarehouseId || "__NONE__"} onValueChange={(v) => setFormData({ ...formData, targetWarehouseId: v === "__NONE__" ? "" : v })}>
                     <SelectTrigger><SelectValue placeholder="选择仓库" /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__NONE__">不选择</SelectItem>
                       {(warehouseList as any[]).map((w: any) => (
                         <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
                       ))}
@@ -439,6 +557,20 @@ export default function ProductionWarehouseEntryPage() {
                   </Select>
                 </div>
               </div>
+
+              {isQtyModified() && (
+                <div className="space-y-2">
+                  <Label className="text-amber-700">修改原因 * <span className="text-xs font-normal text-muted-foreground">（入库数量偏离公式计算值时必填）</span></Label>
+                  <Textarea
+                    value={formData.quantityModifyReason}
+                    onChange={(e) => setFormData({ ...formData, quantityModifyReason: e.target.value })}
+                    placeholder="请说明修改入库数量的原因..."
+                    rows={2}
+                    className="border-amber-300"
+                  />
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label>备注</Label>
                 <Textarea value={formData.remark} onChange={(e) => setFormData({ ...formData, remark: e.target.value })} rows={2} />
@@ -465,21 +597,52 @@ export default function ProductionWarehouseEntryPage() {
                 <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                   <div>
                     <p className="font-semibold">{viewingEntry.productName || "-"}</p>
-                    <p className="text-sm text-muted-foreground">批号：{viewingEntry.batchNo || "-"}</p>
+                    <p className="text-sm text-muted-foreground">生产批号：<span className="font-mono">{viewingEntry.batchNo || "-"}</span></p>
+                    {viewingEntry.sterilizationBatchNo && (
+                      <p className="text-xs text-orange-600">灭菌批号：<span className="font-mono">{viewingEntry.sterilizationBatchNo}</span></p>
+                    )}
                   </div>
                   <Badge variant={statusMap[viewingEntry.status]?.variant || "outline"}>
                     {statusMap[viewingEntry.status]?.label || viewingEntry.status}
                   </Badge>
                 </div>
+                {/* 数量明细 */}
+                {(viewingEntry.sterilizedQty || viewingEntry.inspectionRejectQty || viewingEntry.sampleQty) && (
+                  <div className="p-3 bg-blue-50 rounded-lg text-sm space-y-1">
+                    <p className="font-medium text-blue-700 flex items-center gap-1"><Calculator className="h-3 w-3" />数量明细</p>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div><p className="text-muted-foreground">灭菌后数量</p><p className="font-medium">{viewingEntry.sterilizedQty || "-"}</p></div>
+                      <div><p className="text-muted-foreground">检验报废</p><p className="font-medium">{viewingEntry.inspectionRejectQty || "0"}</p></div>
+                      <div><p className="text-muted-foreground">留样</p><p className="font-medium">{viewingEntry.sampleQty || "0"}</p></div>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><p className="text-muted-foreground">入库数量</p><p className="font-medium">{viewingEntry.quantity} {viewingEntry.unit}</p></div>
+                  <div>
+                    <p className="text-muted-foreground">入库数量</p>
+                    <p className="font-medium text-lg">{viewingEntry.quantity} {viewingEntry.unit}</p>
+                    {viewingEntry.quantityModifyReason && (
+                      <p className="text-xs text-amber-600 mt-0.5"><AlertCircle className="h-3 w-3 inline mr-0.5" />已修改</p>
+                    )}
+                  </div>
                   <div><p className="text-muted-foreground">目标仓库</p><p className="font-medium">{(warehouseList as any[]).find((w: any) => w.id === viewingEntry.targetWarehouseId)?.name || "-"}</p></div>
                   <div><p className="text-muted-foreground">关联生产任务</p><p className="font-medium">{viewingEntry.productionOrderNo || "-"}</p></div>
                   <div><p className="text-muted-foreground">关联灭菌单</p><p className="font-medium">{viewingEntry.sterilizationOrderNo || "-"}</p></div>
                   <div><p className="text-muted-foreground">申请日期</p><p className="font-medium">{viewingEntry.applicationDate ? String(viewingEntry.applicationDate).split("T")[0] : "-"}</p></div>
                 </div>
+                {viewingEntry.quantityModifyReason && (
+                  <div className="p-2 bg-amber-50 rounded border border-amber-100 text-sm">
+                    <p className="text-amber-700 font-medium text-xs mb-0.5">数量修改原因</p>
+                    <p className="text-amber-800">{viewingEntry.quantityModifyReason}</p>
+                  </div>
+                )}
                 {viewingEntry.remark && (
                   <div><p className="text-sm text-muted-foreground mb-1">备注</p><p className="text-sm">{viewingEntry.remark}</p></div>
+                )}
+                {viewingEntry.status === "completed" && (
+                  <div className="p-3 bg-green-50 rounded-lg border border-green-100 text-sm text-green-700">
+                    <Bell className="h-4 w-4 inline mr-1" />已入库完成，销售部已收到通知
+                  </div>
                 )}
               </div>
             )}

@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { SignatureStatusCard, SignatureRecord } from "@/components/ElectronicSignature";
-import { PackageCheck, FileCheck, ShieldCheck, Plus, Search, Edit, Trash2, Eye, MoreHorizontal } from "lucide-react";
+import { PackageCheck, FileCheck, ShieldCheck, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Link2 } from "lucide-react";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +53,8 @@ interface OQCRecord {
   quantity: string;
   unit: string;
   samplingQty: number;
+  rejectQty: number;       // 检验报废数量
+  sampleRetainQty: number; // 留样数量
   inspectionDate: string;
   result: "pending" | "inspecting" | "qualified" | "unqualified";
   inspector: string;
@@ -95,6 +97,8 @@ function dbToDisplay(record: any): OQCRecord {
     quantity: String(extra.quantity || record.inspectedQty || ""),
     unit: extra.unit || "支",
     samplingQty: extra.samplingQty || 0,
+    rejectQty: extra.rejectQty || 0,
+    sampleRetainQty: extra.sampleRetainQty || 0,
     inspectionDate: record.inspectionDate ? String(record.inspectionDate).split("T")[0] : "",
     result: (extra.result || record.result || "pending") as OQCRecord["result"],
     inspector: extra.inspector || "",
@@ -134,6 +138,8 @@ export default function OQCPage() {
     quantity: "",
     unit: "支",
     samplingQty: 0,
+    rejectQty: 0,
+    sampleRetainQty: 0,
     inspectionDate: "",
     result: "pending" as OQCRecord["result"],
     inspector: "",
@@ -160,6 +166,8 @@ export default function OQCPage() {
       quantity: "",
       unit: "支",
       samplingQty: 0,
+      rejectQty: 0,
+      sampleRetainQty: 0,
       inspectionDate: new Date().toISOString().split("T")[0],
       result: "pending",
       inspector: "",
@@ -179,6 +187,8 @@ export default function OQCPage() {
       quantity: record.quantity,
       unit: record.unit,
       samplingQty: record.samplingQty,
+      rejectQty: record.rejectQty || 0,
+      sampleRetainQty: record.sampleRetainQty || 0,
       inspectionDate: record.inspectionDate,
       result: record.result,
       inspector: record.inspector,
@@ -212,6 +222,8 @@ export default function OQCPage() {
       quantity: formData.quantity,
       unit: formData.unit,
       samplingQty: formData.samplingQty,
+      rejectQty: formData.rejectQty,
+      sampleRetainQty: formData.sampleRetainQty,
       result: formData.result,
       inspector: formData.inspector,
       remarks: formData.remarks,
@@ -380,7 +392,8 @@ export default function OQCPage() {
                 <TableHead>产品名称</TableHead>
                 <TableHead>批次号</TableHead>
                 <TableHead>批量</TableHead>
-                <TableHead>抽样数</TableHead>
+                <TableHead>报废数</TableHead>
+                <TableHead>留样数</TableHead>
                 <TableHead>检验结果</TableHead>
                 <TableHead>签名状态</TableHead>
                 <TableHead>检验日期</TableHead>
@@ -396,7 +409,8 @@ export default function OQCPage() {
                     <TableCell className="font-medium">{record.productName}</TableCell>
                     <TableCell className="font-mono">{record.batchNo}</TableCell>
                     <TableCell>{record.quantity} {record.unit}</TableCell>
-                    <TableCell>{record.samplingQty}</TableCell>
+                    <TableCell className="text-red-600">{record.rejectQty || 0}</TableCell>
+                    <TableCell className="text-blue-600">{record.sampleRetainQty || 0}</TableCell>
                     <TableCell>
                       <Badge
                         variant={statusMap[record.result]?.variant || "outline"}
@@ -536,6 +550,24 @@ export default function OQCPage() {
                       value={formData.samplingQty}
                       onChange={(e) => setFormData({ ...formData, samplingQty: parseInt(e.target.value) || 0 })}
                       placeholder="抽样数量"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1"><Link2 className="h-3 w-3 text-red-500" />检验报废数量 <span className="text-xs text-muted-foreground">(关联入库计算)</span></Label>
+                    <Input
+                      type="number"
+                      value={formData.rejectQty}
+                      onChange={(e) => setFormData({ ...formData, rejectQty: parseInt(e.target.value) || 0 })}
+                      placeholder="报废数量"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1"><Link2 className="h-3 w-3 text-blue-500" />留样数量 <span className="text-xs text-muted-foreground">(关联入库计算)</span></Label>
+                    <Input
+                      type="number"
+                      value={formData.sampleRetainQty}
+                      onChange={(e) => setFormData({ ...formData, sampleRetainQty: parseInt(e.target.value) || 0 })}
+                      placeholder="留样数量"
                     />
                   </div>
                   <div className="space-y-2">
@@ -718,6 +750,14 @@ export default function OQCPage() {
                       <div>
                         <span className="text-muted-foreground">抽样数量</span>
                         <p className="font-medium">{selectedRecord.samplingQty}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground flex items-center gap-1"><Link2 className="h-3 w-3 text-red-500" />检验报废数量</span>
+                        <p className="font-medium text-red-600">{selectedRecord.rejectQty || 0}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground flex items-center gap-1"><Link2 className="h-3 w-3 text-blue-500" />留样数量</span>
+                        <p className="font-medium text-blue-600">{selectedRecord.sampleRetainQty || 0}</p>
                       </div>
                       <div>
                         <span className="text-muted-foreground">检验员</span>

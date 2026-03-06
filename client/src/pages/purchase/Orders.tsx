@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import MaterialMultiSelect, { SelectedMaterial, Material } from "@/components/MaterialMultiSelect";
-import { ShoppingBag, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Layers } from "lucide-react";
+import { ShoppingBag, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Layers, Printer, CheckCircle, XCircle, UserCheck } from "lucide-react";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +48,7 @@ interface PurchaseOrder {
   expectedDate: string | null;
   totalAmount: string | null;
   currency: string | null;
-  status: "draft" | "approved" | "ordered" | "partial_received" | "received" | "cancelled";
+  status: "draft" | "dept_review" | "gm_review" | "approved" | "issued" | "ordered" | "partial_received" | "received" | "cancelled";
   paymentStatus: string | null;
   remark: string | null;
   buyerId: number | null;
@@ -57,7 +57,10 @@ interface PurchaseOrder {
 
 const statusMap: Record<string, { label: string; variant: "outline" | "secondary" | "default" | "destructive"; color: string }> = {
   draft: { label: "草稿", variant: "outline", color: "text-gray-600" },
+  dept_review: { label: "部门审核中", variant: "default", color: "text-amber-600" },
+  gm_review: { label: "总经理审批中", variant: "default", color: "text-orange-600" },
   approved: { label: "已审批", variant: "secondary", color: "text-blue-600" },
+  issued: { label: "已下达", variant: "secondary", color: "text-purple-600" },
   ordered: { label: "已下单", variant: "default", color: "text-purple-600" },
   partial_received: { label: "部分收货", variant: "secondary", color: "text-teal-600" },
   received: { label: "已收货", variant: "secondary", color: "text-green-600" },
@@ -654,17 +657,45 @@ export default function PurchaseOrdersPage() {
                   >
                     编辑采购单
                   </Button>
+                  {/* 多级审批流程 */}
                   {selectedRecord.status === "draft" && (
-                    <Button onClick={() => handleStatusChange(selectedRecord, "approved")}>
-                      审批通过
-                    </Button>
+                    <>
+                      <Button variant="outline" className="text-amber-600 border-amber-300" onClick={() => { handleStatusChange(selectedRecord, "dept_review"); toast.info("已提交部门审核"); }}>
+                        <UserCheck className="h-4 w-4 mr-1" />提交部门审核
+                      </Button>
+                    </>
+                  )}
+                  {selectedRecord.status === "dept_review" && (
+                    <>
+                      <Button variant="outline" className="text-destructive" onClick={() => handleStatusChange(selectedRecord, "draft")}>
+                        <XCircle className="h-4 w-4 mr-1" />退回修改
+                      </Button>
+                      <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => { handleStatusChange(selectedRecord, "gm_review"); toast.info("部门审核通过，已提交总经理审批"); }}>
+                        <CheckCircle className="h-4 w-4 mr-1" />部门审核通过
+                      </Button>
+                    </>
+                  )}
+                  {selectedRecord.status === "gm_review" && (
+                    <>
+                      <Button variant="outline" className="text-destructive" onClick={() => handleStatusChange(selectedRecord, "dept_review")}>
+                        <XCircle className="h-4 w-4 mr-1" />退回部门审核
+                      </Button>
+                      <Button onClick={() => { handleStatusChange(selectedRecord, "approved"); toast.success("总经理审批通过！采购订单已批准，可打印下达。"); }}>
+                        <CheckCircle className="h-4 w-4 mr-1" />总经理审批通过
+                      </Button>
+                    </>
                   )}
                   {selectedRecord.status === "approved" && (
-                    <Button onClick={() => handleStatusChange(selectedRecord, "ordered")}>
-                      确认下单
+                    <Button onClick={() => {
+                      // 打印采购订单，打印后自动变为「已下达」
+                      window.print();
+                      handleStatusChange(selectedRecord, "issued");
+                      toast.success("采购订单已打印，状态已更新为「已下达」");
+                    }}>
+                      <Printer className="h-4 w-4 mr-1" />打印订单（下达）
                     </Button>
                   )}
-                  {selectedRecord.status === "ordered" && (
+                  {(selectedRecord.status === "issued" || selectedRecord.status === "ordered") && (
                     <Button onClick={() => handleStatusChange(selectedRecord, "received")}>
                       确认收货
                     </Button>

@@ -38,6 +38,8 @@ import {
   TrendingUp,
   Download,
   RefreshCw,
+  ShoppingCart,
+  UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -154,9 +156,37 @@ export default function MRPPage() {
 
   const handleRunMRP = (plan: MRPPlan) => {
     // 模拟MRP计算
-    toast.info("MRP计算已启动...");
+    toast.info("MRP计算已启动，正在根据生产计划和BOM清单计算净需求...");
+    setTimeout(() => toast.success("MRP计算完成！请查看物料需求清单"), 2000);
+  };
 
-    // 模拟计算完成
+  // 一键生成采购申请单（生产部门前置确认）
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [pendingMRPPlan, setPendingMRPPlan] = useState<MRPPlan | null>(null);
+  const createMaterialRequestMutation = trpc.materialRequests.create.useMutation({
+    onSuccess: () => {
+      toast.success("采购申请单已生成，等待生产部门确认");
+      setConfirmDialogOpen(false);
+    },
+    onError: (e) => toast.error("生成失败: " + e.message),
+  });
+
+  const handleGeneratePurchaseRequest = (plan: MRPPlan) => {
+    setPendingMRPPlan(plan);
+    setConfirmDialogOpen(true);
+  };
+
+  const handleConfirmAndGenerate = () => {
+    if (!pendingMRPPlan) return;
+    const today = new Date().toISOString().split("T")[0];
+    createMaterialRequestMutation.mutate({
+      requestNo: `PR-MRP-${Date.now()}`,
+      requestDate: today,
+      requiredDate: today,
+      department: "生产部",
+      status: "pending",
+      remark: `由MRP计划 ${pendingMRPPlan.planCode} 自动生成，待生产部门确认`,
+    });
   };
 
   const handleSubmit = () => {
@@ -565,10 +595,18 @@ export default function MRPPage() {
                   <Card>
                     <CardHeader className="flex flex-row items-center justify-between">
                       <CardTitle className="text-base">物料需求清单</CardTitle>
-                      <Button variant="outline" size="sm">
-                        <Download className="h-4 w-4 mr-1" />
-                        导出Excel
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm">
+                          <Download className="h-4 w-4 mr-1" />
+                          导出Excel
+                        </Button>
+                        {selectedMaterials.filter((m: any) => m.suggestedAction === "purchase" && m.netRequirement > 0).length > 0 && (
+                          <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => handleGeneratePurchaseRequest(selectedPlan)}>
+                            <ShoppingCart className="h-4 w-4 mr-1" />
+                            一键生成采购申请单
+                          </Button>
+                        )}
+                      </div>
                     </CardHeader>
                     <CardContent>
                       {selectedMaterials.length > 0 ? (
@@ -636,6 +674,42 @@ export default function MRPPage() {
           </DraggableDialogContent>
         </DraggableDialog>
       </div>
+
+      {/* 生产部门前置确认对话框 */}
+      <DraggableDialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DraggableDialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-amber-500" />
+              生产部门确认 — 生成采购申请单
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              系统将根据 MRP 计划 <span className="font-semibold text-foreground">{pendingMRPPlan?.planCode}</span> 中净需求大于零的物料，自动生成采购申请单。
+            </p>
+            <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+              <strong>生产部门确认事项：</strong>
+              <ul className="mt-1 list-disc list-inside space-y-1">
+                <li>已核实生产计划数量准确无误</li>
+                <li>已确认 BOM 清单中的物料规格和用量</li>
+                <li>已核查现有库存和在途量数据</li>
+              </ul>
+            </div>
+            <p className="text-sm">确认后，采购申请单将进入采购部门审核流程。</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDialogOpen(false)}>取消</Button>
+            <Button
+              onClick={handleConfirmAndGenerate}
+              disabled={createMaterialRequestMutation.isPending}
+            >
+              <CheckCircle className="h-4 w-4 mr-1" />
+              {createMaterialRequestMutation.isPending ? "生成中..." : "确认并生成采购申请单"}
+            </Button>
+          </DialogFooter>
+        </DraggableDialogContent>
+      </DraggableDialog>
     </ERPLayout>
   );
 }

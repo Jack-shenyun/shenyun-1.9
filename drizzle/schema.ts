@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, date, boolean, json } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, date, boolean, json, tinyint } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -64,6 +64,8 @@ export type InsertProduct = typeof products.$inferInsert;
 export const bom = mysqlTable("bom", {
   id: int("id").autoincrement().primaryKey(),
   productId: int("productId").notNull(), // 产品ID
+  parentId: int("parentId"), // 父级物料ID（null表示直接挂在成品下的二级物料）
+  level: int("level").notNull().default(2), // 层级：2=半成品/组件, 3=原材料
   materialCode: varchar("materialCode", { length: 50 }).notNull(), // 物料编码
   materialName: varchar("materialName", { length: 200 }).notNull(), // 物料名称
   specification: varchar("specification", { length: 200 }), // 规格
@@ -143,6 +145,30 @@ export const suppliers = mysqlTable("suppliers", {
 
 export type Supplier = typeof suppliers.$inferSelect;
 export type InsertSupplier = typeof suppliers.$inferInsert;
+
+/**
+ * 产品-供应商价格关联表
+ * 记录每个产品对应的供应商及采购价格，支持自动生成采购订单草稿
+ */
+export const productSupplierPrices = mysqlTable("product_supplier_prices", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("productId").notNull(),         // 关联产品
+  supplierId: int("supplierId").notNull(),         // 关联供应商
+  purchasePrice: decimal("purchasePrice", { precision: 12, scale: 4 }), // 采购单价
+  currency: varchar("currency", { length: 10 }).default("CNY"),         // 币种
+  moq: int("moq").default(1),                     // 最小起订量
+  leadTimeDays: int("leadTimeDays"),               // 交货周期（天）
+  isDefault: tinyint("isDefault").default(0),     // 是否为默认供应商
+  validFrom: date("validFrom"),                   // 价格有效期开始
+  validTo: date("validTo"),                       // 价格有效期结束
+  remark: text("remark"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ProductSupplierPrice = typeof productSupplierPrices.$inferSelect;
+export type InsertProductSupplierPrice = typeof productSupplierPrices.$inferInsert;
 
 // ==================== 仓库与库存管理 ====================
 
@@ -356,6 +382,7 @@ export type InsertPurchaseOrderItem = typeof purchaseOrderItems.$inferInsert;
 export const productionOrders = mysqlTable("production_orders", {
   id: int("id").autoincrement().primaryKey(),
   orderNo: varchar("orderNo", { length: 50 }).notNull().unique(),
+  orderType: mysqlEnum("orderType", ["finished", "semi_finished", "rework"]).default("finished").notNull(), // 指令类型：成品/半成品/返工
   productId: int("productId").notNull(),
   plannedQty: decimal("plannedQty", { precision: 12, scale: 4 }).notNull(), // 计划数量
   completedQty: decimal("completedQty", { precision: 12, scale: 4 }).default("0"), // 完成数量
@@ -1293,6 +1320,7 @@ export type InsertMaterialRequisitionOrder = typeof materialRequisitionOrders.$i
 export const productionRecords = mysqlTable("production_records", {
   id: int("id").autoincrement().primaryKey(),
   recordNo: varchar("recordNo", { length: 50 }).notNull().unique(),
+  recordType: mysqlEnum("recordType", ["general", "temperature_humidity", "material_usage", "clean_room", "first_piece"]).default("general").notNull(), // 记录类型：通用/温湿度/材料使用/清场/首件检验
   productionOrderId: int("productionOrderId"), // 关联生产任务
   productionOrderNo: varchar("productionOrderNo", { length: 50 }),
   productId: int("productId"),
@@ -1305,6 +1333,25 @@ export const productionRecords = mysqlTable("production_records", {
   plannedQty: decimal("plannedQty", { precision: 12, scale: 4 }),
   actualQty: decimal("actualQty", { precision: 12, scale: 4 }),
   scrapQty: decimal("scrapQty", { precision: 12, scale: 4 }).default("0"),
+  // 温湿度记录字段
+  temperature: decimal("temperature", { precision: 6, scale: 2 }), // 温度(℃)
+  humidity: decimal("humidity", { precision: 6, scale: 2 }), // 湿度(%)
+  temperatureLimit: varchar("temperatureLimit", { length: 50 }), // 温度限制要求
+  humidityLimit: varchar("humidityLimit", { length: 50 }), // 湿度限制要求
+  // 材料使用记录字段
+  materialCode: varchar("materialCode", { length: 50 }), // 材料编号
+  materialName: varchar("materialName", { length: 200 }), // 材料名称
+  materialSpec: varchar("materialSpec", { length: 200 }), // 材料规格
+  usedQty: decimal("usedQty", { precision: 12, scale: 4 }), // 实际用量
+  usedUnit: varchar("usedUnit", { length: 20 }), // 用量单位
+  materialBatchNo: varchar("materialBatchNo", { length: 50 }), // 材料批号
+  // 清场记录字段
+  cleanedBy: varchar("cleanedBy", { length: 50 }), // 清场人
+  checkedBy: varchar("checkedBy", { length: 50 }), // 检查人
+  cleanResult: mysqlEnum("cleanResult", ["pass", "fail"]), // 清场结果
+  // 首件检验字段
+  firstPieceResult: mysqlEnum("firstPieceResult", ["qualified", "unqualified"]), // 首件检验结果
+  firstPieceInspector: varchar("firstPieceInspector", { length: 50 }), // 检验人
   status: mysqlEnum("status", ["in_progress", "completed", "abnormal"]).default("in_progress").notNull(),
   remark: text("remark"),                      // JSON存储工序明细
   createdBy: int("createdBy"),
