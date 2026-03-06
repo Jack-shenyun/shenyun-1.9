@@ -165,7 +165,8 @@ function BOMTreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
         <div className="text-xs text-right shrink-0 flex items-center justify-end gap-1.5" style={{ width: "20%" }}>
           {node.level !== 1 ? (
             <>
-              <span className="text-muted-foreground">@{parseFloat(node.unitPrice || "0").toFixed(2)}</span>
+              <span className="text-muted-foreground">¥{parseFloat(node.unitPrice || "0").toFixed(2)}</span>
+              <span className="text-muted-foreground/50">/</span>
               <span className="font-medium text-primary">¥{subtotal.toFixed(2)}</span>
             </>
           ) : (
