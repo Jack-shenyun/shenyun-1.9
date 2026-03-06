@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -192,6 +193,12 @@ export default function PlatformPage() {
   const activeCount = platforms.filter((p: any) => p.status === "active").length;
   const pendingCount = platforms.filter((p: any) => p.status === "pending").length;
   const totalProducts = platforms.reduce((sum: any, p: any) => sum + p.productCount, 0);
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -274,30 +281,30 @@ export default function PlatformPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>平台名称</TableHead>
-                  <TableHead className="w-[90px]">省份</TableHead>
-                  <TableHead className="w-[110px]">账号</TableHead>
-                  <TableHead className="w-[90px]">挂网产品</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[100px]">最后更新</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">平台名称</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">省份</TableHead>
+                  <TableHead className="w-[110px] text-center font-bold">账号</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">挂网产品</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">最后更新</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredPlatforms.map((platform: any) => (
                   <TableRow key={platform.id}>
-                    <TableCell className="font-medium">{platform.platformName}</TableCell>
-                    <TableCell>{platform.province}</TableCell>
-                    <TableCell>{platform.accountNo}</TableCell>
-                    <TableCell>{platform.productCount}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[platform.status]?.variant || "outline"}>
+                    <TableCell className="text-center font-medium">{platform.platformName}</TableCell>
+                    <TableCell className="text-center">{platform.province}</TableCell>
+                    <TableCell className="text-center">{platform.accountNo}</TableCell>
+                    <TableCell className="text-center">{platform.productCount}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[platform.status]?.variant || "outline"} className={getStatusSemanticClass(platform.status, statusMap[platform.status]?.label)}>
                         {statusMap[platform.status]?.label || String(platform.status ?? "-")}
                       </Badge>
                     </TableCell>
-                    <TableCell>{formatDateValue(platform.lastUpdate)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{formatDateValue(platform.lastUpdate)}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -482,90 +489,98 @@ export default function PlatformPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>平台详情</DialogTitle>
-              <DialogDescription>{viewingPlatform?.platformName}</DialogDescription>
-            </DialogHeader>
-            {viewingPlatform && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Globe className="h-8 w-8 text-primary" />
-                    <div>
-                      <h3 className="font-semibold">{viewingPlatform.platformName}</h3>
-                      <p className="text-sm text-muted-foreground">{viewingPlatform.province}</p>
-                    </div>
-                  </div>
-                  <Badge variant={statusMap[viewingPlatform.status]?.variant || "outline"}>
-                    {statusMap[viewingPlatform.status]?.label || String(viewingPlatform.status ?? "-")}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">账号</p>
-                    <p className="font-medium">{viewingPlatform.accountNo}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">挂网产品数</p>
-                    <p className="font-medium">{viewingPlatform.productCount}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">联系人</p>
-                    <p className="font-medium">{viewingPlatform.contactPerson || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">联系电话</p>
-                    <p className="font-medium">{viewingPlatform.contactPhone || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">注册日期</p>
-                    <p className="font-medium">{formatDateValue(viewingPlatform.registrationDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">到期日期</p>
-                    <p className="font-medium">{formatDateValue(viewingPlatform.expiryDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">最后更新</p>
-                    <p className="font-medium">{formatDateValue(viewingPlatform.lastUpdate)}</p>
-                  </div>
-                  <div className="md:col-span-2">
-                    <p className="text-muted-foreground">平台网址</p>
-                    <p className="font-medium">
-                      {viewingPlatform.platformUrl ? (
-                        <a href={viewingPlatform.platformUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                          {viewingPlatform.platformUrl}
-                        </a>
-                      ) : "-"}
-                    </p>
-                  </div>
-                </div>
-
-                {viewingPlatform.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingPlatform.remarks}</p>
-                  </div>
-                )}
-              </div>
+{/* 查看详情对话框 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingPlatform && (
+      <div className="space-y-4">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">平台详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingPlatform.platformName}
+            {viewingPlatform.status && (
+              <>
+                {' '}
+                ·
+                <Badge
+                  variant={statusMap[viewingPlatform.status]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(
+                    viewingPlatform.status,
+                    statusMap[viewingPlatform.status]?.label
+                  )}`}
+                >
+                  {statusMap[viewingPlatform.status]?.label || String(viewingPlatform.status ?? "-")}
+                </Badge>
+              </>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingPlatform) handleEdit(viewingPlatform);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="py-4 space-y-6">
+          {/* 基本信息分区 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="省份">{viewingPlatform.province || "-"}</FieldRow>
+                <FieldRow label="账号">{viewingPlatform.accountNo || "-"}</FieldRow>
+                <FieldRow label="联系人">{viewingPlatform.contactPerson || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="平台网址">
+                  {viewingPlatform.platformUrl ? (
+                    <a href={viewingPlatform.platformUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                      {viewingPlatform.platformUrl}
+                    </a>
+                  ) : "-"}
+                </FieldRow>
+                <FieldRow label="联系电话">{viewingPlatform.contactPhone || "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 状态与日期分区 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">状态与日期</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="注册日期">{formatDateValue(viewingPlatform.registrationDate)}</FieldRow>
+                <FieldRow label="到期日期">{formatDateValue(viewingPlatform.expiryDate)}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="最后更新">{formatDateValue(viewingPlatform.lastUpdate)}</FieldRow>
+                <FieldRow label="挂网产品数">{viewingPlatform.productCount}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 备注 */}
+          {viewingPlatform.remarks && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingPlatform.remarks}</p>
+            </div>
+          )}
+        </div>
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setViewDialogOpen(false);
+              if (viewingPlatform) handleEdit(viewingPlatform);
+            }}>
+              编辑
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

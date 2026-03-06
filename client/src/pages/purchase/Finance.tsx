@@ -1,4 +1,5 @@
 import { formatDateValue, toSafeNumber } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -240,6 +241,12 @@ export default function PurchaseFinancePage() {
     if (p.status === "paid") return false;
     return new Date(p.dueDate) < new Date();
   }).length;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -323,15 +330,15 @@ export default function PurchaseFinancePage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[130px]">付款单号</TableHead>
-                  <TableHead className="w-[120px]">采购单号</TableHead>
-                  <TableHead>供应商名称</TableHead>
-                  <TableHead className="w-[110px]">付款金额</TableHead>
-                  <TableHead className="w-[110px]">已付金额</TableHead>
-                  <TableHead className="w-[100px]">到期日</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[130px] text-center font-bold">付款单号</TableHead>
+                  <TableHead className="w-[120px] text-center font-bold">采购单号</TableHead>
+                  <TableHead className="text-center font-bold">供应商名称</TableHead>
+                  <TableHead className="w-[110px] text-center font-bold">付款金额</TableHead>
+                  <TableHead className="w-[110px] text-center font-bold">已付金额</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">到期日</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -339,23 +346,23 @@ export default function PurchaseFinancePage() {
                   const isOverdue = payment.status !== "paid" && new Date(payment.dueDate) < new Date();
                   return (
                     <TableRow key={payment.id}>
-                      <TableCell className="font-medium">{payment.paymentNo}</TableCell>
-                      <TableCell>{payment.orderNo}</TableCell>
-                      <TableCell>{payment.supplierName}</TableCell>
-                      <TableCell>{formatCurrency(payment.totalAmount)}</TableCell>
-                      <TableCell>{formatCurrency(payment.paidAmount)}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-center font-medium">{payment.paymentNo}</TableCell>
+                      <TableCell className="text-center">{payment.orderNo}</TableCell>
+                      <TableCell className="text-center">{payment.supplierName}</TableCell>
+                      <TableCell className="text-center">{formatCurrency(payment.totalAmount)}</TableCell>
+                      <TableCell className="text-center">{formatCurrency(payment.paidAmount)}</TableCell>
+                      <TableCell className="text-center">
                         <div className="flex items-center gap-1">
                           {formatDateValue(payment.dueDate)}
                           {isOverdue && <AlertTriangle className="h-4 w-4 text-red-500" />}
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <Badge variant={statusMap[payment.status]?.variant || "outline"}>
+                      <TableCell className="text-center">
+                        <Badge variant={statusMap[payment.status]?.variant || "outline"} className={getStatusSemanticClass(payment.status, statusMap[payment.status]?.label)}>
                           {statusMap[payment.status]?.label || String(payment.status ?? "-")}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
@@ -615,87 +622,77 @@ export default function PurchaseFinancePage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>付款详情</DialogTitle>
-              <DialogDescription>{viewingPayment?.paymentNo}</DialogDescription>
-            </DialogHeader>
-            {viewingPayment && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold">{viewingPayment.supplierName}</h3>
-                    <p className="text-sm text-muted-foreground">采购单：{viewingPayment.orderNo}</p>
-                  </div>
-                  <Badge variant={statusMap[viewingPayment.status]?.variant || "outline"}>
-                    {statusMap[viewingPayment.status]?.label || String(viewingPayment.status ?? "-")}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">付款金额</p>
-                    <p className="font-medium">{formatCurrency(viewingPayment.totalAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">已付金额</p>
-                    <p className="font-medium text-green-600">{formatCurrency(viewingPayment.paidAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">待付金额</p>
-                    <p className="font-medium text-amber-600">
-                      {formatCurrency(viewingPayment.totalAmount - viewingPayment.paidAmount)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">发票号</p>
-                    <p className="font-medium">{viewingPayment.invoiceNo || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">付款方式</p>
-                    <p className="font-medium">{viewingPayment.paymentMethod}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">银行账号</p>
-                    <p className="font-medium">{viewingPayment.bankAccount || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">到期日</p>
-                    <p className="font-medium">{formatDateValue(viewingPayment.dueDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">付款日期</p>
-                    <p className="font-medium">{formatDateValue(viewingPayment.paymentDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">申请人</p>
-                    <p className="font-medium">{viewingPayment.applicant || "-"}</p>
-                  </div>
-                </div>
-
-                {viewingPayment.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingPayment.remarks}</p>
-                  </div>
-                )}
-              </div>
+{/* 查看详情 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingPayment && (
+      <div className="space-y-4">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">付款详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingPayment.paymentNo}
+            {viewingPayment.status && (
+              <> · <Badge variant={statusMap[viewingPayment.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingPayment.status, statusMap[viewingPayment.status]?.label)}`}>
+                {statusMap[viewingPayment.status]?.label || String(viewingPayment.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingPayment) handleEdit(viewingPayment);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="供应商">{viewingPayment.supplierName}</FieldRow>
+                <FieldRow label="采购单">{viewingPayment.orderNo}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="申请人">{viewingPayment.applicant || "-"}</FieldRow>
+                <FieldRow label="付款日期">{formatDateValue(viewingPayment.paymentDate)}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">财务信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="付款金额">{formatCurrency(viewingPayment.totalAmount)}</FieldRow>
+                <FieldRow label="已付金额">{formatCurrency(viewingPayment.paidAmount)}</FieldRow>
+                <FieldRow label="待付金额">{formatCurrency(viewingPayment.totalAmount - viewingPayment.paidAmount)}</FieldRow>
+                <FieldRow label="发票号">{viewingPayment.invoiceNo || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="付款方式">{viewingPayment.paymentMethod}</FieldRow>
+                <FieldRow label="银行账号">{viewingPayment.bankAccount || "-"}</FieldRow>
+                <FieldRow label="到期日">{formatDateValue(viewingPayment.dueDate)}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {viewingPayment.remarks && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingPayment.remarks}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setViewDialogOpen(false);
+              if (viewingPayment) handleEdit(viewingPayment);
+            }}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

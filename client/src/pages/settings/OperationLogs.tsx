@@ -63,6 +63,7 @@ import {
 } from "@/hooks/useOperationLog";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 
 // 每页显示条数
 const PAGE_SIZE = 15;
@@ -468,28 +469,28 @@ export default function OperationLogsPage() {
                 <div className="rounded-md border">
                   <Table>
                     <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[180px]">操作时间</TableHead>
-                        <TableHead className="w-[100px]">模块</TableHead>
-                        <TableHead className="w-[80px]">类型</TableHead>
-                        <TableHead>操作描述</TableHead>
-                        <TableHead className="w-[100px]">操作人</TableHead>
-                        <TableHead className="w-[80px]">结果</TableHead>
-                        <TableHead className="w-[80px] text-right">操作</TableHead>
+                      <TableRow className="bg-muted/60">
+                        <TableHead className="w-[180px] text-center font-bold">操作时间</TableHead>
+                        <TableHead className="w-[100px] text-center font-bold">模块</TableHead>
+                        <TableHead className="w-[80px] text-center font-bold">类型</TableHead>
+                        <TableHead className="text-center font-bold">操作描述</TableHead>
+                        <TableHead className="w-[100px] text-center font-bold">操作人</TableHead>
+                        <TableHead className="w-[80px] text-center font-bold">结果</TableHead>
+                        <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {(paginatedLogs as any[]).map((log: any) => (
                         <TableRow key={log.id}>
-                          <TableCell className="font-mono text-sm">
+                          <TableCell className="text-center font-mono text-sm">
                             {log.createdAt ? formatDateTime(log.createdAt) : "-"}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-center">
                             <Badge variant="outline">
                               {MODULE_NAMES[log.module as LogModule] || log.module}
                             </Badge>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-center">
                             <div className="flex items-center gap-1">
                               {getActionIcon(log.action)}
                               <span className="text-sm">
@@ -497,7 +498,7 @@ export default function OperationLogsPage() {
                               </span>
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-center">
                             <div className="max-w-[300px] truncate" title={log.description}>
                               {log.description}
                             </div>
@@ -507,9 +508,9 @@ export default function OperationLogsPage() {
                               </div>
                             )}
                           </TableCell>
-                          <TableCell>{log.operatorName}</TableCell>
-                          <TableCell>{getResultBadge(log.result || "success")}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-center">{log.operatorName}</TableCell>
+                          <TableCell className="text-center">{getResultBadge(log.result || "success")}</TableCell>
+                          <TableCell className="text-center">
                             <Button
                               variant="ghost"
                               size="sm"

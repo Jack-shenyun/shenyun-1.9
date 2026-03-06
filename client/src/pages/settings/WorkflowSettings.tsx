@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -158,6 +159,13 @@ function resolveUserLabel(raw: string, userIdMap: Map<string, UserOption>, userN
 
 function renderSelectionPreview(labels: string[]) {
   if (labels.length === 0) return <span className="text-muted-foreground">-</span>;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
+
   return (
     <div className="flex flex-wrap gap-1.5">
       {labels.slice(0, 3).map((item) => (
@@ -600,17 +608,17 @@ export default function WorkflowSettingsPage() {
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="w-[110px]">流程编码</TableHead>
-                    <TableHead className="w-[100px]">模块</TableHead>
-                    <TableHead className="w-[120px]">表单类型</TableHead>
-                    <TableHead className="w-[150px]">表单</TableHead>
-                  <TableHead>发起人</TableHead>
-                    <TableHead>审核步骤</TableHead>
-                    <TableHead>审核后处理</TableHead>
-                    <TableHead>结束抄送</TableHead>
-                    <TableHead className="w-[80px]">状态</TableHead>
-                    <TableHead className="w-[70px] text-right">操作</TableHead>
+                  <TableRow className="bg-muted/60 bg-muted/40">
+                    <TableHead className="w-[110px] text-center font-bold">流程编码</TableHead>
+                    <TableHead className="w-[100px] text-center font-bold">模块</TableHead>
+                    <TableHead className="w-[120px] text-center font-bold">表单类型</TableHead>
+                    <TableHead className="w-[150px] text-center font-bold">表单</TableHead>
+                  <TableHead className="text-center font-bold">发起人</TableHead>
+                    <TableHead className="text-center font-bold">审核步骤</TableHead>
+                    <TableHead className="text-center font-bold">审核后处理</TableHead>
+                    <TableHead className="text-center font-bold">结束抄送</TableHead>
+                    <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                    <TableHead className="w-[70px] text-center font-bold">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -624,20 +632,20 @@ export default function WorkflowSettingsPage() {
                     </TableRow>
                   ) : filteredRecords.map((record) => (
                     <TableRow key={record.id}>
-                      <TableCell className="font-mono text-xs">{record.code}</TableCell>
-                      <TableCell>{record.module}</TableCell>
-                      <TableCell>{record.formType}</TableCell>
-                      <TableCell className="font-medium">{record.name}</TableCell>
-                      <TableCell>{renderSelectionPreview(readDisplayList(record.initiators))}</TableCell>
-                      <TableCell>{renderSelectionPreview(readDisplayList(record.approvalSteps))}</TableCell>
-                      <TableCell>{renderSelectionPreview(readDisplayList(record.handlers))}</TableCell>
-                      <TableCell>{renderSelectionPreview(readDisplayList(record.ccRecipients))}</TableCell>
-                      <TableCell>
-                        <Badge variant={record.status === "active" ? "default" : "secondary"}>
+                      <TableCell className="text-center font-mono text-xs">{record.code}</TableCell>
+                      <TableCell className="text-center">{record.module}</TableCell>
+                      <TableCell className="text-center">{record.formType}</TableCell>
+                      <TableCell className="text-center font-medium">{record.name}</TableCell>
+                      <TableCell className="text-center">{renderSelectionPreview(readDisplayList(record.initiators))}</TableCell>
+                      <TableCell className="text-center">{renderSelectionPreview(readDisplayList(record.approvalSteps))}</TableCell>
+                      <TableCell className="text-center">{renderSelectionPreview(readDisplayList(record.handlers))}</TableCell>
+                      <TableCell className="text-center">{renderSelectionPreview(readDisplayList(record.ccRecipients))}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={record.status === "active" ? "default" : "secondary"} className={getStatusSemanticClass(record.status)}>
                           {record.status === "active" ? "启用" : "停用"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="sm">
@@ -788,80 +796,106 @@ export default function WorkflowSettingsPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen} defaultWidth={860} defaultHeight={640}>
-          <DraggableDialogContent>
-            {viewingRecord && (
-              <div className="space-y-5 p-1">
-                <DialogHeader>
-                  <DialogTitle>{viewingRecord.name}</DialogTitle>
-                  <p className="text-sm text-muted-foreground">{viewingRecord.code} · {viewingRecord.module} · {viewingRecord.formType}</p>
-                </DialogHeader>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">发起人</CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex flex-wrap gap-2 pt-0">
-                      {readDisplayList(viewingRecord.initiators).map((item) => (
-                        <Badge key={item} variant="outline">{item}</Badge>
-                      ))}
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">审核步骤</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2 pt-0">
-                      {readDisplayList(viewingRecord.approvalSteps).map((item, index) => (
-                        <div key={`${item}-${index}`} className="flex items-start gap-2 text-sm">
-                          <GitBranch className="mt-0.5 h-4 w-4 text-primary" />
-                          <span>{index + 1}. {item}</span>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">审核后处理</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2 pt-0">
-                      {readDisplayList(viewingRecord.handlers).map((item) => (
-                        <div key={item} className="flex items-start gap-2 text-sm">
-                          <ShieldCheck className="mt-0.5 h-4 w-4 text-primary" />
-                          <span>{item}</span>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">流程结束抄送</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2 pt-0">
-                      {readDisplayList(viewingRecord.ccRecipients).map((item) => (
-                        <div key={item} className="flex items-start gap-2 text-sm">
-                          <Send className="mt-0.5 h-4 w-4 text-primary" />
-                          <span>{item}</span>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
+        {/* 查看详情 */}
+{viewingRecord && (
+  <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+    <DraggableDialogContent>
+      <div className="border-b pb-3">
+        <h2 className="text-lg font-semibold">{viewingRecord.name}</h2>
+        <p className="text-sm text-muted-foreground">
+          {viewingRecord.code}
+          {viewingRecord.status && (
+            <>
+              {' '}
+              ·{' '}
+              <Badge
+                variant={viewingRecord.status === 'active' ? 'default' : 'secondary'}
+                className={`ml-1 ${getStatusSemanticClass(viewingRecord.status)}`}
+              >
+                {viewingRecord.status === 'active' ? '启用' : '停用'}
+              </Badge>
+            </>
+          )}
+        </p>
+      </div>
+              <div className="space-y-6 py-4">
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">流程基础信息</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="所属模块">{viewingRecord.module}</FieldRow>
+            </div>
+            <div>
+              <FieldRow label="表单类型">{viewingRecord.formType}</FieldRow>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">人员配置</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="发起人">
+                <div className="flex flex-wrap gap-1.5 justify-end">
+                  {readDisplayList(viewingRecord.initiators).map((item) => (
+                    <Badge key={item} variant="outline" className="font-normal">
+                      {item}
+                    </Badge>
+                  ))}
                 </div>
-                <Card className="border-dashed border-primary/30 bg-primary/5">
-                  <CardContent className="space-y-2 pt-6">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={viewingRecord.status === "active" ? "default" : "secondary"}>
-                        {viewingRecord.status === "active" ? "启用" : "停用"}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">更新时间：{formatDate(viewingRecord.updatedAt)}</span>
+              </FieldRow>
+              <FieldRow label="审核后处理">
+                <div className="flex flex-wrap gap-1.5 justify-end">
+                  {readDisplayList(viewingRecord.handlers).map((item) => (
+                    <Badge key={item} variant="outline" className="font-normal">
+                      {item}
+                    </Badge>
+                  ))}
+                </div>
+              </FieldRow>
+              <FieldRow label="结束抄送">
+                <div className="flex flex-wrap gap-1.5 justify-end">
+                  {readDisplayList(viewingRecord.ccRecipients).map((item) => (
+                    <Badge key={item} variant="outline" className="font-normal">
+                      {item}
+                    </Badge>
+                  ))}
+                </div>
+              </FieldRow>
+            </div>
+            <div>
+              <FieldRow label="审核步骤">
+                <div className="space-y-2 text-right">
+                  {readDisplayList(viewingRecord.approvalSteps).map((item, index) => (
+                    <div key={`${item}-${index}`} className="flex items-center justify-end gap-2 text-sm">
+                      <span>{index + 1}. {item}</span>
+                      <GitBranch className="h-4 w-4 text-primary shrink-0" />
                     </div>
-                    <p className="text-sm text-slate-600">{WORKFLOW_RULE_NOTE}</p>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-          </DraggableDialogContent>
-        </DraggableDialog>
+                  ))}
+                </div>
+              </FieldRow>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+          <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{WORKFLOW_RULE_NOTE}</p>
+        </div>
+      </div>
+
+      <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+        <div className="flex gap-2 flex-wrap">
+          <span className="text-xs text-muted-foreground">更新于: {formatDate(viewingRecord.updatedAt)}</span>
+        </div>
+        <div className="flex gap-2 flex-wrap justify-end">
+          <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+          <Button variant="outline" size="sm" onClick={() => handleEdit(viewingRecord)} disabled={!isAdmin}>编辑</Button>
+        </div>
+      </div>
+    </DraggableDialogContent>
+  </DraggableDialog>
+)}
       </div>
     </ERPLayout>
   );

@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -202,6 +203,19 @@ export default function LabPage() {
   const testingCount = records.filter((r: any) => r.status === "testing").length;
   const failedCount = records.filter((r: any) => r.status === "failed").length;
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -283,32 +297,32 @@ export default function LabPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[130px]">记录编号</TableHead>
-                  <TableHead className="w-[100px]">检验类型</TableHead>
-                  <TableHead>检验项目</TableHead>
-                  <TableHead className="w-[100px]">检验结论</TableHead>
-                  <TableHead className="w-[90px]">检验员</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[100px]">检验日期</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[130px] text-center font-bold">记录编号</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">检验类型</TableHead>
+                  <TableHead className="text-center font-bold">检验项目</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">检验结论</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">检验员</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">检验日期</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRecords.map((record: any) => (
                   <TableRow key={record.id}>
-                    <TableCell className="font-medium">{record.recordNo}</TableCell>
-                    <TableCell>{record.type}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{record.testItem}</TableCell>
-                    <TableCell>{record.conclusion || "-"}</TableCell>
-                    <TableCell>{record.tester}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[record.status]?.variant || "outline"}>
+                    <TableCell className="text-center font-medium">{record.recordNo}</TableCell>
+                    <TableCell className="text-center">{record.type}</TableCell>
+                    <TableCell className="text-center max-w-[200px] truncate">{record.testItem}</TableCell>
+                    <TableCell className="text-center">{record.conclusion || "-"}</TableCell>
+                    <TableCell className="text-center">{record.tester}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[record.status]?.variant || "outline"} className={getStatusSemanticClass(record.status, statusMap[record.status]?.label)}>
                         {statusMap[record.status]?.label || String(record.status ?? "-")}
                       </Badge>
                     </TableCell>
-                    <TableCell>{formatDateValue(record.testDate)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{formatDateValue(record.testDate)}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -515,87 +529,114 @@ export default function LabPage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>检验记录详情</DialogTitle>
-              <DialogDescription>{viewingRecord?.recordNo}</DialogDescription>
-            </DialogHeader>
-            {viewingRecord && (
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingRecord && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold">{viewingRecord.type}</h3>
-                    <p className="text-sm text-muted-foreground">{viewingRecord.testItem}</p>
-                  </div>
-                  <Badge variant={statusMap[viewingRecord.status]?.variant || "outline"}>
-                    {statusMap[viewingRecord.status]?.label || String(viewingRecord.status ?? "-")}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">检验标准</p>
-                    <p className="font-medium">{viewingRecord.standard || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">检验设备</p>
-                    <p className="font-medium">{viewingRecord.equipment || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">样品信息</p>
-                    <p className="font-medium">{viewingRecord.sampleInfo || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">检验日期</p>
-                    <p className="font-medium">{formatDateValue(viewingRecord.testDate)}</p>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">检验结果</p>
-                  <p className="text-sm bg-muted/30 p-3 rounded">{viewingRecord.result || "-"}</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">检验结论</p>
-                    <p className="font-medium">{viewingRecord.conclusion || "-"}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">检验员</p>
-                    <p className="font-medium">{viewingRecord.tester}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">复核人</p>
-                    <p className="font-medium">{viewingRecord.reviewer || "-"}</p>
-                  </div>
-                </div>
-
-                {viewingRecord.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingRecord.remarks}</p>
-                  </div>
-                )}
-              </div>
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">检验记录详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingRecord.recordNo}
+            {viewingRecord.status && (
+              <>
+                {" "}
+                ·{" "}
+                <Badge
+                  variant={statusMap[viewingRecord.status]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(
+                    viewingRecord.status,
+                    statusMap[viewingRecord.status]?.label
+                  )}`}
+                >
+                  {statusMap[viewingRecord.status]?.label || String(viewingRecord.status ?? "-")}
+                </Badge>
+              </>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+              基本信息
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="检验类型">{viewingRecord.type}</FieldRow>
+                <FieldRow label="检验项目">{viewingRecord.testItem}</FieldRow>
+                <FieldRow label="检验标准">{viewingRecord.standard || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="检验设备">{viewingRecord.equipment || "-"}</FieldRow>
+                <FieldRow label="样品信息">{viewingRecord.sampleInfo || "-"}</FieldRow>
+                <FieldRow label="检验日期">{formatDateValue(viewingRecord.testDate)}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+              结果与结论
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="检验结论">{viewingRecord.conclusion || "-"}</FieldRow>
+              </div>
+            </div>
+            <div>
+                <p className="text-sm text-muted-foreground mb-1 mt-2">检验结果</p>
+                <p className="text-sm bg-muted/30 p-3 rounded">{viewingRecord.result || "-"}</p>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+              人员信息
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="检验员">{viewingRecord.tester}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="复核人">{viewingRecord.reviewer || "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {viewingRecord.remarks && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+                备注
+              </h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">
+                {viewingRecord.remarks}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>
+              关闭
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
                 setViewDialogOpen(false);
                 if (viewingRecord) handleEdit(viewingRecord);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+              }}
+            >
+              编辑
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

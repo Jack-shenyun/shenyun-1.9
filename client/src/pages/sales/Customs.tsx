@@ -343,6 +343,19 @@ export default function CustomsPage() {
   const pendingCount = records.filter((r: any) => r.status === "submitted").length;
   const totalAmount = records.reduce((sum: any, r: any) => sum + r.amount, 0);
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -724,120 +737,139 @@ export default function CustomsPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>报关详情</DialogTitle>
-              <DialogDescription>{viewingRecord?.declarationNo}</DialogDescription>
-            </DialogHeader>
-            {viewingRecord && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Ship className="h-8 w-8 text-primary" />
-                    <div>
-                      <h3 className="font-semibold">{viewingRecord.customerName}</h3>
-                      <p className="text-sm text-muted-foreground">{viewingRecord.destination}</p>
-                    </div>
-                  </div>
-                  <Badge
-                    variant={statusMap[viewingRecord.status]?.variant || "outline"}
-                    className={getStatusSemanticClass(viewingRecord.status, statusMap[viewingRecord.status]?.label)}
-                  >
-                    {statusMap[viewingRecord.status]?.label || String(viewingRecord.status ?? "-")}
-                  </Badge>
-                </div>
+        {
+  /* 查看详情对话框 */
+}
+{viewingRecord && (
+  <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+    <DraggableDialogContent>
+      <div className="border-b pb-3">
+        <h2 className="text-lg font-semibold">报关详情</h2>
+        <p className="text-sm text-muted-foreground">
+          {viewingRecord.declarationNo}
+          {viewingRecord.status && (
+            <>
+              {" "}
+              ·{" "}
+              <Badge
+                variant={statusMap[viewingRecord.status]?.variant || "outline"}
+                className={`ml-1 ${getStatusSemanticClass(
+                  viewingRecord.status,
+                  statusMap[viewingRecord.status]?.label
+                )}`}
+              >
+                {statusMap[viewingRecord.status]?.label ||
+                  String(viewingRecord.status ?? "-")}
+              </Badge>
+            </>
+          )}
+        </p>
+      </div>
 
-                <div className="text-sm font-medium">基本信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">报关单号</p>
-                    <p className="font-medium">{viewingRecord.declarationNo}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">关联订单</p>
-                    <p className="font-medium">{viewingRecord.orderNo}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">报关金额</p>
-                    <p className="font-medium">{formatAmount(viewingRecord.currency, viewingRecord.amount)}</p>
-                  </div>
-                </div>
+      <div className="space-y-6 py-4">
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+            基本信息
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="客户名称">{viewingRecord.customerName}</FieldRow>
+              <FieldRow label="关联订单">{viewingRecord.orderNo}</FieldRow>
+              <FieldRow label="目的地">{viewingRecord.destination}</FieldRow>
+            </div>
+            <div>
+              <FieldRow label="报关金额">
+                {formatAmount(viewingRecord.currency, viewingRecord.amount)}
+              </FieldRow>
+              <FieldRow label="报关日期">
+                {formatDateValue(viewingRecord.declarationDate)}
+              </FieldRow>
+            </div>
+          </div>
+        </div>
 
-                <div className="text-sm font-medium">产品信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div className="md:col-span-2">
-                    <p className="text-muted-foreground">产品名称</p>
-                    <p className="font-medium">{viewingRecord.productName || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">数量</p>
-                    <p className="font-medium">{viewingRecord.quantity} {viewingRecord.unit}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">HS编码</p>
-                    <p className="font-medium">{viewingRecord.hsCode || "-"}</p>
-                  </div>
-                </div>
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+            产品信息
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="产品名称">
+                {viewingRecord.productName || "-"}
+              </FieldRow>
+            </div>
+            <div>
+              <FieldRow label="数量">
+                {viewingRecord.quantity} {viewingRecord.unit}
+              </FieldRow>
+              <FieldRow label="HS编码">{viewingRecord.hsCode || "-"}</FieldRow>
+            </div>
+          </div>
+        </div>
 
-                <div className="text-sm font-medium">物流信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">运输方式</p>
-                    <p className="font-medium">{viewingRecord.shippingMethod}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">起运港</p>
-                    <p className="font-medium">{viewingRecord.portOfLoading || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">目的港</p>
-                    <p className="font-medium">{viewingRecord.portOfDischarge || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">运单号</p>
-                    <p className="font-medium">{viewingRecord.trackingNo || "-"}</p>
-                  </div>
-                </div>
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+            物流信息
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="运输方式">{viewingRecord.shippingMethod}</FieldRow>
+              <FieldRow label="起运港">
+                {viewingRecord.portOfLoading || "-"}
+              </FieldRow>
+              <FieldRow label="目的港">
+                {viewingRecord.portOfDischarge || "-"}
+              </FieldRow>
+            </div>
+            <div>
+              <FieldRow label="运单号">{viewingRecord.trackingNo || "-"}</FieldRow>
+              <FieldRow label="通关日期">
+                {formatDateValue(viewingRecord.clearanceDate)}
+              </FieldRow>
+              <FieldRow label="发运日期">
+                {formatDateValue(viewingRecord.shippingDate)}
+              </FieldRow>
+            </div>
+          </div>
+        </div>
 
-                <div className="text-sm font-medium">时间节点</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">报关日期</p>
-                    <p className="font-medium">{formatDateValue(viewingRecord.declarationDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">通关日期</p>
-                    <p className="font-medium">{formatDateValue(viewingRecord.clearanceDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">发运日期</p>
-                    <p className="font-medium">{formatDateValue(viewingRecord.shippingDate)}</p>
-                  </div>
-                </div>
+        {viewingRecord.remarks && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+              备注
+            </h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">
+              {viewingRecord.remarks}
+            </p>
+          </div>
+        )}
+      </div>
 
-                {viewingRecord.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingRecord.remarks}</p>
-                  </div>
-                )}
-              </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingRecord) handleEdit(viewingRecord);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+      <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+        <div className="flex gap-2 flex-wrap">{/* 左侧功能按钮 */}</div>
+        <div className="flex gap-2 flex-wrap justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setViewDialogOpen(false)}
+          >
+            关闭
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setViewDialogOpen(false);
+              if (viewingRecord) handleEdit(viewingRecord);
+            }}
+          >
+            编辑
+          </Button>
+        </div>
+      </div>
+    </DraggableDialogContent>
+  </DraggableDialog>
+)}
       </div>
     </ERPLayout>
   );

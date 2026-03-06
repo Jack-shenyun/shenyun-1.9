@@ -472,12 +472,12 @@ function Level3MaterialDialog({
               <div className="max-h-40 overflow-y-auto border rounded-md">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">编码</TableHead>
-                      <TableHead className="text-xs">名称</TableHead>
-                      <TableHead className="text-xs">规格</TableHead>
-                      <TableHead className="text-xs">单位</TableHead>
-                      <TableHead className="text-xs text-right">操作</TableHead>
+                    <TableRow className="bg-muted/60">
+                      <TableHead className="text-center font-bold">编码</TableHead>
+                      <TableHead className="text-center font-bold">名称</TableHead>
+                      <TableHead className="text-center font-bold">规格</TableHead>
+                      <TableHead className="text-center font-bold">单位</TableHead>
+                      <TableHead className="text-center font-bold">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -490,11 +490,11 @@ function Level3MaterialDialog({
                     ) : (
                       filteredProducts.slice(0, 20).map((p: any) => (
                         <TableRow key={p.id} className="hover:bg-muted/30">
-                          <TableCell className="text-xs font-mono">{p.code}</TableCell>
-                          <TableCell className="text-xs">{p.name}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{p.specification || "-"}</TableCell>
-                          <TableCell className="text-xs">{p.unit || "-"}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-center text-xs font-mono">{p.code}</TableCell>
+                          <TableCell className="text-center text-xs">{p.name}</TableCell>
+                          <TableCell className="text-center text-xs text-muted-foreground">{p.specification || "-"}</TableCell>
+                          <TableCell className="text-center text-xs">{p.unit || "-"}</TableCell>
+                          <TableCell className="text-center">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -897,13 +897,13 @@ function CreateBOMDialog({
               <div className="max-h-48 overflow-y-auto border rounded-md mb-4">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-xs">编码</TableHead>
-                      <TableHead className="text-xs">名称</TableHead>
-                      <TableHead className="text-xs">规格</TableHead>
-                      <TableHead className="text-xs">单位</TableHead>
-                      <TableHead className="text-xs">分类</TableHead>
-                      <TableHead className="text-xs text-right">操作</TableHead>
+                    <TableRow className="bg-muted/60">
+                      <TableHead className="text-center font-bold">编码</TableHead>
+                      <TableHead className="text-center font-bold">名称</TableHead>
+                      <TableHead className="text-center font-bold">规格</TableHead>
+                      <TableHead className="text-center font-bold">单位</TableHead>
+                      <TableHead className="text-center font-bold">分类</TableHead>
+                      <TableHead className="text-center font-bold">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -916,14 +916,14 @@ function CreateBOMDialog({
                     ) : (
                       filteredSemiProducts.slice(0, 30).map((p: any) => (
                         <TableRow key={p.id} className="hover:bg-muted/30">
-                          <TableCell className="text-xs font-mono">{p.code}</TableCell>
-                          <TableCell className="text-xs">{p.name}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{p.specification || "-"}</TableCell>
-                          <TableCell className="text-xs">{p.unit || "-"}</TableCell>
-                          <TableCell className="text-xs">
+                          <TableCell className="text-center text-xs font-mono">{p.code}</TableCell>
+                          <TableCell className="text-center text-xs">{p.name}</TableCell>
+                          <TableCell className="text-center text-xs text-muted-foreground">{p.specification || "-"}</TableCell>
+                          <TableCell className="text-center text-xs">{p.unit || "-"}</TableCell>
+                          <TableCell className="text-center text-xs">
                             <Badge variant="outline" className="text-xs">{productCategoryLabels[p.productCategory] || "-"}</Badge>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-center">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -955,16 +955,16 @@ function CreateBOMDialog({
                   <div className="border rounded-lg overflow-hidden">
                     <Table>
                       <TableHeader>
-                        <TableRow className="bg-muted/30">
-                          <TableHead className="text-xs">物料编码</TableHead>
-                          <TableHead className="text-xs">物料名称</TableHead>
-                          <TableHead className="text-xs">规格</TableHead>
-                          <TableHead className="text-xs w-20">用量</TableHead>
-                          <TableHead className="text-xs w-16">单位</TableHead>
-                          <TableHead className="text-xs w-24">单价(元)</TableHead>
-                          <TableHead className="text-xs w-20 text-right">小计</TableHead>
-                          <TableHead className="text-xs w-16 text-center">三级</TableHead>
-                          <TableHead className="text-xs w-16 text-right">操作</TableHead>
+                        <TableRow className="bg-muted/60 bg-muted/30">
+                          <TableHead className="text-center font-bold">物料编码</TableHead>
+                          <TableHead className="text-center font-bold">物料名称</TableHead>
+                          <TableHead className="text-center font-bold">规格</TableHead>
+                          <TableHead className="w-20 text-center font-bold">用量</TableHead>
+                          <TableHead className="w-16 text-center font-bold">单位</TableHead>
+                          <TableHead className="w-24 text-center font-bold">单价(元)</TableHead>
+                          <TableHead className="w-20 text-center font-bold">小计</TableHead>
+                          <TableHead className="w-16 text-center font-bold">三级</TableHead>
+                          <TableHead className="w-16 text-center font-bold">操作</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -974,25 +974,25 @@ function CreateBOMDialog({
                           const childCost = item.children.reduce((s, c) => s + calcSubtotal(c.quantity, c.unitPrice), 0);
                           return (
                             <TableRow key={item.tempId} className="hover:bg-muted/20">
-                              <TableCell className="text-xs font-mono">{item.materialCode}</TableCell>
-                              <TableCell className="text-xs font-medium">{item.materialName}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground">{item.specification || "-"}</TableCell>
-                              <TableCell>
+                              <TableCell className="text-center text-xs font-mono">{item.materialCode}</TableCell>
+                              <TableCell className="text-center text-xs font-medium">{item.materialName}</TableCell>
+                              <TableCell className="text-center text-xs text-muted-foreground">{item.specification || "-"}</TableCell>
+                              <TableCell className="text-center">
                                 <Input
                                   className="h-7 text-xs"
                                   value={item.quantity}
                                   onChange={(e) => updateLevel2(item.tempId, "quantity", e.target.value)}
                                 />
                               </TableCell>
-                              <TableCell className="text-xs">{item.unit}</TableCell>
-                              <TableCell>
+                              <TableCell className="text-center text-xs">{item.unit}</TableCell>
+                              <TableCell className="text-center">
                                 <Input
                                   className="h-7 text-xs"
                                   value={item.unitPrice}
                                   onChange={(e) => updateLevel2(item.tempId, "unitPrice", e.target.value)}
                                 />
                               </TableCell>
-                              <TableCell className="text-xs text-right font-medium text-red-600">¥{subtotal.toFixed(2)}</TableCell>
+                              <TableCell className="text-xs text-center font-medium text-red-600">¥{subtotal.toFixed(2)}</TableCell>
                               <TableCell className="text-center">
                                 <Button
                                   variant="outline"
@@ -1007,7 +1007,7 @@ function CreateBOMDialog({
                                   )}
                                 </Button>
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="text-center">
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -1171,16 +1171,16 @@ export default function BOMPage() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>产品编码</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead>产品规格</TableHead>
-                  <TableHead>BOM版本</TableHead>
-                  <TableHead>物料数量</TableHead>
-                  <TableHead>材料成本</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>更新时间</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">产品编码</TableHead>
+                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="text-center font-bold">产品规格</TableHead>
+                  <TableHead className="text-center font-bold">BOM版本</TableHead>
+                  <TableHead className="text-center font-bold">物料数量</TableHead>
+                  <TableHead className="text-center font-bold">材料成本</TableHead>
+                  <TableHead className="text-center font-bold">状态</TableHead>
+                  <TableHead className="text-center font-bold">更新时间</TableHead>
+                  <TableHead className="text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1202,25 +1202,25 @@ export default function BOMPage() {
                     const cost = Number(record.totalCost) || 0;
                     return (
                       <TableRow key={`${record.productId}-${record.version}`} className="hover:bg-muted/30">
-                        <TableCell className="font-mono text-sm">{record.productCode || "-"}</TableCell>
-                        <TableCell className="font-medium">{record.productName || "未知产品"}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{record.productSpec || "-"}</TableCell>
-                        <TableCell>
+                        <TableCell className="text-center font-mono text-sm">{record.productCode || "-"}</TableCell>
+                        <TableCell className="text-center font-medium">{record.productName || "未知产品"}</TableCell>
+                        <TableCell className="text-center text-sm text-muted-foreground">{record.productSpec || "-"}</TableCell>
+                        <TableCell className="text-center">
                           <Badge variant="outline">{record.version || "-"}</Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Badge variant="secondary">{record.itemCount} 项</Badge>
                         </TableCell>
-                        <TableCell className="font-medium text-red-600">
+                        <TableCell className="text-center font-medium text-red-600">
                           {cost > 0 ? `¥${cost.toFixed(2)}` : "-"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Badge variant={allActive ? "default" : "outline"} className={allActive ? "text-green-600" : ""}>
                             {allActive ? "生效" : "部分生效"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm">{formatDateValue(record.updatedAt)}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-center text-sm">{formatDateValue(record.updatedAt)}</TableCell>
+                        <TableCell className="text-center">
                           <div className="flex items-center justify-end gap-1">
                             <Button variant="ghost" size="icon" onClick={() => handleView(record)} title="查看BOM结构">
                               <Eye className="h-4 w-4" />

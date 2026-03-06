@@ -46,6 +46,7 @@ import {
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 
 const statusMap: Record<string, any> = {
   qualified: { label: "正常", variant: "default" as const },
@@ -151,6 +152,13 @@ export default function InventoryPage() {
   const filteredProducts = (products || []).filter((p: any) => {
     const kw = materialSearch.trim().toLowerCase();
     if (!kw) return true;
+    const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+      <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+        <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+        <span className="flex-1 text-sm text-right break-all">{children}</span>
+      </div>
+    );
+
     return (
       String(p.code || "").toLowerCase().includes(kw) ||
       String(p.name || "").toLowerCase().includes(kw) ||
@@ -397,21 +405,21 @@ export default function InventoryPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>物料编码</TableHead>
-                  <TableHead>物料名称</TableHead>
-                  <TableHead>批次号</TableHead>
-                  <TableHead>仓库</TableHead>
-                  <TableHead>库位</TableHead>
-                  <TableHead className="text-right">
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">物料编码</TableHead>
+                  <TableHead className="text-center font-bold">物料名称</TableHead>
+                  <TableHead className="text-center font-bold">批次号</TableHead>
+                  <TableHead className="text-center font-bold">仓库</TableHead>
+                  <TableHead className="text-center font-bold">库位</TableHead>
+                  <TableHead className="text-center font-bold">
                     <div className="flex items-center justify-end gap-1">
                       库存数量 <ArrowUpDown className="h-3 w-3" />
                     </div>
                   </TableHead>
-                  <TableHead>安全库存</TableHead>
-                  <TableHead>有效期</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                  <TableHead className="text-center font-bold">安全库存</TableHead>
+                  <TableHead className="text-center font-bold">有效期</TableHead>
+                  <TableHead className="text-center font-bold">状态</TableHead>
+                  <TableHead className="text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -428,12 +436,12 @@ export default function InventoryPage() {
                     const displayStatus = calcDisplayStatus(qty, safetyQty);
                     return (
                       <TableRow key={item.id}>
-                        <TableCell className="font-mono text-sm">{item.materialCode || "-"}</TableCell>
-                        <TableCell className="font-medium">{item.itemName}</TableCell>
-                        <TableCell className="text-sm">{item.batchNo || "-"}</TableCell>
-                        <TableCell className="text-sm">{getWarehouseName(item.warehouseId)}</TableCell>
-                        <TableCell className="text-sm">{item.location || "-"}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-center font-mono text-sm">{item.materialCode || "-"}</TableCell>
+                        <TableCell className="text-center font-medium">{item.itemName}</TableCell>
+                        <TableCell className="text-center text-sm">{item.batchNo || "-"}</TableCell>
+                        <TableCell className="text-center text-sm">{getWarehouseName(item.warehouseId)}</TableCell>
+                        <TableCell className="text-center text-sm">{item.location || "-"}</TableCell>
+                        <TableCell className="text-center">
                           <div className="flex flex-col items-end gap-1">
                             <span className={`font-medium ${displayStatus === "warning" ? "text-red-600" : displayStatus === "low" ? "text-amber-600" : ""}`}>
                               {qty?.toLocaleString?.() ?? "0"} {item.unit || ""}
@@ -446,18 +454,18 @@ export default function InventoryPage() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-center text-sm text-muted-foreground">
                           {safetyQty > 0 ? `${safetyQty?.toLocaleString?.() ?? "0"} ${item.unit || ""}` : "-"}
                         </TableCell>
-                        <TableCell className="text-sm">
+                        <TableCell className="text-center text-sm">
                           {item.expiryDate ? String(item.expiryDate).split("T")[0] : "-"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Badge variant={statusMap[item.status as keyof typeof statusMap]?.variant || "outline"}>
                             {statusMap[item.status as keyof typeof statusMap]?.label || item.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-center">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -658,14 +666,14 @@ export default function InventoryPage() {
               <div className="max-h-[420px] overflow-auto border rounded-md">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[120px]">物料编码</TableHead>
-                      <TableHead>物料名称</TableHead>
-                      <TableHead className="w-[180px]">规格</TableHead>
-                      <TableHead className="w-[90px]">单位</TableHead>
-                      <TableHead className="w-[90px]">医疗器械</TableHead>
-                      <TableHead className="w-[90px]">是否灭菌</TableHead>
-                      <TableHead className="w-[90px] text-right">操作</TableHead>
+                    <TableRow className="bg-muted/60">
+                      <TableHead className="w-[120px] text-center font-bold">物料编码</TableHead>
+                      <TableHead className="text-center font-bold">物料名称</TableHead>
+                      <TableHead className="w-[180px] text-center font-bold">规格</TableHead>
+                      <TableHead className="w-[90px] text-center font-bold">单位</TableHead>
+                      <TableHead className="w-[90px] text-center font-bold">医疗器械</TableHead>
+                      <TableHead className="w-[90px] text-center font-bold">是否灭菌</TableHead>
+                      <TableHead className="w-[90px] text-center font-bold">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -678,21 +686,21 @@ export default function InventoryPage() {
                     ) : (
                       filteredProducts.map((p: any) => (
                         <TableRow key={p.id}>
-                          <TableCell className="font-mono text-xs">{p.code || "-"}</TableCell>
-                          <TableCell className="font-medium">{p.name || "-"}</TableCell>
-                          <TableCell>{p.specification || "-"}</TableCell>
-                          <TableCell>{p.unit || "-"}</TableCell>
-                          <TableCell>
+                          <TableCell className="text-center font-mono text-xs">{p.code || "-"}</TableCell>
+                          <TableCell className="text-center font-medium">{p.name || "-"}</TableCell>
+                          <TableCell className="text-center">{p.specification || "-"}</TableCell>
+                          <TableCell className="text-center">{p.unit || "-"}</TableCell>
+                          <TableCell className="text-center">
                             <Badge variant={p.isMedicalDevice ? "default" : "secondary"}>
                               {p.isMedicalDevice ? "是" : "否"}
                             </Badge>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-center">
                             <Badge variant={p.isSterilized ? "default" : "secondary"}>
                               {p.isSterilized ? "是" : "否"}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-center">
                             <Button size="sm" onClick={() => pickProduct(p)}>
                               <Check className="h-3.5 w-3.5 mr-1" />
                               选择
@@ -786,75 +794,82 @@ export default function InventoryPage() {
         {/* 查看详情对话框 */}
         <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
           <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>库存详情</DialogTitle>
-              <DialogDescription>{viewingItem?.materialCode}</DialogDescription>
-            </DialogHeader>
             {viewingItem && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold">{viewingItem.itemName}</h3>
-                    <p className="text-sm text-muted-foreground">{viewingItem.batchNo || "无批次号"}</p>
-                  </div>
-                  <Badge variant={statusMap[viewingItem.status as keyof typeof statusMap]?.variant || "outline"}>
-                    {statusMap[viewingItem.status as keyof typeof statusMap]?.label || viewingItem.status}
-                  </Badge>
+              <div className="space-y-6">
+                {/* 标准头部 */}
+                <div className="border-b pb-3">
+                  <h2 className="text-lg font-semibold">库存详情</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {viewingItem.materialCode}
+                    {viewingItem.status && (
+                      <> · <Badge variant={statusMap[viewingItem.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingItem.status, statusMap[viewingItem.status]?.label)}`}>
+                        {statusMap[viewingItem.status]?.label || String(viewingItem.status ?? "-")}
+                      </Badge></>
+                    )}
+                  </p>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm">
-                    <span>当前库存</span>
-                    <span className="font-medium">
-                      {parseFloat(String(viewingItem.quantity || 0))?.toLocaleString?.() ?? "0"} {viewingItem.unit}
-                    </span>
+                {/* 基本信息分区 */}
+                <div>
+                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                    <div>
+                      <FieldRow label="物料名称">{viewingItem.itemName}</FieldRow>
+                      <FieldRow label="物料编码">{viewingItem.materialCode || "-"}</FieldRow>
+                      <FieldRow label="批次号">{viewingItem.batchNo || "-"}</FieldRow>
+                      <FieldRow label="有效期">{viewingItem.expiryDate ? String(viewingItem.expiryDate).split("T")[0] : "-"}</FieldRow>
+                    </div>
+                    <div>
+                      <FieldRow label="仓库">{getWarehouseName(viewingItem.warehouseId)}</FieldRow>
+                      <FieldRow label="库位">{viewingItem.location || "-"}</FieldRow>
+                      <FieldRow label="单位">{viewingItem.unit || "-"}</FieldRow>
+                    </div>
                   </div>
-                  {viewingItem.safetyStock && parseFloat(String(viewingItem.safetyStock)) > 0 && (
-                    <>
-                      <Progress
-                        value={Math.min((parseFloat(String(viewingItem.quantity)) / parseFloat(String(viewingItem.safetyStock))) * 100, 100)}
-                        className="h-2"
-                      />
-                      <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>安全库存: {parseFloat(String(viewingItem.safetyStock))?.toLocaleString?.() ?? "0"}</span>
-                      </div>
-                    </>
-                  )}
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">仓库</p>
-                    <p className="font-medium">{getWarehouseName(viewingItem.warehouseId)}</p>
+                {/* 库存水平分区 */}
+                <div>
+                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">库存水平</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">当前库存</span>
+                      <span className="font-medium">
+                        {parseFloat(String(viewingItem.quantity || 0))?.toLocaleString?.() ?? "0"} {viewingItem.unit}
+                      </span>
+                    </div>
+                    {viewingItem.safetyStock && parseFloat(String(viewingItem.safetyStock)) > 0 && (
+                      <>
+                        <Progress
+                          value={Math.min((parseFloat(String(viewingItem.quantity)) / parseFloat(String(viewingItem.safetyStock))) * 100, 100)}
+                          className="h-2"
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>安全库存: {parseFloat(String(viewingItem.safetyStock))?.toLocaleString?.() ?? "0"}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <div>
-                    <p className="text-muted-foreground">库位</p>
-                    <p className="font-medium">{viewingItem.location || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">有效期</p>
-                    <p className="font-medium">{viewingItem.expiryDate ? String(viewingItem.expiryDate).split("T")[0] : "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">物料编码</p>
-                    <p className="font-medium font-mono">{viewingItem.materialCode || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">批次号</p>
-                    <p className="font-medium">{viewingItem.batchNo || "-"}</p>
+                </div>
+
+                {/* 标准操作按钮 */}
+                <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+                  <div className="flex gap-2 flex-wrap"></div>
+                  <div className="flex gap-2 flex-wrap justify-end">
+                    <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+                    <Button variant="outline" size="sm" onClick={() => {
+                      setViewDialogOpen(false);
+                      handleEdit(viewingItem);
+                    }}>编辑</Button>
+                    <Button size="sm" onClick={() => {
+                      setViewDialogOpen(false);
+                      handleAdjust(viewingItem);
+                    }}>
+                      库存调整
+                    </Button>
                   </div>
                 </div>
               </div>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingItem) handleAdjust(viewingItem);
-              }}>
-                库存调整
-              </Button>
-            </DialogFooter>
           </DraggableDialogContent>
         </DraggableDialog>
       </div>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -211,6 +212,12 @@ export default function PayablePage() {
   const overdueAmount = payables
     .filter((p: any) => p.status === "overdue")
     .reduce((sum: any, p: any) => sum + (toSafeNumber(p.amount) - toSafeNumber(p.paidAmount)), 0);
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -294,32 +301,32 @@ export default function PayablePage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[130px]">发票号</TableHead>
-                  <TableHead>供应商名称</TableHead>
-                  <TableHead className="w-[130px]">采购单号</TableHead>
-                  <TableHead className="w-[110px] text-right">应付金额</TableHead>
-                  <TableHead className="w-[110px] text-right">已付金额</TableHead>
-                  <TableHead className="w-[100px]">到期日</TableHead>
-                  <TableHead className="w-[90px]">状态</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[130px] text-center font-bold">发票号</TableHead>
+                  <TableHead className="text-center font-bold">供应商名称</TableHead>
+                  <TableHead className="w-[130px] text-center font-bold">采购单号</TableHead>
+                  <TableHead className="w-[110px] text-center font-bold">应付金额</TableHead>
+                  <TableHead className="w-[110px] text-center font-bold">已付金额</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">到期日</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredPayables.map((payable: any) => (
                   <TableRow key={payable.id}>
-                    <TableCell className="font-medium">{payable.invoiceNo}</TableCell>
-                    <TableCell>{payable.supplierName}</TableCell>
-                    <TableCell>{payable.orderNo}</TableCell>
-                    <TableCell className="text-right">¥{formatNumber(payable.amount)}</TableCell>
-                    <TableCell className="text-right">¥{formatNumber(payable.paidAmount)}</TableCell>
-                    <TableCell>{formatDateValue(payable.dueDate)}</TableCell>
-                    <TableCell>
-                      <Badge variant={getStatusMeta(payable.status).variant}>
+                    <TableCell className="text-center font-medium">{payable.invoiceNo}</TableCell>
+                    <TableCell className="text-center">{payable.supplierName}</TableCell>
+                    <TableCell className="text-center">{payable.orderNo}</TableCell>
+                    <TableCell className="text-center">¥{formatNumber(payable.amount)}</TableCell>
+                    <TableCell className="text-center">¥{formatNumber(payable.paidAmount)}</TableCell>
+                    <TableCell className="text-center">{formatDateValue(payable.dueDate)}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={getStatusMeta(payable.status).variant} className={getStatusSemanticClass(payable.status, getStatusMeta(payable.status).label)}>
                         {getStatusMeta(payable.status).label}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -525,77 +532,80 @@ export default function PayablePage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>应付详情</DialogTitle>
-              <DialogDescription>{viewingPayable?.invoiceNo}</DialogDescription>
-            </DialogHeader>
-            {viewingPayable && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold">{viewingPayable.supplierName}</h3>
-                    <p className="text-sm text-muted-foreground">采购单号: {viewingPayable.orderNo}</p>
-                  </div>
-                  <Badge variant={getStatusMeta(viewingPayable.status).variant}>
-                    {getStatusMeta(viewingPayable.status).label}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">应付金额</p>
-                    <p className="font-medium text-lg">¥{formatNumber(viewingPayable.amount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">已付金额</p>
-                    <p className="font-medium text-lg text-green-600">¥{formatNumber(viewingPayable.paidAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">到期日</p>
-                    <p className="font-medium">{formatDateValue(viewingPayable.dueDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">付款方式</p>
-                    <p className="font-medium">{viewingPayable.paymentMethod || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">最近付款日期</p>
-                    <p className="font-medium">{formatDateValue(viewingPayable.paymentDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">待付金额</p>
-                    <p className="font-medium text-amber-600">
-                      ¥{formatNumber(toSafeNumber(viewingPayable.amount) - toSafeNumber(viewingPayable.paidAmount))}
-                    </p>
-                  </div>
-                </div>
-
-                {viewingPayable.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingPayable.remarks}</p>
-                  </div>
-                )}
-              </div>
+{/* 查看详情对话框 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingPayable && (
+      <>
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">应付详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingPayable.invoiceNo}
+            {viewingPayable.status && (
+              <> · <Badge variant={statusMap[viewingPayable.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingPayable.status, statusMap[viewingPayable.status]?.label)}`}>
+                {statusMap[viewingPayable.status]?.label || String(viewingPayable.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
+          </p>
+        </div>
+
+        <div className="py-4 space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="供应商">{viewingPayable.supplierName}</FieldRow>
+                <FieldRow label="采购单号">{viewingPayable.orderNo || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="到期日">{formatDateValue(viewingPayable.dueDate)}</FieldRow>
+                <FieldRow label="付款方式">{viewingPayable.paymentMethod || "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">金额信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="应付金额">¥{formatNumber(viewingPayable.amount)}</FieldRow>
+                <FieldRow label="已付金额">¥{formatNumber(viewingPayable.paidAmount)}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="待付金额">¥{formatNumber(toSafeNumber(viewingPayable.amount) - toSafeNumber(viewingPayable.paidAmount))}</FieldRow>
+                 <FieldRow label="最近付款日">{formatDateValue(viewingPayable.paymentDate)}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {viewingPayable.remarks && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingPayable.remarks}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => handleEdit(viewingPayable)}>编辑</Button>
+            {viewingPayable.status !== "paid" && (
+              <Button size="sm" onClick={() => {
+                setViewDialogOpen(false);
+                handlePay(viewingPayable);
+              }}>
+                <DollarSign className="h-4 w-4 mr-1" />
+                付款
               </Button>
-              {viewingPayable && viewingPayable.status !== "paid" && (
-                <Button onClick={() => {
-                  setViewDialogOpen(false);
-                  handlePay(viewingPayable);
-                }}>
-                  付款
-                </Button>
-              )}
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+            )}
+          </div>
+        </div>
+      </>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -227,6 +228,19 @@ export default function IncidentsPage() {
   const processingCount = incidents.filter((i: any) => i.status === "reported" || i.status === "investigating").length;
   const severeCount = incidents.filter((i: any) => i.severity === "high").length;
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -309,36 +323,36 @@ export default function IncidentsPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[110px]">事件编号</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead className="w-[100px]">批次号</TableHead>
-                  <TableHead className="w-[90px]">事件类型</TableHead>
-                  <TableHead className="w-[80px]">严重程度</TableHead>
-                  <TableHead className="w-[100px]">上报日期</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[110px] text-center font-bold">事件编号</TableHead>
+                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">批次号</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">事件类型</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">严重程度</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">上报日期</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredIncidents.map((incident: any) => (
                   <TableRow key={incident.id}>
-                    <TableCell className="font-medium">{incident.incidentNo}</TableCell>
-                    <TableCell>{incident.productName}</TableCell>
-                    <TableCell>{incident.batchNo}</TableCell>
-                    <TableCell>{incident.incidentType}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-medium">{incident.incidentNo}</TableCell>
+                    <TableCell className="text-center">{incident.productName}</TableCell>
+                    <TableCell className="text-center">{incident.batchNo}</TableCell>
+                    <TableCell className="text-center">{incident.incidentType}</TableCell>
+                    <TableCell className="text-center">
                       <span className={`px-2 py-1 rounded text-xs font-medium ${severityMap[incident.severity].color}`}>
                         {severityMap[incident.severity].label}
                       </span>
                     </TableCell>
-                    <TableCell>{formatDateValue(incident.reportDate)}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[incident.status]?.variant || "outline"}>
+                    <TableCell className="text-center">{formatDateValue(incident.reportDate)}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[incident.status]?.variant || "outline"} className={getStatusSemanticClass(incident.status, statusMap[incident.status]?.label)}>
                         {statusMap[incident.status]?.label || String(incident.status ?? "-")}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -609,107 +623,102 @@ export default function IncidentsPage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>不良事件详情</DialogTitle>
-              <DialogDescription>{viewingIncident?.incidentNo}</DialogDescription>
-            </DialogHeader>
-            {viewingIncident && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold">{viewingIncident.productName}</h3>
-                    <p className="text-sm text-muted-foreground">批次：{viewingIncident.batchNo}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${severityMap[viewingIncident.severity].color}`}>
-                      {severityMap[viewingIncident.severity].label}
-                    </span>
-                    <Badge variant={statusMap[viewingIncident.status]?.variant || "outline"}>
-                      {statusMap[viewingIncident.status]?.label || String(viewingIncident.status ?? "-")}
-                    </Badge>
-                  </div>
-                </div>
+{viewingIncident && (
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    <div className="border-b pb-3">
+      <h2 className="text-lg font-semibold">不良事件详情</h2>
+      <p className="text-sm text-muted-foreground">
+        {viewingIncident.incidentNo}
+        {viewingIncident.status && (
+          <> · <Badge variant={statusMap[viewingIncident.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingIncident.status, statusMap[viewingIncident.status]?.label)}`}>
+            {statusMap[viewingIncident.status]?.label || String(viewingIncident.status ?? "-")}
+          </Badge></>
+        )}
+      </p>
+    </div>
+              <div className="space-y-4 py-4">
+      <div>
+        <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+          <div>
+            <FieldRow label="产品名称">{viewingIncident.productName}</FieldRow>
+            <FieldRow label="产品编码">{viewingIncident.productCode}</FieldRow>
+            <FieldRow label="批次号">{viewingIncident.batchNo}</FieldRow>
+            <FieldRow label="事件类型">{viewingIncident.incidentType}</FieldRow>
+            <FieldRow label="严重程度">
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${severityMap[viewingIncident.severity]?.color}`}>
+                {severityMap[viewingIncident.severity]?.label}
+              </span>
+            </FieldRow>
+          </div>
+          <div>
+            <FieldRow label="上报日期">{formatDateValue(viewingIncident.reportDate)}</FieldRow>
+            <FieldRow label="上报人">{viewingIncident.reportedBy || "-"}</FieldRow>
+            <FieldRow label="涉及数量">{viewingIncident.affectedQuantity || "-"}</FieldRow>
+            <FieldRow label="发生地点">{viewingIncident.location || "-"}</FieldRow>
+          </div>
+        </div>
+      </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">事件类型</p>
-                    <p className="font-medium">{viewingIncident.incidentType}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">上报日期</p>
-                    <p className="font-medium">{formatDateValue(viewingIncident.reportDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">上报人</p>
-                    <p className="font-medium">{viewingIncident.reportedBy || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">涉及数量</p>
-                    <p className="font-medium">{viewingIncident.affectedQuantity || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">发生地点</p>
-                    <p className="font-medium">{viewingIncident.location || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">调查人</p>
-                    <p className="font-medium">{viewingIncident.investigator || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">解决日期</p>
-                    <p className="font-medium">{formatDateValue(viewingIncident.resolveDate)}</p>
-                  </div>
-                </div>
+      {viewingIncident.description && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">事件描述</h3>
+          <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingIncident.description}</p>
+        </div>
+      )}
 
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">事件描述</p>
-                  <p className="text-sm bg-muted/30 p-3 rounded">{viewingIncident.description}</p>
-                </div>
+      <div>
+        <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">调查与处理</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+          <div>
+            <FieldRow label="调查人">{viewingIncident.investigator || "-"}</FieldRow>
+          </div>
+          <div>
+            <FieldRow label="解决日期">{formatDateValue(viewingIncident.resolveDate)}</FieldRow>
+          </div>
+        </div>
+        {viewingIncident.rootCause && (
+          <div className="mt-4">
+            <h4 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">根本原因</h4>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingIncident.rootCause}</p>
+          </div>
+        )}
+        {viewingIncident.correctiveAction && (
+          <div className="mt-4">
+            <h4 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">纠正措施</h4>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingIncident.correctiveAction}</p>
+          </div>
+        )}
+        {viewingIncident.preventiveAction && (
+          <div className="mt-4">
+            <h4 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">预防措施</h4>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingIncident.preventiveAction}</p>
+          </div>
+        )}
+      </div>
 
-                {viewingIncident.rootCause && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">根本原因</p>
-                    <p className="text-sm bg-muted/30 p-3 rounded">{viewingIncident.rootCause}</p>
-                  </div>
-                )}
+      {viewingIncident.remarks && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+          <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingIncident.remarks}</p>
+        </div>
+      )}
+    </div>
 
-                {viewingIncident.correctiveAction && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">纠正措施</p>
-                    <p className="text-sm bg-muted/30 p-3 rounded">{viewingIncident.correctiveAction}</p>
-                  </div>
-                )}
-
-                {viewingIncident.preventiveAction && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">预防措施</p>
-                    <p className="text-sm bg-muted/30 p-3 rounded">{viewingIncident.preventiveAction}</p>
-                  </div>
-                )}
-
-                {viewingIncident.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingIncident.remarks}</p>
-                  </div>
-                )}
-              </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingIncident) handleEdit(viewingIncident);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+    <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+      <div className="flex gap-2 flex-wrap"></div>
+      <div className="flex gap-2 flex-wrap justify-end">
+        <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+        <Button variant="outline" size="sm" onClick={() => {
+          setViewDialogOpen(false);
+          handleEdit(viewingIncident);
+        }}>编辑</Button>
+      </div>
+    </div>
+  </DraggableDialogContent>
+</DraggableDialog>
+)}
       </div>
     </ERPLayout>
   );

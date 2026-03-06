@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -264,6 +265,19 @@ export default function CodesPage() {
     setDialogOpen(false);
   };
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -337,16 +351,16 @@ export default function CodesPage() {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>规则名称</TableHead>
-                    <TableHead>前缀</TableHead>
-                    <TableHead>日期格式</TableHead>
-                    <TableHead>流水号位数</TableHead>
-                    <TableHead>当前流水号</TableHead>
-                    <TableHead>示例</TableHead>
-                    <TableHead>所属模块</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead className="w-[100px]">操作</TableHead>
+                  <TableRow className="bg-muted/60">
+                    <TableHead className="text-center font-bold">规则名称</TableHead>
+                    <TableHead className="text-center font-bold">前缀</TableHead>
+                    <TableHead className="text-center font-bold">日期格式</TableHead>
+                    <TableHead className="text-center font-bold">流水号位数</TableHead>
+                    <TableHead className="text-center font-bold">当前流水号</TableHead>
+                    <TableHead className="text-center font-bold">示例</TableHead>
+                    <TableHead className="text-center font-bold">所属模块</TableHead>
+                    <TableHead className="text-center font-bold">状态</TableHead>
+                    <TableHead className="w-[100px] text-center font-bold">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -359,12 +373,12 @@ export default function CodesPage() {
                   ) : (
                     filteredRules.map((rule: any) => (
                       <TableRow key={rule.id}>
-                        <TableCell className="font-medium">{rule.name}</TableCell>
-                        <TableCell className="font-mono">{rule.prefix}</TableCell>
-                        <TableCell>{rule.dateFormat || "-"}</TableCell>
-                        <TableCell>{rule.serialLength}</TableCell>
-                        <TableCell>{rule.currentSerial}</TableCell>
-                        <TableCell>
+                        <TableCell className="text-center font-medium">{rule.name}</TableCell>
+                        <TableCell className="text-center font-mono">{rule.prefix}</TableCell>
+                        <TableCell className="text-center">{rule.dateFormat || "-"}</TableCell>
+                        <TableCell className="text-center">{rule.serialLength}</TableCell>
+                        <TableCell className="text-center">{rule.currentSerial}</TableCell>
+                        <TableCell className="text-center">
                           <div className="flex items-center gap-1">
                             <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
                               {rule.example}
@@ -379,15 +393,15 @@ export default function CodesPage() {
                             </Button>
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Badge variant="outline">{rule.module}</Badge>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={rule.status === "active" ? "default" : "secondary"}>
+                        <TableCell className="text-center">
+                          <Badge variant={rule.status === "active" ? "default" : "secondary"} className={getStatusSemanticClass(rule.status)}>
                             {rule.status === "active" ? "启用" : "停用"}
                           </Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon">
@@ -564,54 +578,72 @@ export default function CodesPage() {
       {/* 查看详情对话框 */}
       <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DraggableDialogContent>
-          <DialogHeader>
-            <DialogTitle>编码规则详情</DialogTitle>
-          </DialogHeader>
           {viewingRule && (
-            <div className="grid grid-cols-2 gap-4 py-4">
-              <div>
-                <p className="text-sm text-muted-foreground">规则名称</p>
-                <p className="font-medium">{viewingRule.name}</p>
+            <>
+              <div className="border-b pb-3">
+                <h2 className="text-lg font-semibold">编码规则详情</h2>
+                <p className="text-sm text-muted-foreground">
+                  {viewingRule.name}
+                  {viewingRule.status && (
+                    <>
+                      {' · '}
+                      <Badge
+                        variant={viewingRule.status === 'active' ? 'default' : 'secondary'}
+                        className={`ml-1 ${getStatusSemanticClass(viewingRule.status)}`}
+                      >
+                        {viewingRule.status === 'active' ? '启用' : '停用'}
+                      </Badge>
+                    </>
+                  )}
+                </p>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">编码前缀</p>
-                <p className="font-medium font-mono">{viewingRule.prefix}</p>
+              <div className="space-y-4 py-4">
+                <div>
+                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                    <div>
+                      <FieldRow label="规则名称">{viewingRule.name}</FieldRow>
+                      <FieldRow label="编码前缀"><span className="font-mono">{viewingRule.prefix}</span></FieldRow>
+                      <FieldRow label="所属模块"><Badge variant="outline">{viewingRule.module}</Badge></FieldRow>
+                    </div>
+                    <div>
+                      <FieldRow label="日期格式">{viewingRule.dateFormat || '无'}</FieldRow>
+                      <FieldRow label="分隔符">{viewingRule.separator || '无'}</FieldRow>
+                      <FieldRow label="流水号位数">{viewingRule.serialLength} 位</FieldRow>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">状态与示例</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                    <div>
+                       <FieldRow label="当前流水号">{viewingRule.currentSerial}</FieldRow>
+                    </div>
+                    <div>
+                      <FieldRow label="编码示例">
+                        <code className="text-sm bg-muted px-2 py-1 rounded">{viewingRule.example}</code>
+                      </FieldRow>
+                    </div>
+                  </div>
+                </div>
+
+                {viewingRule.description && (
+                  <div>
+                    <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+                    <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingRule.description}</p>
+                  </div>
+                )}
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">日期格式</p>
-                <p className="font-medium">{viewingRule.dateFormat || "无"}</p>
+
+              <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+                <div className="flex gap-2 flex-wrap"></div>
+                <div className="flex gap-2 flex-wrap justify-end">
+                  <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+                  <Button variant="outline" size="sm" onClick={() => handleEdit(viewingRule)}>编辑</Button>
+                </div>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">流水号位数</p>
-                <p className="font-medium">{viewingRule.serialLength} 位</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">当前流水号</p>
-                <p className="font-medium">{viewingRule.currentSerial}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">分隔符</p>
-                <p className="font-medium">{viewingRule.separator || "无"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">所属模块</p>
-                <Badge variant="outline">{viewingRule.module}</Badge>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">状态</p>
-                <Badge variant={viewingRule.status === "active" ? "default" : "secondary"}>
-                  {viewingRule.status === "active" ? "启用" : "停用"}
-                </Badge>
-              </div>
-              <div className="col-span-2">
-                <p className="text-sm text-muted-foreground">编码示例</p>
-                <code className="text-sm bg-muted px-2 py-1 rounded">{viewingRule.example}</code>
-              </div>
-              <div className="col-span-2">
-                <p className="text-sm text-muted-foreground">描述</p>
-                <p className="font-medium">{viewingRule.description || "-"}</p>
-              </div>
-            </div>
+            </>
           )}
         </DraggableDialogContent>
       </DraggableDialog>

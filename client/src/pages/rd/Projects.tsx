@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -211,6 +212,19 @@ export default function ProjectsPage() {
   const reviewCount = projects.filter((p: any) => p.status === "review").length;
   const completedCount = projects.filter((p: any) => p.status === "completed").length;
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -294,37 +308,37 @@ export default function ProjectsPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[120px]">项目编号</TableHead>
-                  <TableHead>项目名称</TableHead>
-                  <TableHead className="w-[90px]">项目经理</TableHead>
-                  <TableHead className="w-[100px]">开始日期</TableHead>
-                  <TableHead className="w-[100px]">结束日期</TableHead>
-                  <TableHead className="w-[120px]">进度</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[120px] text-center font-bold">项目编号</TableHead>
+                  <TableHead className="text-center font-bold">项目名称</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">项目经理</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">开始日期</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">结束日期</TableHead>
+                  <TableHead className="w-[120px] text-center font-bold">进度</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredProjects.map((project: any) => (
                   <TableRow key={project.id}>
-                    <TableCell className="font-medium">{project.projectNo}</TableCell>
-                    <TableCell>{project.name}</TableCell>
-                    <TableCell>{project.manager}</TableCell>
-                    <TableCell>{formatDateValue(project.startDate)}</TableCell>
-                    <TableCell>{formatDateValue(project.endDate)}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-medium">{project.projectNo}</TableCell>
+                    <TableCell className="text-center">{project.name}</TableCell>
+                    <TableCell className="text-center">{project.manager}</TableCell>
+                    <TableCell className="text-center">{formatDateValue(project.startDate)}</TableCell>
+                    <TableCell className="text-center">{formatDateValue(project.endDate)}</TableCell>
+                    <TableCell className="text-center">
                       <div className="flex items-center gap-2">
                         <Progress value={project.progress} className="h-2 w-16" />
                         <span className="text-xs text-muted-foreground">{project.progress}%</span>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[project.status]?.variant || "outline"}>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[project.status]?.variant || "outline"} className={getStatusSemanticClass(project.status, statusMap[project.status]?.label)}>
                         {statusMap[project.status]?.label || String(project.status ?? "-")}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -570,105 +584,93 @@ export default function ProjectsPage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>项目详情</DialogTitle>
-              <DialogDescription>{viewingProject?.projectNo}</DialogDescription>
-            </DialogHeader>
-            {viewingProject && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <FolderKanban className="h-8 w-8 text-primary" />
-                    <div>
-                      <h3 className="font-semibold">{viewingProject.name}</h3>
-                      <p className="text-sm text-muted-foreground">{viewingProject.type}</p>
-                    </div>
-                  </div>
-                  <Badge variant={statusMap[viewingProject.status]?.variant || "outline"}>
-                    {statusMap[viewingProject.status]?.label || String(viewingProject.status ?? "-")}
-                  </Badge>
-                </div>
-
-                {viewingProject.description && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">项目描述</p>
-                    <p className="text-sm">{viewingProject.description}</p>
-                  </div>
-                )}
-
-                <div className="text-sm font-medium">基本信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">项目编号</p>
-                    <p className="font-medium">{viewingProject.projectNo}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">项目经理</p>
-                    <p className="font-medium">{viewingProject.manager}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">研发团队</p>
-                    <p className="font-medium">{viewingProject.team || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">优先级</p>
-                    <p className="font-medium">{viewingProject.priority}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">项目预算</p>
-                    <p className="font-medium">¥{viewingProject.budget?.toLocaleString?.() ?? "0"}</p>
-                  </div>
-                </div>
-
-                <div className="text-sm font-medium">时间与进度</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">开始日期</p>
-                    <p className="font-medium">{formatDateValue(viewingProject.startDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">结束日期</p>
-                    <p className="font-medium">{formatDateValue(viewingProject.endDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">当前进度</p>
-                    <div className="flex items-center gap-2">
-                      <Progress value={viewingProject.progress} className="h-2 w-16" />
-                      <span className="font-medium">{viewingProject.progress}%</span>
-                    </div>
-                  </div>
-                </div>
-
-                {viewingProject.milestones && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">里程碑</p>
-                    <p className="text-sm">{viewingProject.milestones}</p>
-                  </div>
-                )}
-
-                {viewingProject.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingProject.remarks}</p>
-                  </div>
-                )}
-              </div>
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingProject && (
+              <div className="space-y-6">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">项目详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingProject.projectNo}
+            {viewingProject.status && (
+              <> · <Badge variant={statusMap[viewingProject.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingProject.status, statusMap[viewingProject.status]?.label)}`}>
+                {statusMap[viewingProject.status]?.label || String(viewingProject.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingProject) handleEdit(viewingProject);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="项目名称">{viewingProject.name}</FieldRow>
+                <FieldRow label="项目类型">{viewingProject.type}</FieldRow>
+                <FieldRow label="项目经理">{viewingProject.manager}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="研发团队">{viewingProject.team || "-"}</FieldRow>
+                <FieldRow label="优先级">{viewingProject.priority}</FieldRow>
+                <FieldRow label="项目预算">¥{viewingProject.budget?.toLocaleString?.() ?? "0"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">时间与进度</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="开始日期">{formatDateValue(viewingProject.startDate)}</FieldRow>
+                <FieldRow label="结束日期">{formatDateValue(viewingProject.endDate)}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="当前进度">
+                  <div className="flex items-center justify-end gap-2">
+                    <Progress value={viewingProject.progress} className="h-2 w-24" />
+                    <span className="font-medium">{viewingProject.progress}%</span>
+                  </div>
+                </FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {viewingProject.description && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">项目描述</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingProject.description}</p>
+            </div>
+          )}
+
+          {viewingProject.milestones && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">里程碑</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingProject.milestones}</p>
+            </div>
+          )}
+
+          {viewingProject.remarks && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingProject.remarks}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setViewDialogOpen(false);
+              if (viewingProject) handleEdit(viewingProject);
+            }}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

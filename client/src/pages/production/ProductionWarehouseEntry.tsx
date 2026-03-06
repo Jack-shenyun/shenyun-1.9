@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -276,6 +277,12 @@ export default function ProductionWarehouseEntryPage() {
     next.searchParams.delete("focusId");
     window.history.replaceState({}, "", `${next.pathname}${next.search}`);
   }, [entries]);
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -325,17 +332,17 @@ export default function ProductionWarehouseEntryPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>入库单号</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead>批号</TableHead>
-                  <TableHead>灭菌批号</TableHead>
-                  <TableHead className="text-right">入库数量</TableHead>
-                  <TableHead>目标仓库</TableHead>
-                  <TableHead>关联灭菌单</TableHead>
-                  <TableHead>申请日期</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">入库单号</TableHead>
+                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="text-center font-bold">批号</TableHead>
+                  <TableHead className="text-center font-bold">灭菌批号</TableHead>
+                  <TableHead className="text-center font-bold">入库数量</TableHead>
+                  <TableHead className="text-center font-bold">目标仓库</TableHead>
+                  <TableHead className="text-center font-bold">关联灭菌单</TableHead>
+                  <TableHead className="text-center font-bold">申请日期</TableHead>
+                  <TableHead className="text-center font-bold">状态</TableHead>
+                  <TableHead className="text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -347,30 +354,30 @@ export default function ProductionWarehouseEntryPage() {
                   const warehouse = (warehouseList as any[]).find((w) => w.id === entry.targetWarehouseId);
                   return (
                     <TableRow key={entry.id}>
-                      <TableCell className="font-medium font-mono">{entry.entryNo}</TableCell>
-                      <TableCell>{entry.productName || "-"}</TableCell>
-                      <TableCell className="font-mono">{entry.batchNo || "-"}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-center font-medium font-mono">{entry.entryNo}</TableCell>
+                      <TableCell className="text-center">{entry.productName || "-"}</TableCell>
+                      <TableCell className="text-center font-mono">{entry.batchNo || "-"}</TableCell>
+                      <TableCell className="text-center">
                         {entry.sterilizationBatchNo
                           ? <span className="font-mono text-orange-600 text-xs">{entry.sterilizationBatchNo}</span>
                           : <span className="text-muted-foreground">-</span>}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         <span className="font-medium">{entry.quantity}</span>
                         <span className="text-muted-foreground ml-1 text-xs">{entry.unit}</span>
                         {entry.quantityModifyReason && (
                           <AlertCircle className="h-3 w-3 inline ml-1 text-amber-500" title={`已修改：${entry.quantityModifyReason}`} />
                         )}
                       </TableCell>
-                      <TableCell>{warehouse?.name || "-"}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs">{entry.sterilizationOrderNo || "-"}</TableCell>
-                      <TableCell>{entry.applicationDate ? String(entry.applicationDate).split("T")[0] : "-"}</TableCell>
-                      <TableCell>
-                        <Badge variant={statusMap[entry.status]?.variant || "outline"}>
+                      <TableCell className="text-center">{warehouse?.name || "-"}</TableCell>
+                      <TableCell className="text-center text-muted-foreground text-xs">{entry.sterilizationOrderNo || "-"}</TableCell>
+                      <TableCell className="text-center">{entry.applicationDate ? String(entry.applicationDate).split("T")[0] : "-"}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={statusMap[entry.status]?.variant || "outline"} className={getStatusSemanticClass(entry.status, statusMap[entry.status]?.label)}>
                           {statusMap[entry.status]?.label || entry.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
@@ -586,74 +593,116 @@ export default function ProductionWarehouseEntryPage() {
         </DraggableDialog>
 
         {/* 查看详情 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>入库申请详情</DialogTitle>
-              <DialogDescription>{viewingEntry?.entryNo}</DialogDescription>
-            </DialogHeader>
-            {viewingEntry && (
-              <div className="space-y-4 py-2">
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div>
-                    <p className="font-semibold">{viewingEntry.productName || "-"}</p>
-                    <p className="text-sm text-muted-foreground">生产批号：<span className="font-mono">{viewingEntry.batchNo || "-"}</span></p>
-                    {viewingEntry.sterilizationBatchNo && (
-                      <p className="text-xs text-orange-600">灭菌批号：<span className="font-mono">{viewingEntry.sterilizationBatchNo}</span></p>
-                    )}
-                  </div>
-                  <Badge variant={statusMap[viewingEntry.status]?.variant || "outline"}>
-                    {statusMap[viewingEntry.status]?.label || viewingEntry.status}
-                  </Badge>
-                </div>
-                {/* 数量明细 */}
-                {(viewingEntry.sterilizedQty || viewingEntry.inspectionRejectQty || viewingEntry.sampleQty) && (
-                  <div className="p-3 bg-blue-50 rounded-lg text-sm space-y-1">
-                    <p className="font-medium text-blue-700 flex items-center gap-1"><Calculator className="h-3 w-3" />数量明细</p>
-                    <div className="grid grid-cols-3 gap-2 text-xs">
-                      <div><p className="text-muted-foreground">灭菌后数量</p><p className="font-medium">{viewingEntry.sterilizedQty || "-"}</p></div>
-                      <div><p className="text-muted-foreground">检验报废</p><p className="font-medium">{viewingEntry.inspectionRejectQty || "0"}</p></div>
-                      <div><p className="text-muted-foreground">留样</p><p className="font-medium">{viewingEntry.sampleQty || "0"}</p></div>
-                    </div>
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">入库数量</p>
-                    <p className="font-medium text-lg">{viewingEntry.quantity} {viewingEntry.unit}</p>
-                    {viewingEntry.quantityModifyReason && (
-                      <p className="text-xs text-amber-600 mt-0.5"><AlertCircle className="h-3 w-3 inline mr-0.5" />已修改</p>
-                    )}
-                  </div>
-                  <div><p className="text-muted-foreground">目标仓库</p><p className="font-medium">{(warehouseList as any[]).find((w: any) => w.id === viewingEntry.targetWarehouseId)?.name || "-"}</p></div>
-                  <div><p className="text-muted-foreground">关联生产任务</p><p className="font-medium">{viewingEntry.productionOrderNo || "-"}</p></div>
-                  <div><p className="text-muted-foreground">关联灭菌单</p><p className="font-medium">{viewingEntry.sterilizationOrderNo || "-"}</p></div>
-                  <div><p className="text-muted-foreground">申请日期</p><p className="font-medium">{viewingEntry.applicationDate ? String(viewingEntry.applicationDate).split("T")[0] : "-"}</p></div>
-                </div>
-                {viewingEntry.quantityModifyReason && (
-                  <div className="p-2 bg-amber-50 rounded border border-amber-100 text-sm">
-                    <p className="text-amber-700 font-medium text-xs mb-0.5">数量修改原因</p>
-                    <p className="text-amber-800">{viewingEntry.quantityModifyReason}</p>
-                  </div>
-                )}
-                {viewingEntry.remark && (
-                  <div><p className="text-sm text-muted-foreground mb-1">备注</p><p className="text-sm">{viewingEntry.remark}</p></div>
-                )}
-                {viewingEntry.status === "completed" && (
-                  <div className="p-3 bg-green-50 rounded-lg border border-green-100 text-sm text-green-700">
-                    <Bell className="h-4 w-4 inline mr-1" />已入库完成，销售部已收到通知
-                  </div>
-                )}
-              </div>
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingEntry && (
+      <div className="space-y-4">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">生产入库申请详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingEntry.entryNo}
+            {viewingEntry.status && (
+              <>
+                {' '}
+                ·
+                <Badge
+                  variant={statusMap[viewingEntry.status]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(viewingEntry.status, statusMap[viewingEntry.status]?.label)}`}
+                >
+                  {statusMap[viewingEntry.status]?.label || String(viewingEntry.status ?? "-")}
+                </Badge>
+              </>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-              {viewingEntry?.status === "draft" && (
-                <Button onClick={() => { setViewDialogOpen(false); if (viewingEntry) handleEdit(viewingEntry); }}>编辑</Button>
-              )}
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="space-y-4 py-2">
+          {/* 基本信息分区 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="产品名称">{viewingEntry.productName || "-"}</FieldRow>
+                <FieldRow label="生产批号">{viewingEntry.batchNo ? <span className="font-mono">{viewingEntry.batchNo}</span> : "-"}</FieldRow>
+                <FieldRow label="灭菌批号">
+                  {viewingEntry.sterilizationBatchNo ? (
+                    <span className="font-mono text-orange-600 text-xs">{viewingEntry.sterilizationBatchNo}</span>
+                  ) : (
+                    "-"
+                  )}
+                </FieldRow>
+              </div>
+              <div>
+                <FieldRow label="申请日期">{viewingEntry.applicationDate ? String(viewingEntry.applicationDate).split("T")[0] : "-"}</FieldRow>
+                <FieldRow label="关联生产任务">{viewingEntry.productionOrderNo || "-"}</FieldRow>
+                <FieldRow label="关联灭菌单">{viewingEntry.sterilizationOrderNo || "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 数量信息分区 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">数量信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="灭菌后数量">{viewingEntry.sterilizedQty || "-"}</FieldRow>
+                <FieldRow label="检验报废">{viewingEntry.inspectionRejectQty || "0"}</FieldRow>
+                <FieldRow label="留样数量">{viewingEntry.sampleQty || "0"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="入库数量">
+                  <div className="flex items-center justify-end gap-1">
+                    <span className="font-medium text-lg">{viewingEntry.quantity}</span>
+                    <span className="text-muted-foreground text-xs">{viewingEntry.unit}</span>
+                    {viewingEntry.quantityModifyReason && (
+                      <AlertCircle className="h-3 w-3 text-amber-500" title={`已修改: ${viewingEntry.quantityModifyReason}`} />
+                    )}
+                  </div>
+                </FieldRow>
+                <FieldRow label="目标仓库">{(warehouseList as any[]).find((w: any) => w.id === viewingEntry.targetWarehouseId)?.name || "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 数量修改原因 */}
+          {viewingEntry.quantityModifyReason && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">数量修改原因</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingEntry.quantityModifyReason}</p>
+            </div>
+          )}
+
+          {/* 备注 */}
+          {viewingEntry.remark && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingEntry.remark}</p>
+            </div>
+          )}
+
+          {viewingEntry.status === "completed" && (
+            <div className="p-3 bg-green-50 rounded-lg border border-green-100 text-sm text-green-700">
+              <Bell className="h-4 w-4 inline mr-1" />已入库完成，销售部已收到通知
+            </div>
+          )}
+        </div>
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            {viewingEntry?.status === "draft" && (
+              <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); if (viewingEntry) handleEdit(viewingEntry); }}>编辑</Button>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
+
       </div>
     </ERPLayout>
   );

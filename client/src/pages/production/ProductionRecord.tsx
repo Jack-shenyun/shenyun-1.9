@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -252,24 +253,31 @@ export default function ProductionRecordPage() {
 
   const renderTable = (tab: string) => {
     const filtered = getFilteredByTab(tab);
+    const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+      <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+        <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+        <span className="flex-1 text-sm text-right break-all">{children}</span>
+      </div>
+    );
+
     return (
       <Card>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>记录单号</TableHead>
-                <TableHead>记录类型</TableHead>
-                <TableHead>产品名称</TableHead>
-                <TableHead>批号</TableHead>
-                {tab === "temperature_humidity" && <><TableHead>温度(℃)</TableHead><TableHead>湿度(%)</TableHead></>}
-                {tab === "material_usage" && <><TableHead>材料名称</TableHead><TableHead>用量</TableHead><TableHead>材料批号</TableHead></>}
-                {tab === "clean_room" && <><TableHead>清场人</TableHead><TableHead>检查人</TableHead><TableHead>清场结果</TableHead></>}
-                {tab === "first_piece" && <><TableHead>检验人</TableHead><TableHead>检验结果</TableHead></>}
-                {tab === "all" && <><TableHead className="text-right">实际数量</TableHead><TableHead className="text-right">报废数量</TableHead></>}
-                <TableHead>记录日期</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+              <TableRow className="bg-muted/60">
+                <TableHead className="text-center font-bold">记录单号</TableHead>
+                <TableHead className="text-center font-bold">记录类型</TableHead>
+                <TableHead className="text-center font-bold">产品名称</TableHead>
+                <TableHead className="text-center font-bold">批号</TableHead>
+                {tab === "temperature_humidity" && <><TableHead className="text-center font-bold">温度(℃)</TableHead><TableHead className="text-center font-bold">湿度(%)</TableHead></>}
+                {tab === "material_usage" && <><TableHead className="text-center font-bold">材料名称</TableHead><TableHead className="text-center font-bold">用量</TableHead><TableHead className="text-center font-bold">材料批号</TableHead></>}
+                {tab === "clean_room" && <><TableHead className="text-center font-bold">清场人</TableHead><TableHead className="text-center font-bold">检查人</TableHead><TableHead className="text-center font-bold">清场结果</TableHead></>}
+                {tab === "first_piece" && <><TableHead className="text-center font-bold">检验人</TableHead><TableHead className="text-center font-bold">检验结果</TableHead></>}
+                {tab === "all" && <><TableHead className="text-center font-bold">实际数量</TableHead><TableHead className="text-center font-bold">报废数量</TableHead></>}
+                <TableHead className="text-center font-bold">记录日期</TableHead>
+                <TableHead className="text-center font-bold">状态</TableHead>
+                <TableHead className="text-center font-bold">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -282,25 +290,25 @@ export default function ProductionRecordPage() {
                 const Icon = typeInfo.icon;
                 return (
                   <TableRow key={record.id}>
-                    <TableCell className="font-medium font-mono">{record.recordNo}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-medium font-mono">{record.recordNo}</TableCell>
+                    <TableCell className="text-center">
                       <div className="flex items-center gap-1">
                         <Icon className={`h-3.5 w-3.5 ${typeInfo.color}`} />
                         <span className={`text-xs ${typeInfo.color}`}>{typeInfo.label}</span>
                       </div>
                     </TableCell>
-                    <TableCell>{record.productName || "-"}</TableCell>
-                    <TableCell className="font-mono">{record.batchNo || "-"}</TableCell>
-                    {tab === "temperature_humidity" && <><TableCell>{record.temperature ?? "-"}</TableCell><TableCell>{record.humidity ?? "-"}</TableCell></>}
-                    {tab === "material_usage" && <><TableCell>{record.materialName || "-"}</TableCell><TableCell>{record.usedQty ? `${record.usedQty} ${record.usedUnit || ""}` : "-"}</TableCell><TableCell className="font-mono">{record.materialBatchNo || "-"}</TableCell></>}
-                    {tab === "clean_room" && <><TableCell>{record.cleanedBy || "-"}</TableCell><TableCell>{record.checkedBy || "-"}</TableCell><TableCell>{record.cleanResult === "pass" ? <Badge variant="secondary" className="text-green-600">通过</Badge> : record.cleanResult === "fail" ? <Badge variant="destructive">不通过</Badge> : "-"}</TableCell></>}
-                    {tab === "first_piece" && <><TableCell>{record.firstPieceInspector || "-"}</TableCell><TableCell>{record.firstPieceResult === "qualified" ? <Badge variant="secondary" className="text-green-600">合格</Badge> : record.firstPieceResult === "unqualified" ? <Badge variant="destructive">不合格</Badge> : "-"}</TableCell></>}
-                    {tab === "all" && <><TableCell className="text-right">{record.actualQty || "-"}</TableCell><TableCell className="text-right">{record.scrapQty || "0"}</TableCell></>}
-                    <TableCell>{record.recordDate ? String(record.recordDate).split("T")[0] : "-"}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[record.status]?.variant || "outline"}>{statusMap[record.status]?.label || record.status}</Badge>
+                    <TableCell className="text-center">{record.productName || "-"}</TableCell>
+                    <TableCell className="text-center font-mono">{record.batchNo || "-"}</TableCell>
+                    {tab === "temperature_humidity" && <><TableCell className="text-center">{record.temperature ?? "-"}</TableCell><TableCell className="text-center">{record.humidity ?? "-"}</TableCell></>}
+                    {tab === "material_usage" && <><TableCell className="text-center">{record.materialName || "-"}</TableCell><TableCell className="text-center">{record.usedQty ? `${record.usedQty} ${record.usedUnit || ""}` : "-"}</TableCell><TableCell className="text-center font-mono">{record.materialBatchNo || "-"}</TableCell></>}
+                    {tab === "clean_room" && <><TableCell className="text-center">{record.cleanedBy || "-"}</TableCell><TableCell className="text-center">{record.checkedBy || "-"}</TableCell><TableCell className="text-center">{record.cleanResult === "pass" ? <Badge variant="secondary" className="text-green-600">通过</Badge> : record.cleanResult === "fail" ? <Badge variant="destructive">不通过</Badge> : "-"}</TableCell></>}
+                    {tab === "first_piece" && <><TableCell className="text-center">{record.firstPieceInspector || "-"}</TableCell><TableCell className="text-center">{record.firstPieceResult === "qualified" ? <Badge variant="secondary" className="text-green-600">合格</Badge> : record.firstPieceResult === "unqualified" ? <Badge variant="destructive">不合格</Badge> : "-"}</TableCell></>}
+                    {tab === "all" && <><TableCell className="text-center">{record.actualQty || "-"}</TableCell><TableCell className="text-center">{record.scrapQty || "0"}</TableCell></>}
+                    <TableCell className="text-center">{record.recordDate ? String(record.recordDate).split("T")[0] : "-"}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[record.status]?.variant || "outline"} className={getStatusSemanticClass(record.status, statusMap[record.status]?.label)}>{statusMap[record.status]?.label || record.status}</Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
@@ -551,56 +559,128 @@ export default function ProductionRecordPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>生产记录详情</DialogTitle>
-              <DialogDescription>{viewingRecord?.recordNo}</DialogDescription>
-            </DialogHeader>
-            {viewingRecord && (
-              <div className="space-y-4 py-2 max-h-[60vh] overflow-y-auto">
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div>
-                    <p className="font-semibold">{viewingRecord.productName || `产品#${viewingRecord.productId}`}</p>
-                    <p className="text-sm text-muted-foreground">批号：{viewingRecord.batchNo || "-"}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge variant={statusMap[viewingRecord.status]?.variant || "outline"}>{statusMap[viewingRecord.status]?.label || viewingRecord.status}</Badge>
-                    {viewingRecord.recordType && (
-                      <span className={`text-xs ${recordTypeMap[viewingRecord.recordType as RecordType]?.color || ""}`}>
-                        {recordTypeMap[viewingRecord.recordType as RecordType]?.label || viewingRecord.recordType}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><p className="text-muted-foreground">关联生产指令</p><p className="font-medium">{viewingRecord.productionOrderNo || "-"}</p></div>
-                  <div><p className="text-muted-foreground">工序/工位</p><p className="font-medium">{viewingRecord.workstationName || "-"}</p></div>
-                  <div><p className="text-muted-foreground">计划数量</p><p className="font-medium">{viewingRecord.plannedQty || "-"}</p></div>
-                  <div><p className="text-muted-foreground">实际数量</p><p className="font-medium">{viewingRecord.actualQty || "-"}</p></div>
-                  <div><p className="text-muted-foreground">报废数量</p><p className="font-medium">{viewingRecord.scrapQty || "0"}</p></div>
-                  <div><p className="text-muted-foreground">记录日期</p><p className="font-medium">{viewingRecord.recordDate ? String(viewingRecord.recordDate).split("T")[0] : "-"}</p></div>
-                  {viewingRecord.temperature && <div><p className="text-muted-foreground">温度</p><p className="font-medium">{viewingRecord.temperature}℃</p></div>}
-                  {viewingRecord.humidity && <div><p className="text-muted-foreground">湿度</p><p className="font-medium">{viewingRecord.humidity}%</p></div>}
-                  {viewingRecord.materialName && <div><p className="text-muted-foreground">材料名称</p><p className="font-medium">{viewingRecord.materialName}</p></div>}
-                  {viewingRecord.usedQty && <div><p className="text-muted-foreground">用量</p><p className="font-medium">{viewingRecord.usedQty} {viewingRecord.usedUnit || ""}</p></div>}
-                  {viewingRecord.cleanedBy && <div><p className="text-muted-foreground">清场人</p><p className="font-medium">{viewingRecord.cleanedBy}</p></div>}
-                  {viewingRecord.cleanResult && <div><p className="text-muted-foreground">清场结果</p><p className="font-medium">{viewingRecord.cleanResult === "pass" ? "通过" : "不通过"}</p></div>}
-                  {viewingRecord.firstPieceInspector && <div><p className="text-muted-foreground">首件检验人</p><p className="font-medium">{viewingRecord.firstPieceInspector}</p></div>}
-                  {viewingRecord.firstPieceResult && <div><p className="text-muted-foreground">首件结果</p><p className="font-medium">{viewingRecord.firstPieceResult === "qualified" ? "合格" : "不合格"}</p></div>}
-                </div>
-                {viewingRecord.remark && (
-                  <div><p className="text-sm text-muted-foreground mb-1">备注</p><p className="text-sm">{viewingRecord.remark}</p></div>
-                )}
-              </div>
+{/* 查看详情 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingRecord && (
+      <div className="space-y-4">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">生产记录详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingRecord.recordNo}
+            {viewingRecord.status && (
+              <> · <Badge variant={statusMap[viewingRecord.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingRecord.status, statusMap[viewingRecord.status]?.label)}`}>
+                {statusMap[viewingRecord.status]?.label || String(viewingRecord.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-              <Button onClick={() => { setViewDialogOpen(false); if (viewingRecord) handleEdit(viewingRecord); }}>编辑</Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="记录类型">{recordTypeMap[viewingRecord.recordType]?.label || viewingRecord.recordType}</FieldRow>
+                <FieldRow label="生产工单">{viewingRecord.productionOrderNo}</FieldRow>
+                <FieldRow label="产品名称">{viewingRecord.productName}</FieldRow>
+                <FieldRow label="产品批号">{viewingRecord.batchNo}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="工位">{viewingRecord.workstationName}</FieldRow>
+                <FieldRow label="记录日期">{viewingRecord.recordDate ? new Date(viewingRecord.recordDate).toLocaleDateString() : '-'}</FieldRow>
+                <FieldRow label="计划数量">{viewingRecord.plannedQty}</FieldRow>
+                <FieldRow label="实际数量">{viewingRecord.actualQty}</FieldRow>
+                <FieldRow label="报废数量">{viewingRecord.scrapQty}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {viewingRecord.recordType === 'temperature_humidity' && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">温湿度记录</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div>
+                  <FieldRow label="温度">{viewingRecord.temperature}°C</FieldRow>
+                  <FieldRow label="温度上限">{viewingRecord.temperatureLimit}°C</FieldRow>
+                </div>
+                <div>
+                  <FieldRow label="湿度">{viewingRecord.humidity}%</FieldRow>
+                  <FieldRow label="湿度上限">{viewingRecord.humidityLimit}%</FieldRow>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {viewingRecord.recordType === 'material_usage' && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">材料使用记录</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div>
+                  <FieldRow label="材料编码">{viewingRecord.materialCode}</FieldRow>
+                  <FieldRow label="材料名称">{viewingRecord.materialName}</FieldRow>
+                  <FieldRow label="材料规格">{viewingRecord.materialSpec}</FieldRow>
+                </div>
+                <div>
+                  <FieldRow label="使用数量">{viewingRecord.usedQty} {viewingRecord.usedUnit}</FieldRow>
+                  <FieldRow label="材料批号">{viewingRecord.materialBatchNo}</FieldRow>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {viewingRecord.recordType === 'clean_room' && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">清场记录</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div>
+                  <FieldRow label="清场人">{viewingRecord.cleanedBy}</FieldRow>
+                  <FieldRow label="检查人">{viewingRecord.checkedBy}</FieldRow>
+                </div>
+                <div>
+                  <FieldRow label="清场结果">
+                    {viewingRecord.cleanResult === 'pass' ? <Badge variant="secondary">合格</Badge> : <Badge variant="destructive">不合格</Badge>}
+                  </FieldRow>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {viewingRecord.recordType === 'first_piece' && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">首件检验记录</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div>
+                  <FieldRow label="检验员">{viewingRecord.firstPieceInspector}</FieldRow>
+                </div>
+                <div>
+                  <FieldRow label="检验结果">
+                    {viewingRecord.firstPieceResult === 'qualified' ? <Badge variant="secondary">合格</Badge> : <Badge variant="destructive">不合格</Badge>}
+                  </FieldRow>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {viewingRecord.remark && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingRecord.remark}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(viewingRecord); }}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

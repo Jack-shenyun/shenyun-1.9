@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -214,6 +215,19 @@ export default function HospitalPage() {
   const approvedCount = hospitals.filter((h: any) => h.status === "approved").length;
   const reviewingCount = hospitals.filter((h: any) => h.status === "reviewing").length;
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -298,32 +312,32 @@ export default function HospitalPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>医院名称</TableHead>
-                  <TableHead className="w-[70px]">等级</TableHead>
-                  <TableHead className="w-[90px]">省份</TableHead>
-                  <TableHead className="w-[130px]">联系人</TableHead>
-                  <TableHead className="w-[90px]">入院产品</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[100px]">申请日期</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">医院名称</TableHead>
+                  <TableHead className="w-[70px] text-center font-bold">等级</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">省份</TableHead>
+                  <TableHead className="w-[130px] text-center font-bold">联系人</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">入院产品</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">申请日期</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredHospitals.map((hospital: any) => (
                   <TableRow key={hospital.id}>
-                    <TableCell className="font-medium">{hospital.hospitalName}</TableCell>
-                    <TableCell>{hospital.level}</TableCell>
-                    <TableCell>{hospital.province}</TableCell>
-                    <TableCell>{hospital.contactDept}-{hospital.contactPerson}</TableCell>
-                    <TableCell>{hospital.productCount}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[hospital.status]?.variant || "outline"}>
+                    <TableCell className="text-center font-medium">{hospital.hospitalName}</TableCell>
+                    <TableCell className="text-center">{hospital.level}</TableCell>
+                    <TableCell className="text-center">{hospital.province}</TableCell>
+                    <TableCell className="text-center">{hospital.contactDept}-{hospital.contactPerson}</TableCell>
+                    <TableCell className="text-center">{hospital.productCount}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[hospital.status]?.variant || "outline"} className={getStatusSemanticClass(hospital.status, statusMap[hospital.status]?.label)}>
                         {statusMap[hospital.status]?.label || String(hospital.status ?? "-")}
                       </Badge>
                     </TableCell>
-                    <TableCell>{formatDateValue(hospital.applyDate)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{formatDateValue(hospital.applyDate)}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -567,105 +581,122 @@ export default function HospitalPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>入院详情</DialogTitle>
-              <DialogDescription>{viewingHospital?.hospitalName}</DialogDescription>
-            </DialogHeader>
-            {viewingHospital && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Hospital className="h-8 w-8 text-primary" />
-                    <div>
-                      <h3 className="font-semibold">{viewingHospital.hospitalName}</h3>
-                      <p className="text-sm text-muted-foreground">{viewingHospital.level} · {viewingHospital.type}</p>
-                    </div>
-                  </div>
-                  <Badge variant={statusMap[viewingHospital.status]?.variant || "outline"}>
-                    {statusMap[viewingHospital.status]?.label || String(viewingHospital.status ?? "-")}
-                  </Badge>
-                </div>
-
-                <div className="text-sm font-medium">基本信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">医院编号</p>
-                    <p className="font-medium">{viewingHospital.hospitalCode}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">省份</p>
-                    <p className="font-medium">{viewingHospital.province}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">城市</p>
-                    <p className="font-medium">{viewingHospital.city || "-"}</p>
-                  </div>
-                  <div className="md:col-span-3">
-                    <p className="text-muted-foreground">详细地址</p>
-                    <p className="font-medium">{viewingHospital.address || "-"}</p>
-                  </div>
-                </div>
-
-                <div className="text-sm font-medium">联系信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">联系部门</p>
-                    <p className="font-medium">{viewingHospital.contactDept || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">联系人</p>
-                    <p className="font-medium">{viewingHospital.contactPerson || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">联系电话</p>
-                    <p className="font-medium">{viewingHospital.contactPhone || "-"}</p>
-                  </div>
-                </div>
-
-                <div className="text-sm font-medium">入院信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">入院产品数</p>
-                    <p className="font-medium">{viewingHospital.productCount}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">申请日期</p>
-                    <p className="font-medium">{formatDateValue(viewingHospital.applyDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">通过日期</p>
-                    <p className="font-medium">{formatDateValue(viewingHospital.approveDate)}</p>
-                  </div>
-                  <div className="md:col-span-3">
-                    <p className="text-muted-foreground">入院产品</p>
-                    <p className="font-medium">{viewingHospital.products || "-"}</p>
-                  </div>
-                </div>
-
-                {viewingHospital.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingHospital.remarks}</p>
-                  </div>
-                )}
-              </div>
+        {
+  /* 查看详情对话框 */
+}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingHospital && (
+      <div className="space-y-6">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">入院详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingHospital.hospitalCode}
+            {viewingHospital.status && (
+              <>
+                {" "}
+                ·
+                <Badge
+                  variant={statusMap[viewingHospital.status]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(
+                    viewingHospital.status,
+                    statusMap[viewingHospital.status]?.label
+                  )}`}
+                >
+                  {statusMap[viewingHospital.status]?.label ||
+                    String(viewingHospital.status ?? "-")}
+                </Badge>
+              </>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+              基本信息
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="医院名称">{viewingHospital.hospitalName}</FieldRow>
+                <FieldRow label="医院等级">{viewingHospital.level}</FieldRow>
+                <FieldRow label="医院类型">{viewingHospital.type}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="省份">{viewingHospital.province}</FieldRow>
+                <FieldRow label="城市">{viewingHospital.city || "-"}</FieldRow>
+                <FieldRow label="详细地址">{viewingHospital.address || "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+              联系信息
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="联系部门">{viewingHospital.contactDept || "-"}</FieldRow>
+                <FieldRow label="联系人">{viewingHospital.contactPerson || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="联系电话">{viewingHospital.contactPhone || "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+              入院信息
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="入院产品数">{viewingHospital.productCount}</FieldRow>
+                <FieldRow label="申请日期">{formatDateValue(viewingHospital.applyDate)}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="通过日期">{formatDateValue(viewingHospital.approveDate)}</FieldRow>
+              </div>
+            </div>
+            <div className="mt-1.5">
+              <FieldRow label="入院产品">{viewingHospital.products || "-"}</FieldRow>
+            </div>
+          </div>
+
+          {viewingHospital.remarks && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+                备注
+              </h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">
+                {viewingHospital.remarks}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>
+              关闭
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
                 setViewDialogOpen(false);
                 if (viewingHospital) handleEdit(viewingHospital);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+              }}
+            >
+              编辑
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>;
       </div>
     </ERPLayout>
   );

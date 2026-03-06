@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -180,6 +181,12 @@ export default function CostPage() {
   const totalLaborCost = costs.reduce((sum: any, c: any) => sum + toSafeNumber(c.laborCost), 0);
   const totalOverheadCost = costs.reduce((sum: any, c: any) => sum + toSafeNumber(c.overheadCost), 0);
   const totalCost = costs.reduce((sum: any, c: any) => sum + toSafeNumber(c.totalCost), 0);
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -262,34 +269,34 @@ export default function CostPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[90px]">核算期间</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead className="w-[110px]">批次号</TableHead>
-                  <TableHead className="w-[100px] text-right">材料成本</TableHead>
-                  <TableHead className="w-[100px] text-right">人工成本</TableHead>
-                  <TableHead className="w-[100px] text-right">制造费用</TableHead>
-                  <TableHead className="w-[100px] text-right">总成本</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[90px] text-center font-bold">核算期间</TableHead>
+                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="w-[110px] text-center font-bold">批次号</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">材料成本</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">人工成本</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">制造费用</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">总成本</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredCosts.map((cost: any) => (
                   <TableRow key={cost.id}>
-                    <TableCell>{cost.period}</TableCell>
-                    <TableCell className="font-medium">{cost.productName}</TableCell>
-                    <TableCell>{cost.batchNo}</TableCell>
-                    <TableCell className="text-right">¥{formatNumber(cost.materialCost)}</TableCell>
-                    <TableCell className="text-right">¥{formatNumber(cost.laborCost)}</TableCell>
-                    <TableCell className="text-right">¥{formatNumber(cost.overheadCost)}</TableCell>
-                    <TableCell className="text-right font-medium">¥{formatNumber(cost.totalCost)}</TableCell>
-                    <TableCell>
-                      <Badge variant={getStatusMeta(cost.status).variant}>
+                    <TableCell className="text-center">{cost.period}</TableCell>
+                    <TableCell className="text-center font-medium">{cost.productName}</TableCell>
+                    <TableCell className="text-center">{cost.batchNo}</TableCell>
+                    <TableCell className="text-center">¥{formatNumber(cost.materialCost)}</TableCell>
+                    <TableCell className="text-center">¥{formatNumber(cost.laborCost)}</TableCell>
+                    <TableCell className="text-center">¥{formatNumber(cost.overheadCost)}</TableCell>
+                    <TableCell className="text-center font-medium">¥{formatNumber(cost.totalCost)}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={getStatusMeta(cost.status).variant} className={getStatusSemanticClass(cost.status, getStatusMeta(cost.status).label)}>
                         {getStatusMeta(cost.status).label}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -432,65 +439,91 @@ export default function CostPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>成本核算详情</DialogTitle>
-              <DialogDescription>{viewingCost?.batchNo}</DialogDescription>
-            </DialogHeader>
-            {viewingCost && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold">{viewingCost.productName}</h3>
-                    <p className="text-sm text-muted-foreground">核算期间: {viewingCost.period}</p>
-                  </div>
-                  <Badge variant={getStatusMeta(viewingCost.status).variant}>
-                    {getStatusMeta(viewingCost.status).label}
-                  </Badge>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-muted-foreground">材料成本</span>
-                    <span className="font-medium text-blue-600">¥{formatNumber(viewingCost.materialCost)}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-muted-foreground">人工成本</span>
-                    <span className="font-medium text-green-600">¥{formatNumber(viewingCost.laborCost)}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-muted-foreground">制造费用</span>
-                    <span className="font-medium text-amber-600">¥{formatNumber(viewingCost.overheadCost)}</span>
-                  </div>
-                  <div className="flex justify-between py-2">
-                    <span className="font-medium">总成本</span>
-                    <span className="font-bold text-lg">¥{formatNumber(viewingCost.totalCost)}</span>
-                  </div>
-                </div>
-
-                {viewingCost.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingCost.remarks}</p>
-                  </div>
-                )}
-              </div>
+{/* 查看详情对话框 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingCost && (
+      <div className="flex flex-col gap-6">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">成本核算详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingCost.batchNo}
+            {viewingCost.status && (
+              <>
+                {' · '}
+                <Badge
+                  variant={statusMap[viewingCost.status]?.variant || 'outline'}
+                  className={`ml-1 ${getStatusSemanticClass(
+                    viewingCost.status,
+                    statusMap[viewingCost.status]?.label
+                  )}`}
+                >
+                  {statusMap[viewingCost.status]?.label || String(viewingCost.status ?? '-')}
+                </Badge>
+              </>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
+          </p>
+        </div>
+
+        {/* 成本构成 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">成本构成</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="产品名称">{viewingCost.productName}</FieldRow>
+              <FieldRow label="核算期间">{viewingCost.period}</FieldRow>
+              <FieldRow label="总成本">
+                <span className="font-bold text-base">¥{formatNumber(viewingCost.totalCost)}</span>
+              </FieldRow>
+            </div>
+            <div>
+              <FieldRow label="材料成本">
+                <span className="text-blue-600">¥{formatNumber(viewingCost.materialCost)}</span>
+              </FieldRow>
+              <FieldRow label="人工成本">
+                <span className="text-green-600">¥{formatNumber(viewingCost.laborCost)}</span>
+              </FieldRow>
+              <FieldRow label="制造费用">
+                <span className="text-amber-600">¥{formatNumber(viewingCost.overheadCost)}</span>
+              </FieldRow>
+            </div>
+          </div>
+        </div>
+
+        {/* 标准备注 */}
+        {viewingCost.remarks && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">
+              {viewingCost.remarks}
+            </p>
+          </div>
+        )}
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>
+              关闭
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
                 setViewDialogOpen(false);
                 if (viewingCost) handleEdit(viewingCost);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+              }}
+            >
+              编辑
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -210,6 +211,12 @@ export default function PersonnelPage() {
   const activeCount = personnel.filter((p: any) => p.status === "active").length;
   const probationCount = personnel.filter((p: any) => p.status === "probation").length;
   const leaveCount = personnel.filter((p: any) => p.status === "leave").length;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -293,32 +300,32 @@ export default function PersonnelPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[100px]">工号</TableHead>
-                  <TableHead className="w-[80px]">姓名</TableHead>
-                  <TableHead className="w-[100px]">部门</TableHead>
-                  <TableHead>职位</TableHead>
-                  <TableHead className="w-[120px]">联系电话</TableHead>
-                  <TableHead className="w-[100px]">状态</TableHead>
-                  <TableHead className="w-[110px]">入职日期</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[100px] text-center font-bold">工号</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">姓名</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">部门</TableHead>
+                  <TableHead className="text-center font-bold">职位</TableHead>
+                  <TableHead className="w-[120px] text-center font-bold">联系电话</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[110px] text-center font-bold">入职日期</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredPersonnel.map((person: any) => (
                   <TableRow key={person.id}>
-                    <TableCell className="font-medium">{person.employeeNo}</TableCell>
-                    <TableCell>{person.name}</TableCell>
-                    <TableCell>{person.department}</TableCell>
-                    <TableCell>{person.position}</TableCell>
-                    <TableCell>{person.phone}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[person.status]?.variant || "outline"}>
+                    <TableCell className="text-center font-medium">{person.employeeNo}</TableCell>
+                    <TableCell className="text-center">{person.name}</TableCell>
+                    <TableCell className="text-center">{person.department}</TableCell>
+                    <TableCell className="text-center">{person.position}</TableCell>
+                    <TableCell className="text-center">{person.phone}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[person.status]?.variant || "outline"} className={getStatusSemanticClass(person.status, statusMap[person.status]?.label)}>
                         {statusMap[person.status]?.label || String(person.status ?? "-")}
                       </Badge>
                     </TableCell>
-                    <TableCell>{formatDateValue(person.entryDate)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{formatDateValue(person.entryDate)}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -565,101 +572,83 @@ export default function PersonnelPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>员工详情</DialogTitle>
-              <DialogDescription>
-                {viewingPerson?.name} - {viewingPerson?.employeeNo}
-              </DialogDescription>
-            </DialogHeader>
-            {viewingPerson && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-4 p-4 bg-muted/50 rounded-lg">
-                  <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Users className="h-8 w-8 text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold">{viewingPerson.name}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {viewingPerson.department} · {viewingPerson.position}
-                    </p>
-                    <Badge variant={statusMap[viewingPerson.status]?.variant || "outline"} className="mt-1">
-                      {statusMap[viewingPerson.status]?.label || String(viewingPerson.status ?? "-")}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">工号</p>
-                    <p className="font-medium">{viewingPerson.employeeNo}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">性别</p>
-                    <p className="font-medium">{viewingPerson.gender}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">联系电话</p>
-                    <p className="font-medium">{viewingPerson.phone}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">邮箱</p>
-                    <p className="font-medium">{viewingPerson.email || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">入职日期</p>
-                    <p className="font-medium">{formatDateValue(viewingPerson.entryDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">学历</p>
-                    <p className="font-medium">{viewingPerson.education || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">专业</p>
-                    <p className="font-medium">{viewingPerson.major || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">健康状况</p>
-                    <p className="font-medium">{viewingPerson.healthStatus}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">紧急联系人</p>
-                    <p className="font-medium">{viewingPerson.emergencyContact || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">紧急联系电话</p>
-                    <p className="font-medium">{viewingPerson.emergencyPhone || "-"}</p>
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-sm text-muted-foreground">家庭住址</p>
-                  <p className="font-medium">{viewingPerson.address || "-"}</p>
-                </div>
-
-                {viewingPerson.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">备注</p>
-                    <p className="font-medium">{viewingPerson.remarks}</p>
-                  </div>
-                )}
-              </div>
+{/* 查看详情对话框 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingPerson && (
+      <div className="space-y-6 p-1">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">员工详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingPerson.employeeNo}
+            {viewingPerson.status && (
+              <> · <Badge variant={statusMap[viewingPerson.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingPerson.status, statusMap[viewingPerson.status]?.label)}`}>
+                {statusMap[viewingPerson.status]?.label || String(viewingPerson.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingPerson) handleEdit(viewingPerson);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        {/* 基本信息 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="姓名">{viewingPerson.name}</FieldRow>
+              <FieldRow label="性别">{viewingPerson.gender}</FieldRow>
+              <FieldRow label="身份证号">{viewingPerson.idCard}</FieldRow>
+              <FieldRow label="联系电话">{viewingPerson.phone}</FieldRow>
+              <FieldRow label="邮箱">{viewingPerson.email}</FieldRow>
+            </div>
+            <div>
+              <FieldRow label="部门">{viewingPerson.department}</FieldRow>
+              <FieldRow label="职位">{viewingPerson.position}</FieldRow>
+              <FieldRow label="入职日期">{formatDateValue(viewingPerson.entryDate)}</FieldRow>
+              <FieldRow label="学历">{viewingPerson.education}</FieldRow>
+              <FieldRow label="专业">{viewingPerson.major}</FieldRow>
+            </div>
+          </div>
+        </div>
+
+        {/* 其他信息 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">其他信息</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="健康状况">{viewingPerson.healthStatus}</FieldRow>
+              <FieldRow label="紧急联系人">{viewingPerson.emergencyContact}</FieldRow>
+              <FieldRow label="紧急联系电话">{viewingPerson.emergencyPhone}</FieldRow>
+            </div>
+            <div>
+              <FieldRow label="家庭住址">{viewingPerson.address}</FieldRow>
+            </div>
+          </div>
+        </div>
+
+        {/* 备注 */}
+        {viewingPerson.remarks && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingPerson.remarks}</p>
+          </div>
+        )}
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setViewDialogOpen(false);
+              if (viewingPerson) handleEdit(viewingPerson);
+            }}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

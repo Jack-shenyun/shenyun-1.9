@@ -845,6 +845,19 @@ export default function SalesOrdersPage() {
 
   // ==================== 渲染 ====================
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -1332,12 +1345,6 @@ export default function SalesOrdersPage() {
 
             {selectedRecord && (() => {
               /** 字段行：与客户详情保持一致 */
-              const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
-                <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
-                  <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
-                  <span className="flex-1 text-sm text-right break-all">{children}</span>
-                </div>
-              );
               const formatAmt = (v: string | null | undefined, cur?: string | null) => {
                 if (!v) return "-";
                 const n = parseFloat(v);

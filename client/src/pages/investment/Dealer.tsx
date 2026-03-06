@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -222,6 +223,12 @@ export default function DealerPage() {
   const approvedCount = dealers.filter((d: any) => d.status === "approved").length;
   const pendingCount = dealers.filter((d: any) => d.status === "pending").length;
   const expiredCount = dealers.filter((d: any) => d.status === "expired").length;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -305,32 +312,32 @@ export default function DealerPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[100px]">编号</TableHead>
-                  <TableHead>经销商名称</TableHead>
-                  <TableHead className="w-[90px]">联系人</TableHead>
-                  <TableHead className="w-[120px]">联系电话</TableHead>
-                  <TableHead className="w-[90px]">授权区域</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[100px]">授权到期</TableHead>
-                  <TableHead className="w-[100px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[100px] text-center font-bold">编号</TableHead>
+                  <TableHead className="text-center font-bold">经销商名称</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">联系人</TableHead>
+                  <TableHead className="w-[120px] text-center font-bold">联系电话</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">授权区域</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">授权到期</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredDealers.map((dealer: any) => (
                   <TableRow key={dealer.id}>
-                    <TableCell className="font-medium">{dealer.dealerNo}</TableCell>
-                    <TableCell>{dealer.name}</TableCell>
-                    <TableCell>{dealer.contactPerson}</TableCell>
-                    <TableCell>{dealer.phone}</TableCell>
-                    <TableCell>{dealer.territory}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[dealer.status]?.variant || "outline"}>
+                    <TableCell className="text-center font-medium">{dealer.dealerNo}</TableCell>
+                    <TableCell className="text-center">{dealer.name}</TableCell>
+                    <TableCell className="text-center">{dealer.contactPerson}</TableCell>
+                    <TableCell className="text-center">{dealer.phone}</TableCell>
+                    <TableCell className="text-center">{dealer.territory}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[dealer.status]?.variant || "outline"} className={getStatusSemanticClass(dealer.status, statusMap[dealer.status]?.label)}>
                         {statusMap[dealer.status]?.label || String(dealer.status ?? "-")}
                       </Badge>
                     </TableCell>
-                    <TableCell>{dealer.authExpiry || "-"}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{dealer.authExpiry || "-"}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -608,129 +615,113 @@ export default function DealerPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>经销商详情</DialogTitle>
-              <DialogDescription>
-                {viewingDealer?.dealerNo} - {viewingDealer?.name}
-              </DialogDescription>
-            </DialogHeader>
-            {viewingDealer && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Store className="h-8 w-8 text-primary" />
-                    <div>
-                      <h3 className="font-semibold">{viewingDealer.name}</h3>
-                      <p className="text-sm text-muted-foreground">{viewingDealer.territory}</p>
-                    </div>
-                  </div>
-                  <Badge variant={statusMap[viewingDealer.status]?.variant || "outline"}>
-                    {statusMap[viewingDealer.status]?.label || String(viewingDealer.status ?? "-")}
-                  </Badge>
-                </div>
-
-                <div className="text-sm font-medium">基本信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">经销商编号</p>
-                    <p className="font-medium">{viewingDealer.dealerNo}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">法定代表人</p>
-                    <p className="font-medium">{viewingDealer.legalPerson || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">联系人</p>
-                    <p className="font-medium">{viewingDealer.contactPerson}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">联系电话</p>
-                    <p className="font-medium">{viewingDealer.phone}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">电子邮箱</p>
-                    <p className="font-medium">{viewingDealer.email || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">公司地址</p>
-                    <p className="font-medium">{viewingDealer.address || "-"}</p>
-                  </div>
-                </div>
-
-                <div className="text-sm font-medium">资质信息</div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">营业执照号</p>
-                    <p className="font-medium">{viewingDealer.businessLicense || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">营业执照有效期</p>
-                    <p className="font-medium">{viewingDealer.licenseExpiry || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">医疗器械经营许可证</p>
-                    <p className="font-medium">{viewingDealer.medicalLicense || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">经营许可证有效期</p>
-                    <p className="font-medium">{viewingDealer.medicalLicenseExpiry || "-"}</p>
-                  </div>
-                </div>
-
-                <div className="text-sm font-medium">合同信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">合同编号</p>
-                    <p className="font-medium">{viewingDealer.contractNo || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">合同期限</p>
-                    <p className="font-medium">
-                      {viewingDealer.contractStartDate && viewingDealer.contractEndDate
-                        ? `${viewingDealer.contractStartDate} 至 ${viewingDealer.contractEndDate}`
-                        : "-"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">授权到期日</p>
-                    <p className="font-medium">{viewingDealer.authExpiry || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">信用额度</p>
-                    <p className="font-medium">
-                      {viewingDealer.creditLimit ? `¥${viewingDealer.creditLimit?.toLocaleString?.() ?? "0"}` : "-"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">付款条件</p>
-                    <p className="font-medium">{normalizePaymentCondition(viewingDealer.paymentTerms) || "-"}</p>
-                  </div>
-                </div>
-
-                {viewingDealer.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingDealer.remarks}</p>
-                  </div>
-                )}
-              </div>
+{/* 查看详情对话框 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingDealer && (
+      <div className="space-y-6">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">经销商详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingDealer.dealerNo}
+            {viewingDealer.status && (
+              <>
+                {' '}
+                ·
+                <Badge
+                  variant={statusMap[viewingDealer.status]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(viewingDealer.status, statusMap[viewingDealer.status]?.label)}`}
+                >
+                  {statusMap[viewingDealer.status]?.label || String(viewingDealer.status ?? "-")}
+                </Badge>
+              </>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingDealer) handleEdit(viewingDealer);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="space-y-6 py-4">
+          {/* 基本信息 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="经销商名称">{viewingDealer.name}</FieldRow>
+                <FieldRow label="法定代表人">{viewingDealer.legalPerson}</FieldRow>
+                <FieldRow label="联系人">{viewingDealer.contactPerson}</FieldRow>
+                <FieldRow label="联系电话">{viewingDealer.phone}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="电子邮箱">{viewingDealer.email}</FieldRow>
+                <FieldRow label="授权区域">{viewingDealer.territory}</FieldRow>
+                <FieldRow label="公司地址">{viewingDealer.address}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 资质信息 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">资质信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="营业执照号">{viewingDealer.businessLicense}</FieldRow>
+                <FieldRow label="医疗器械经营许可证">{viewingDealer.medicalLicense}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="营业执照有效期">{viewingDealer.licenseExpiry}</FieldRow>
+                <FieldRow label="经营许可证有效期">{viewingDealer.medicalLicenseExpiry}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 合同信息 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">合同信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="合同编号">{viewingDealer.contractNo}</FieldRow>
+                <FieldRow label="合同期限">
+                  {viewingDealer.contractStartDate && viewingDealer.contractEndDate
+                    ? `${viewingDealer.contractStartDate} 至 ${viewingDealer.contractEndDate}`
+                    : "-"}
+                </FieldRow>
+                <FieldRow label="授权到期日">{viewingDealer.authExpiry}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="信用额度">
+                  {viewingDealer.creditLimit ? `¥${viewingDealer.creditLimit?.toLocaleString?.() ?? "0"}` : "-"}
+                </FieldRow>
+                <FieldRow label="付款条件">{normalizePaymentCondition(viewingDealer.paymentTerms)}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 备注 */}
+          {viewingDealer.remarks && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingDealer.remarks}</p>
+            </div>
+          )}
+        </div>
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setViewDialogOpen(false);
+              if (viewingDealer) handleEdit(viewingDealer);
+            }}>
+              编辑
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

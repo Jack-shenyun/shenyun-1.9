@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -308,6 +309,19 @@ export default function OQCPage() {
     unqualified: data.filter((r: any) => r.result === "unqualified").length,
   };
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -387,17 +401,17 @@ export default function OQCPage() {
         <Card>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>检验单号</TableHead>
-                <TableHead>产品名称</TableHead>
-                <TableHead>批次号</TableHead>
-                <TableHead>批量</TableHead>
-                <TableHead>报废数</TableHead>
-                <TableHead>留样数</TableHead>
-                <TableHead>检验结果</TableHead>
-                <TableHead>签名状态</TableHead>
-                <TableHead>检验日期</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+              <TableRow className="bg-muted/60">
+                <TableHead className="text-center font-bold">检验单号</TableHead>
+                <TableHead className="text-center font-bold">产品名称</TableHead>
+                <TableHead className="text-center font-bold">批次号</TableHead>
+                <TableHead className="text-center font-bold">批量</TableHead>
+                <TableHead className="text-center font-bold">报废数</TableHead>
+                <TableHead className="text-center font-bold">留样数</TableHead>
+                <TableHead className="text-center font-bold">检验结果</TableHead>
+                <TableHead className="text-center font-bold">签名状态</TableHead>
+                <TableHead className="text-center font-bold">检验日期</TableHead>
+                <TableHead className="text-center font-bold">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -405,13 +419,13 @@ export default function OQCPage() {
                 const signCount = record.signatures?.filter((s: any) => s.status === "valid").length || 0;
                 return (
                   <TableRow key={record.id}>
-                    <TableCell className="font-mono">{record.inspectionNo}</TableCell>
-                    <TableCell className="font-medium">{record.productName}</TableCell>
-                    <TableCell className="font-mono">{record.batchNo}</TableCell>
-                    <TableCell>{record.quantity} {record.unit}</TableCell>
-                    <TableCell className="text-red-600">{record.rejectQty || 0}</TableCell>
-                    <TableCell className="text-blue-600">{record.sampleRetainQty || 0}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-mono">{record.inspectionNo}</TableCell>
+                    <TableCell className="text-center font-medium">{record.productName}</TableCell>
+                    <TableCell className="text-center font-mono">{record.batchNo}</TableCell>
+                    <TableCell className="text-center">{record.quantity} {record.unit}</TableCell>
+                    <TableCell className="text-center text-red-600">{record.rejectQty || 0}</TableCell>
+                    <TableCell className="text-center text-blue-600">{record.sampleRetainQty || 0}</TableCell>
+                    <TableCell className="text-center">
                       <Badge
                         variant={statusMap[record.result]?.variant || "outline"}
                         className={statusMap[record.result]?.color || ""}
@@ -419,7 +433,7 @@ export default function OQCPage() {
                         {statusMap[record.result]?.label || record.result}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">
                       {signCount === 3 ? (
                         <Badge className="bg-green-100 text-green-800">
                           <FileCheck className="h-3 w-3 mr-1" />
@@ -435,8 +449,8 @@ export default function OQCPage() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell>{formatDateValue(record.inspectionDate)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{formatDateValue(record.inspectionDate)}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -702,149 +716,145 @@ export default function OQCPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情与电子签名对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <PackageCheck className="h-5 w-5" />
-                成品检验详情 - {selectedRecord?.inspectionNo}
-                {selectedRecord?.signatures?.filter((s: any) => s.status === "valid").length === 3 && (
-                  <Badge className="bg-green-100 text-green-800 ml-2">
-                    <ShieldCheck className="h-3 w-3 mr-1" />
-                    已放行
-                  </Badge>
-                )}
-              </DialogTitle>
-            </DialogHeader>
+        '''
+{/* 查看详情与电子签名对话框 */}
+{selectedRecord && (
+  <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+    <DraggableDialogContent>
+      <div className="space-y-4">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">成品检验详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {selectedRecord.inspectionNo}
+            {selectedRecord.result && (
+              <>
+                {" · "}
+                <Badge
+                  variant={statusMap[selectedRecord.result]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(selectedRecord.result, statusMap[selectedRecord.result]?.label)}`}
+                >
+                  {statusMap[selectedRecord.result]?.label || String(selectedRecord.result ?? "-")}
+                </Badge>
+              </>
+            )}
+            {selectedRecord.signatures?.filter((s: any) => s.status === "valid").length === 3 && (
+              <Badge className="bg-green-100 text-green-800 ml-2">
+                <ShieldCheck className="h-3 w-3 mr-1" />
+                已放行
+              </Badge>
+            )}
+          </p>
+        </div>
 
-            {selectedRecord && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-                {/* 检验信息 */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">检验信息</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">检验单号</span>
-                        <p className="font-medium">{selectedRecord.inspectionNo}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">检验日期</span>
-                        <p className="font-medium">{formatDateValue(selectedRecord.inspectionDate)}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">产品名称</span>
-                        <p className="font-medium">{selectedRecord.productName}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">批次号</span>
-                        <p className="font-medium">{selectedRecord.batchNo}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">批量</span>
-                        <p className="font-medium">{selectedRecord.quantity} {selectedRecord.unit}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">抽样数量</span>
-                        <p className="font-medium">{selectedRecord.samplingQty}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground flex items-center gap-1"><Link2 className="h-3 w-3 text-red-500" />检验报废数量</span>
-                        <p className="font-medium text-red-600">{selectedRecord.rejectQty || 0}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground flex items-center gap-1"><Link2 className="h-3 w-3 text-blue-500" />留样数量</span>
-                        <p className="font-medium text-blue-600">{selectedRecord.sampleRetainQty || 0}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">检验员</span>
-                        <p className="font-medium">{selectedRecord.inspector || "-"}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">检验结果</span>
-                        <div className="mt-1">
-                          <Badge
-                            variant={statusMap[selectedRecord.result]?.variant || "outline"}
-                            className={statusMap[selectedRecord.result]?.color || ""}
-                          >
-                            {statusMap[selectedRecord.result]?.label || selectedRecord.result}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
+        {/* 标准FieldRow组件定义 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+          {/* 左侧信息 */}
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">检验信息</h3>
+              <div className="space-y-1">
+                <FieldRow label="产品名称">{selectedRecord.productName}</FieldRow>
+                <FieldRow label="产品编码">{selectedRecord.productCode || "-"}</FieldRow>
+                <FieldRow label="批次号">{selectedRecord.batchNo}</FieldRow>
+                <FieldRow label="批量">{selectedRecord.quantity} {selectedRecord.unit}</FieldRow>
+                <FieldRow label="抽样数量">{selectedRecord.samplingQty}</FieldRow>
+                <FieldRow label="检验报废">{selectedRecord.rejectQty || 0}</FieldRow>
+                <FieldRow label="留样数量">{selectedRecord.sampleRetainQty || 0}</FieldRow>
+                <FieldRow label="检验日期">{formatDateValue(selectedRecord.inspectionDate)}</FieldRow>
+                <FieldRow label="检验员">{selectedRecord.inspector || "-"}</FieldRow>
+              </div>
+            </div>
 
-                    <Separator />
-
-                    <div>
-                      <span className="text-sm text-muted-foreground">检验项目</span>
-                      <div className="mt-2 space-y-2">
-                        {selectedRecord.inspectionItems.length > 0 ? (
-                          selectedRecord.inspectionItems.map((item, index) => (
-                            <div key={index} className="flex justify-between text-sm p-2 bg-muted/50 rounded">
-                              <div>
-                                <span className="font-medium">{item.name}</span>
-                                <span className="text-muted-foreground ml-2">({item.standard})</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span>{item.result}</span>
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    item.conclusion === "qualified"
-                                      ? "text-green-600"
-                                      : item.conclusion === "unqualified"
-                                      ? "text-red-600"
-                                      : "text-gray-600"
-                                  }
-                                >
-                                  {item.conclusion === "qualified"
-                                    ? "合格"
-                                    : item.conclusion === "unqualified"
-                                    ? "不合格"
-                                    : "待定"}
-                                </Badge>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-sm text-muted-foreground">暂无检验项目</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 放行说明 */}
-                    {selectedRecord.signatures?.filter((s: any) => s.status === "valid").length === 3 && (
-                      <>
-                        <Separator />
-                        <div className="bg-green-50 rounded-lg p-3 text-sm">
-                          <div className="flex items-center gap-2 text-green-800 font-medium mb-1">
-                            <ShieldCheck className="h-4 w-4" />
-                            产品已放行
-                          </div>
-                          <p className="text-green-700 text-xs">
-                            该批次产品已通过全部检验项目，并经检验员、复核员、审批人三级电子签名确认，符合放行条件。
-                          </p>
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* 电子签名状态 */}
-                <SignatureStatusCard
-                  documentType="OQC"
-                  documentNo={selectedRecord.inspectionNo}
-                  documentId={selectedRecord.id}
-                  signatures={selectedRecord.signatures || []}
-                  onSignComplete={handleSignComplete}
-                />
+            {selectedRecord.remarks && (
+              <div>
+                <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+                <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{selectedRecord.remarks}</p>
               </div>
             )}
-          </DraggableDialogContent>
-        </DraggableDialog>
+
+            {/* 放行说明 */}
+            {selectedRecord.signatures?.filter((s: any) => s.status === "valid").length === 3 && (
+              <div>
+                <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">放行说明</h3>
+                <div className="bg-green-50 rounded-lg p-3 text-sm">
+                  <div className="flex items-center gap-2 text-green-800 font-medium mb-1">
+                    <ShieldCheck className="h-4 w-4" />
+                    产品已放行
+                  </div>
+                  <p className="text-green-700 text-xs">
+                    该批次产品已通过全部检验项目，并经检验员、复核员、审批人三级电子签名确认，符合放行条件。
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 右侧签名与项目 */}
+          <div className="space-y-4">
+            {/* 电子签名状态 */}
+            <SignatureStatusCard
+              documentType="OQC"
+              documentNo={selectedRecord.inspectionNo}
+              documentId={selectedRecord.id}
+              signatures={selectedRecord.signatures || []}
+              onSignComplete={handleSignComplete}
+            />
+          </div>
+        </div>
+
+        {/* 检验项目 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">检验项目</h3>
+          <div className="mt-2 space-y-2">
+            {selectedRecord.inspectionItems.length > 0 ? (
+              selectedRecord.inspectionItems.map((item, index) => (
+                <div key={index} className="flex justify-between text-sm p-2 bg-muted/50 rounded">
+                  <div>
+                    <span className="font-medium">{item.name}</span>
+                    <span className="text-muted-foreground ml-2">({item.standard || "N/A"})</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs">{item.result}</span>
+                    <Badge
+                      variant="outline"
+                      className={
+                        item.conclusion === "qualified"
+                          ? "text-green-600 border-green-300"
+                          : item.conclusion === "unqualified"
+                          ? "text-red-600 border-red-300"
+                          : "text-gray-600"
+                      }
+                    >
+                      {item.conclusion === "qualified"
+                        ? "合格"
+                        : item.conclusion === "unqualified"
+                        ? "不合格"
+                        : "待定"}
+                    </Badge>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">暂无检验项目</p>
+            )}
+          </div>
+        </div>
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap">{/* 左侧功能按钮 */}
+          </div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => handleEdit(selectedRecord)}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    </DraggableDialogContent>
+  </DraggableDialog>
+)}
+'''
       </div>
     </ERPLayout>
   );

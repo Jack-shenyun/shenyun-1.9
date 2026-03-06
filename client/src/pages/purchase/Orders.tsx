@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import MaterialMultiSelect, { SelectedMaterial, Material } from "@/components/MaterialMultiSelect";
@@ -249,6 +250,12 @@ export default function PurchaseOrdersPage() {
     next.searchParams.delete("focusId");
     window.history.replaceState({}, "", `${next.pathname}${next.search}`);
   }, [data]);
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -333,35 +340,32 @@ export default function PurchaseOrdersPage() {
         <Card>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>采购单号</TableHead>
-                <TableHead>供应商名称</TableHead>
-                <TableHead className="text-right">采购金额</TableHead>
-                <TableHead>下单日期</TableHead>
-                <TableHead>交货日期</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+              <TableRow className="bg-muted/60">
+                <TableHead className="text-center font-bold">采购单号</TableHead>
+                <TableHead className="text-center font-bold">供应商名称</TableHead>
+                <TableHead className="text-center font-bold">采购金额</TableHead>
+                <TableHead className="text-center font-bold">下单日期</TableHead>
+                <TableHead className="text-center font-bold">交货日期</TableHead>
+                <TableHead className="text-center font-bold">状态</TableHead>
+                <TableHead className="text-center font-bold">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data.map((record: any) => (
                 <TableRow key={record.id}>
-                  <TableCell className="font-mono">{record.orderNo}</TableCell>
-                  <TableCell className="font-medium">{record.supplierName || getSupplierName(record.supplierId)}</TableCell>
-                  <TableCell className="text-right font-medium">
+                  <TableCell className="text-center font-mono">{record.orderNo}</TableCell>
+                  <TableCell className="text-center font-medium">{record.supplierName || getSupplierName(record.supplierId)}</TableCell>
+                  <TableCell className="text-center font-medium">
                     ¥{Number(record.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </TableCell>
-                  <TableCell>{record.orderDate ? String(record.orderDate).split("T")[0] : "-"}</TableCell>
-                  <TableCell>{record.expectedDate ? String(record.expectedDate).split("T")[0] : "-"}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={statusMap[record.status]?.variant || "outline"}
-                      className={statusMap[record.status]?.color || ""}
-                    >
+                  <TableCell className="text-center">{record.orderDate ? String(record.orderDate).split("T")[0] : "-"}</TableCell>
+                  <TableCell className="text-center">{record.expectedDate ? String(record.expectedDate).split("T")[0] : "-"}</TableCell>
+                  <TableCell className="text-center">
+                    <Badge variant={statusMap[record.status]?.variant || "outline"} className={getStatusSemanticClass(record.status, statusMap[record.status]?.label)}>
                       {statusMap[record.status]?.label || record.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-center">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon">
@@ -531,180 +535,149 @@ export default function PurchaseOrdersPage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <ShoppingBag className="h-5 w-5" />
-                采购单详情 - {selectedRecord?.orderNo}
-              </DialogTitle>
-            </DialogHeader>
-
-            {selectedRecord && (
-              <div className="space-y-6 mt-4">
-                {/* 采购信息 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">供应商信息</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">供应商编码</span>
-                        <span className="font-medium">{selectedRecord.supplierCode || "-"}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">供应商名称</span>
-                        <span className="font-medium">{selectedRecord.supplierName || getSupplierName(selectedRecord.supplierId)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">联系人</span>
-                        <span className="font-medium">{selectedRecord.contactPerson || "-"}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">联系电话</span>
-                        <span className="font-medium">{selectedRecord.phone || "-"}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">采购信息</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">下单日期</span>
-                        <span className="font-medium">{selectedRecord.orderDate ? String(selectedRecord.orderDate).split("T")[0] : "-"}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">交货日期</span>
-                        <span className="font-medium">{selectedRecord.expectedDate ? String(selectedRecord.expectedDate).split("T")[0] : "-"}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">货币</span>
-                        <span className="font-medium">{selectedRecord.currency || "CNY"}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">采购状态</span>
-                        <Badge
-                          variant={statusMap[selectedRecord.status]?.variant || "outline"}
-                          className={statusMap[selectedRecord.status]?.color || ""}
-                        >
-                          {statusMap[selectedRecord.status]?.label || selectedRecord.status}
-                        </Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* 物料明细 */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">物料明细</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>物料编码</TableHead>
-                          <TableHead>物料名称</TableHead>
-                          <TableHead>规格</TableHead>
-                          <TableHead>单位</TableHead>
-                          <TableHead className="text-right">单价</TableHead>
-                          <TableHead className="text-right">数量</TableHead>
-                          <TableHead className="text-right">金额</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {detailItems.map((item: any) => (
-                          <TableRow key={item.id}>
-                            <TableCell className="font-mono">{item.materialCode}</TableCell>
-                            <TableCell className="font-medium">{item.materialName}</TableCell>
-                            <TableCell>{item.specification || "-"}</TableCell>
-                            <TableCell>{item.unit || "-"}</TableCell>
-                            <TableCell className="text-right">¥{Number(item.unitPrice || 0).toFixed(2)}</TableCell>
-                            <TableCell className="text-right">{Number(item.quantity || 0)?.toLocaleString?.() ?? "0"}</TableCell>
-                            <TableCell className="text-right font-medium">
-                              ¥{Number(item.amount || 0).toFixed(2)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        <TableRow className="bg-muted/30">
-                          <TableCell colSpan={6} className="text-right font-medium">
-                            采购合计：
-                          </TableCell>
-                          <TableCell className="text-right font-bold text-primary text-lg">
-                            ¥{Number(selectedRecord.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-
-                {/* 操作按钮 */}
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                    关闭
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setViewDialogOpen(false);
-                      handleEdit(selectedRecord);
-                    }}
-                  >
-                    编辑采购单
-                  </Button>
-                  {/* 多级审批流程 */}
-                  {selectedRecord.status === "draft" && (
-                    <>
-                      <Button variant="outline" className="text-amber-600 border-amber-300" onClick={() => { handleStatusChange(selectedRecord, "dept_review"); toast.info("已提交部门审核"); }}>
-                        <UserCheck className="h-4 w-4 mr-1" />提交部门审核
-                      </Button>
-                    </>
-                  )}
-                  {selectedRecord.status === "dept_review" && (
-                    <>
-                      <Button variant="outline" className="text-destructive" onClick={() => handleStatusChange(selectedRecord, "draft")}>
-                        <XCircle className="h-4 w-4 mr-1" />退回修改
-                      </Button>
-                      <Button className="bg-orange-500 hover:bg-orange-600" onClick={() => { handleStatusChange(selectedRecord, "gm_review"); toast.info("部门审核通过，已提交总经理审批"); }}>
-                        <CheckCircle className="h-4 w-4 mr-1" />部门审核通过
-                      </Button>
-                    </>
-                  )}
-                  {selectedRecord.status === "gm_review" && (
-                    <>
-                      <Button variant="outline" className="text-destructive" onClick={() => handleStatusChange(selectedRecord, "dept_review")}>
-                        <XCircle className="h-4 w-4 mr-1" />退回部门审核
-                      </Button>
-                      <Button onClick={() => { handleStatusChange(selectedRecord, "approved"); toast.success("总经理审批通过！采购订单已批准，可打印下达。"); }}>
-                        <CheckCircle className="h-4 w-4 mr-1" />总经理审批通过
-                      </Button>
-                    </>
-                  )}
-                  {selectedRecord.status === "approved" && (
-                    <Button onClick={() => {
-                      // 打印采购订单，打印后自动变为「已下达」
-                      window.print();
-                      handleStatusChange(selectedRecord, "issued");
-                      toast.success("采购订单已打印，状态已更新为「已下达」");
-                    }}>
-                      <Printer className="h-4 w-4 mr-1" />打印订单（下达）
-                    </Button>
-                  )}
-                  {(selectedRecord.status === "issued" || selectedRecord.status === "ordered") && (
-                    <Button onClick={() => handleStatusChange(selectedRecord, "received")}>
-                      确认收货
-                    </Button>
-                  )}
-                </div>
-              </div>
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {selectedRecord && (
+      <div className="space-y-4">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">采购单详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {selectedRecord.orderNo}
+            {selectedRecord.status && (
+              <>
+                {' '}
+                ·
+                <Badge
+                  variant={statusMap[selectedRecord.status]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(selectedRecord.status, statusMap[selectedRecord.status]?.label)}`}
+                >
+                  {statusMap[selectedRecord.status]?.label || String(selectedRecord.status ?? "-")}
+                </Badge>
+              </>
             )}
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="space-y-6 py-2">
+          {/* 供应商与采购信息 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="供应商编码">{selectedRecord.supplierCode || "-"}</FieldRow>
+                <FieldRow label="供应商名称">{selectedRecord.supplierName || getSupplierName(selectedRecord.supplierId)}</FieldRow>
+                <FieldRow label="联系人">{selectedRecord.contactPerson || "-"}</FieldRow>
+                <FieldRow label="联系电话">{selectedRecord.phone || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="下单日期">{selectedRecord.orderDate ? String(selectedRecord.orderDate).split("T")[0] : "-"}</FieldRow>
+                <FieldRow label="交货日期">{selectedRecord.expectedDate ? String(selectedRecord.expectedDate).split("T")[0] : "-"}</FieldRow>
+                <FieldRow label="货币">{selectedRecord.currency || "CNY"}</FieldRow>
+                <FieldRow label="创建时间">{new Date(selectedRecord.createdAt).toLocaleString()}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 物料明细 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">物料明细</h3>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">物料编码</TableHead>
+                  <TableHead className="text-center font-bold">物料名称</TableHead>
+                  <TableHead className="text-center font-bold">规格</TableHead>
+                  <TableHead className="text-center font-bold">单位</TableHead>
+                  <TableHead className="text-center font-bold">单价</TableHead>
+                  <TableHead className="text-center font-bold">数量</TableHead>
+                  <TableHead className="text-center font-bold">金额</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {detailItems.map((item: any) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="text-center font-mono">{item.materialCode}</TableCell>
+                    <TableCell className="text-center font-medium">{item.materialName}</TableCell>
+                    <TableCell className="text-center">{item.specification || "-"}</TableCell>
+                    <TableCell className="text-center">{item.unit || "-"}</TableCell>
+                    <TableCell className="text-center">¥{Number(item.unitPrice || 0).toFixed(2)}</TableCell>
+                    <TableCell className="text-center">{Number(item.quantity || 0)?.toLocaleString?.() ?? "0"}</TableCell>
+                    <TableCell className="text-center font-medium">¥{Number(item.amount || 0).toFixed(2)}</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="bg-muted/30">
+                  <TableCell colSpan={6} className="text-right font-medium">采购合计：</TableCell>
+                  <TableCell className="text-center font-bold text-primary text-lg">
+                    ¥{Number(selectedRecord.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* 备注 */}
+          {selectedRecord.remark && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{selectedRecord.remark}</p>
+            </div>
+          )}
+        </div>
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap">
+            {/* 左侧功能按钮 */}
+            {selectedRecord.status === "draft" && (
+              <Button variant="outline" className="text-amber-600 border-amber-300" size="sm" onClick={() => { handleStatusChange(selectedRecord, "dept_review"); toast.info("已提交部门审核"); }}>
+                <UserCheck className="h-4 w-4 mr-1" />提交部门审核
+              </Button>
+            )}
+            {selectedRecord.status === "dept_review" && (
+              <>
+                <Button variant="outline" className="text-destructive" size="sm" onClick={() => handleStatusChange(selectedRecord, "draft")}>
+                  <XCircle className="h-4 w-4 mr-1" />退回修改
+                </Button>
+                <Button className="bg-orange-500 hover:bg-orange-600" size="sm" onClick={() => { handleStatusChange(selectedRecord, "gm_review"); toast.info("部门审核通过，已提交总经理审批"); }}>
+                  <CheckCircle className="h-4 w-4 mr-1" />部门审核通过
+                </Button>
+              </>
+            )}
+            {selectedRecord.status === "gm_review" && (
+              <>
+                <Button variant="outline" className="text-destructive" size="sm" onClick={() => handleStatusChange(selectedRecord, "dept_review")}>
+                  <XCircle className="h-4 w-4 mr-1" />退回部门审核
+                </Button>
+                <Button size="sm" onClick={() => { handleStatusChange(selectedRecord, "approved"); toast.success("总经理审批通过！采购订单已批准，可打印下达。"); }}>
+                  <CheckCircle className="h-4 w-4 mr-1" />总经理审批通过
+                </Button>
+              </>
+            )}
+            {selectedRecord.status === "approved" && (
+              <Button size="sm" onClick={() => {
+                window.print();
+                handleStatusChange(selectedRecord, "issued");
+                toast.success("采购订单已打印，状态已更新为「已下达」");
+              }}>
+                <Printer className="h-4 w-4 mr-1" />打印订单（下达）
+              </Button>
+            )}
+            {(selectedRecord.status === "issued" || selectedRecord.status === "ordered") && (
+              <Button size="sm" onClick={() => handleStatusChange(selectedRecord, "received")}>
+                确认收货
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(selectedRecord); }}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

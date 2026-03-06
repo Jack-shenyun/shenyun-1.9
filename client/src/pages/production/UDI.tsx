@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -205,6 +206,12 @@ export default function UDIPage() {
   const pendingCount = records.filter((r: any) => r.status === "pending").length;
   const printedCount = records.filter((r: any) => r.status === "printed").length;
   const usedCount = records.filter((r: any) => r.status === "used").length;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -288,32 +295,32 @@ export default function UDIPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[140px]">UDI-DI</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead className="w-[100px]">批次号</TableHead>
-                  <TableHead className="w-[110px]">UDI-PI</TableHead>
-                  <TableHead className="w-[90px]">打印数量</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[100px]">创建日期</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[140px] text-center font-bold">UDI-DI</TableHead>
+                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">批次号</TableHead>
+                  <TableHead className="w-[110px] text-center font-bold">UDI-PI</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">打印数量</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">创建日期</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRecords.map((record: any) => (
                   <TableRow key={record.id}>
-                    <TableCell className="font-mono text-xs">{record.udiDi}</TableCell>
-                    <TableCell>{record.productName}</TableCell>
-                    <TableCell>{record.batchNo}</TableCell>
-                    <TableCell className="font-mono text-xs">{record.udiPi}</TableCell>
-                    <TableCell>{record.printQty?.toLocaleString?.() ?? "0"}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[record.status]?.variant || "outline"}>
+                    <TableCell className="text-center font-mono text-xs">{record.udiDi}</TableCell>
+                    <TableCell className="text-center">{record.productName}</TableCell>
+                    <TableCell className="text-center">{record.batchNo}</TableCell>
+                    <TableCell className="text-center font-mono text-xs">{record.udiPi}</TableCell>
+                    <TableCell className="text-center">{record.printQty?.toLocaleString?.() ?? "0"}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[record.status]?.variant || "outline"} className={getStatusSemanticClass(record.status, statusMap[record.status]?.label)}>
                         {statusMap[record.status]?.label || String(record.status ?? "-")}
                       </Badge>
                     </TableCell>
-                    <TableCell>{formatDateValue(record.createDate)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{formatDateValue(record.createDate)}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -528,117 +535,107 @@ export default function UDIPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>UDI详情</DialogTitle>
-              <DialogDescription>{viewingRecord?.udiDi}</DialogDescription>
-            </DialogHeader>
-            {viewingRecord && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Tags className="h-8 w-8 text-primary" />
-                    <div>
-                      <h3 className="font-semibold">{viewingRecord.productName}</h3>
-                      <p className="text-sm text-muted-foreground font-mono">{viewingRecord.udiDi}</p>
-                    </div>
-                  </div>
-                  <Badge variant={statusMap[viewingRecord.status]?.variant || "outline"}>
-                    {statusMap[viewingRecord.status]?.label || String(viewingRecord.status ?? "-")}
-                  </Badge>
-                </div>
-
-                <div className="text-sm font-medium">UDI信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">UDI-DI</p>
-                    <p className="font-mono font-medium">{viewingRecord.udiDi}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">UDI-PI</p>
-                    <p className="font-mono font-medium">{viewingRecord.udiPi}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">标签类型</p>
-                    <p className="font-medium">{viewingRecord.labelType}</p>
-                  </div>
-                </div>
-
-                <div className="text-sm font-medium">产品信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">产品编码</p>
-                    <p className="font-medium">{viewingRecord.productCode || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">规格型号</p>
-                    <p className="font-medium">{viewingRecord.specification || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">批次号</p>
-                    <p className="font-medium">{viewingRecord.batchNo}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">序列号</p>
-                    <p className="font-medium">{viewingRecord.serialNo || "-"}</p>
-                  </div>
-                </div>
-
-                <div className="text-sm font-medium">日期信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">生产日期</p>
-                    <p className="font-medium">{formatDateValue(viewingRecord.productionDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">有效期至</p>
-                    <p className="font-medium">{formatDateValue(viewingRecord.expiryDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">创建日期</p>
-                    <p className="font-medium">{formatDateValue(viewingRecord.createDate)}</p>
-                  </div>
-                </div>
-
-                <div className="text-sm font-medium">打印信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">计划打印</p>
-                    <p className="font-medium">{viewingRecord.printQty?.toLocaleString?.() ?? "0"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">已打印</p>
-                    <p className="font-medium">{viewingRecord.printedQty?.toLocaleString?.() ?? "0"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">打印日期</p>
-                    <p className="font-medium">{formatDateValue(viewingRecord.printDate)}</p>
-                  </div>
-                </div>
-
-                {viewingRecord.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingRecord.remarks}</p>
-                  </div>
-                )}
-              </div>
+{/* 查看详情对话框 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingRecord && (
+      <div className="space-y-4">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">UDI详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingRecord.udiDi}
+            {viewingRecord.status && (
+              <> · <Badge variant={statusMap[viewingRecord.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingRecord.status, statusMap[viewingRecord.status]?.label)}`}>
+                {statusMap[viewingRecord.status]?.label || String(viewingRecord.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingRecord) handleEdit(viewingRecord);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          {/* UDI信息 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">UDI信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="UDI-DI">{viewingRecord.udiDi}</FieldRow>
+                <FieldRow label="标签类型">{viewingRecord.labelType}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="UDI-PI">{viewingRecord.udiPi}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 产品信息 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">产品信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="产品名称">{viewingRecord.productName}</FieldRow>
+                <FieldRow label="规格型号">{viewingRecord.specification || "-"}</FieldRow>
+                <FieldRow label="序列号">{viewingRecord.serialNo || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="产品编码">{viewingRecord.productCode || "-"}</FieldRow>
+                <FieldRow label="批次号">{viewingRecord.batchNo}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 日期信息 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">日期信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="生产日期">{formatDateValue(viewingRecord.productionDate)}</FieldRow>
+                <FieldRow label="创建日期">{formatDateValue(viewingRecord.createDate)}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="有效期至">{formatDateValue(viewingRecord.expiryDate)}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 打印信息 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">打印信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="计划打印">{viewingRecord.printQty?.toLocaleString?.() ?? "0"}</FieldRow>
+                <FieldRow label="打印日期">{formatDateValue(viewingRecord.printDate)}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="已打印">{viewingRecord.printedQty?.toLocaleString?.() ?? "0"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 备注 */}
+          {viewingRecord.remarks && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingRecord.remarks}</p>
+            </div>
+          )}
+        </div>
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setViewDialogOpen(false);
+              if (viewingRecord) handleEdit(viewingRecord);
+            }}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

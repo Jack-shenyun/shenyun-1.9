@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/table";
 import { Settings2, Plus, Search, Edit, Trash2, Eye, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 
 interface ProductionProcess {
   id: number;
@@ -184,6 +185,12 @@ export default function ProductionProcessPage() {
     );
 
   const totalStdTime = processes.filter(p => p.status === "active").reduce((sum, p) => sum + p.standardTime, 0);
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -228,36 +235,36 @@ export default function ProductionProcessPage() {
         <Card>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-16">序号</TableHead>
-                <TableHead>工序编码</TableHead>
-                <TableHead>工序名称</TableHead>
-                <TableHead>类型</TableHead>
-                <TableHead>工作站</TableHead>
-                <TableHead>操作人员</TableHead>
-                <TableHead className="text-right">标准工时</TableHead>
-                <TableHead>质检</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+              <TableRow className="bg-muted/60">
+                <TableHead className="w-16 text-center font-bold">序号</TableHead>
+                <TableHead className="text-center font-bold">工序编码</TableHead>
+                <TableHead className="text-center font-bold">工序名称</TableHead>
+                <TableHead className="text-center font-bold">类型</TableHead>
+                <TableHead className="text-center font-bold">工作站</TableHead>
+                <TableHead className="text-center font-bold">操作人员</TableHead>
+                <TableHead className="text-center font-bold">标准工时</TableHead>
+                <TableHead className="text-center font-bold">质检</TableHead>
+                <TableHead className="text-center font-bold">状态</TableHead>
+                <TableHead className="text-center font-bold">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map((process, idx) => (
                 <TableRow key={process.id}>
                   <TableCell className="text-center font-bold text-muted-foreground">{process.sortOrder}</TableCell>
-                  <TableCell className="font-mono">{process.processCode}</TableCell>
-                  <TableCell className="font-medium">{process.processName}</TableCell>
-                  <TableCell>
+                  <TableCell className="text-center font-mono">{process.processCode}</TableCell>
+                  <TableCell className="text-center font-medium">{process.processName}</TableCell>
+                  <TableCell className="text-center">
                     <Badge className={processTypeMap[process.processType]?.color || ""}>{processTypeMap[process.processType]?.label}</Badge>
                   </TableCell>
-                  <TableCell>{process.workstation}</TableCell>
-                  <TableCell>{process.operator}</TableCell>
-                  <TableCell className="text-right">{process.standardTime >= 60 ? `${Math.floor(process.standardTime / 60)}h${process.standardTime % 60}m` : `${process.standardTime}min`}</TableCell>
-                  <TableCell>{process.qualityCheckRequired ? <Badge className="bg-purple-50 text-purple-700">需检验</Badge> : <span className="text-muted-foreground text-sm">-</span>}</TableCell>
-                  <TableCell>
-                    <Badge variant={process.status === "active" ? "default" : "outline"}>{process.status === "active" ? "启用" : "停用"}</Badge>
+                  <TableCell className="text-center">{process.workstation}</TableCell>
+                  <TableCell className="text-center">{process.operator}</TableCell>
+                  <TableCell className="text-center">{process.standardTime >= 60 ? `${Math.floor(process.standardTime / 60)}h${process.standardTime % 60}m` : `${process.standardTime}min`}</TableCell>
+                  <TableCell className="text-center">{process.qualityCheckRequired ? <Badge className="bg-purple-50 text-purple-700">需检验</Badge> : <span className="text-muted-foreground text-sm">-</span>}</TableCell>
+                  <TableCell className="text-center">
+                    <Badge variant={process.status === "active" ? "default" : "outline"} className={getStatusSemanticClass(process.status)}>{process.status === "active" ? "启用" : "停用"}</Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-center">
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="sm" onClick={() => handleMoveUp(process.id)} disabled={idx === 0}><ArrowUp className="h-3 w-3" /></Button>
                       <Button variant="ghost" size="sm" onClick={() => handleMoveDown(process.id)} disabled={idx === filtered.length - 1}><ArrowDown className="h-3 w-3" /></Button>
@@ -353,32 +360,56 @@ export default function ProductionProcessPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>工序详情 — {selectedRecord?.processCode}</DialogTitle>
-            </DialogHeader>
-            {selectedRecord && (
-              <div className="space-y-4 py-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div><span className="text-muted-foreground">工序编码</span><p className="font-medium font-mono">{selectedRecord.processCode}</p></div>
-                  <div><span className="text-muted-foreground">工序名称</span><p className="font-medium">{selectedRecord.processName}</p></div>
-                  <div><span className="text-muted-foreground">类型</span><p><Badge className={processTypeMap[selectedRecord.processType]?.color}>{processTypeMap[selectedRecord.processType]?.label}</Badge></p></div>
-                  <div><span className="text-muted-foreground">排序</span><p className="font-medium">{selectedRecord.sortOrder}</p></div>
-                  <div><span className="text-muted-foreground">工作站</span><p className="font-medium">{selectedRecord.workstation}</p></div>
-                  <div><span className="text-muted-foreground">操作人员</span><p className="font-medium">{selectedRecord.operator}</p></div>
-                  <div><span className="text-muted-foreground">标准工时</span><p className="font-medium">{selectedRecord.standardTime >= 60 ? `${Math.floor(selectedRecord.standardTime / 60)}小时${selectedRecord.standardTime % 60}分钟` : `${selectedRecord.standardTime}分钟`}</p></div>
-                  <div><span className="text-muted-foreground">质量检验</span><p className="font-medium">{selectedRecord.qualityCheckRequired ? "需要" : "不需要"}</p></div>
-                  {selectedRecord.description && <div className="col-span-2"><span className="text-muted-foreground">工序描述</span><p className="font-medium">{selectedRecord.description}</p></div>}
-                </div>
-              </div>
+{/* 查看详情对话框 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {selectedRecord && (
+      <div className="space-y-4">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">工序详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {selectedRecord.processCode}
+            {selectedRecord.status && (
+              <> · <Badge variant={selectedRecord.status === 'active' ? 'default' : 'outline'} className={`ml-1 ${getStatusSemanticClass(selectedRecord.status)}`}>
+                {selectedRecord.status === 'active' ? '启用' : '停用'}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+          <div>
+            <FieldRow label="工序编码">{selectedRecord.processCode}</FieldRow>
+            <FieldRow label="工序名称">{selectedRecord.processName}</FieldRow>
+            <FieldRow label="类型"><Badge className={processTypeMap[selectedRecord.processType]?.color}>{processTypeMap[selectedRecord.processType]?.label}</Badge></FieldRow>
+            <FieldRow label="排序序号">{selectedRecord.sortOrder}</FieldRow>
+          </div>
+          <div>
+            <FieldRow label="工作站">{selectedRecord.workstation}</FieldRow>
+            <FieldRow label="操作人员">{selectedRecord.operator}</FieldRow>
+            <FieldRow label="标准工时">{selectedRecord.standardTime >= 60 ? `${Math.floor(selectedRecord.standardTime / 60)}小时${selectedRecord.standardTime % 60}分钟` : `${selectedRecord.standardTime}分钟`}</FieldRow>
+            <FieldRow label="质量检验">{selectedRecord.qualityCheckRequired ? "需要" : "不需要"}</FieldRow>
+          </div>
+        </div>
+
+        {selectedRecord.description && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">工序描述</h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{selectedRecord.description}</p>
+          </div>
+        )}
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => handleEdit(selectedRecord)}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

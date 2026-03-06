@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -193,6 +194,12 @@ export default function ProductionRoutingCardPage() {
   const inProcessCount = (cards as any[]).filter((c) => c.status === "in_process").length;
   const pendingSterilizationCount = (cards as any[]).filter((c) => c.status === "pending_sterilization").length;
   const completedCount = (cards as any[]).filter((c) => c.status === "completed").length;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -241,16 +248,16 @@ export default function ProductionRoutingCardPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>流转单号</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead>批号</TableHead>
-                  <TableHead className="text-right">数量</TableHead>
-                  <TableHead>当前工序</TableHead>
-                  <TableHead>下一工序</TableHead>
-                  <TableHead>需委外灭菌</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">流转单号</TableHead>
+                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="text-center font-bold">批号</TableHead>
+                  <TableHead className="text-center font-bold">数量</TableHead>
+                  <TableHead className="text-center font-bold">当前工序</TableHead>
+                  <TableHead className="text-center font-bold">下一工序</TableHead>
+                  <TableHead className="text-center font-bold">需委外灭菌</TableHead>
+                  <TableHead className="text-center font-bold">状态</TableHead>
+                  <TableHead className="text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -260,25 +267,25 @@ export default function ProductionRoutingCardPage() {
                   <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">暂无流转单</TableCell></TableRow>
                 ) : filteredCards.map((card: any) => (
                   <TableRow key={card.id}>
-                    <TableCell className="font-medium">{card.cardNo}</TableCell>
-                    <TableCell>{card.productName || "-"}</TableCell>
-                    <TableCell>{card.batchNo || "-"}</TableCell>
-                    <TableCell className="text-right">{card.quantity} {card.unit}</TableCell>
-                    <TableCell>{card.currentProcess || "-"}</TableCell>
-                    <TableCell>{card.nextProcess || "-"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-medium">{card.cardNo}</TableCell>
+                    <TableCell className="text-center">{card.productName || "-"}</TableCell>
+                    <TableCell className="text-center">{card.batchNo || "-"}</TableCell>
+                    <TableCell className="text-center">{card.quantity} {card.unit}</TableCell>
+                    <TableCell className="text-center">{card.currentProcess || "-"}</TableCell>
+                    <TableCell className="text-center">{card.nextProcess || "-"}</TableCell>
+                    <TableCell className="text-center">
                       {card.needsSterilization ? (
                         <Badge variant="outline" className="text-amber-600 border-amber-300">需灭菌</Badge>
                       ) : (
                         <span className="text-muted-foreground text-sm">否</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[card.status]?.variant || "outline"}>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[card.status]?.variant || "outline"} className={getStatusSemanticClass(card.status, statusMap[card.status]?.label)}>
                         {statusMap[card.status]?.label || card.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
@@ -421,42 +428,73 @@ export default function ProductionRoutingCardPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>流转单详情</DialogTitle>
-              <DialogDescription>{viewingCard?.cardNo}</DialogDescription>
-            </DialogHeader>
-            {viewingCard && (
-              <div className="space-y-4 py-2">
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div>
-                    <p className="font-semibold">{viewingCard.productName || `产品#${viewingCard.productId}`}</p>
-                    <p className="text-sm text-muted-foreground">批号：{viewingCard.batchNo || "-"}</p>
-                  </div>
-                  <Badge variant={statusMap[viewingCard.status]?.variant || "outline"}>
-                    {statusMap[viewingCard.status]?.label || viewingCard.status}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><p className="text-muted-foreground">数量</p><p className="font-medium">{viewingCard.quantity} {viewingCard.unit}</p></div>
-                  <div><p className="text-muted-foreground">关联生产任务</p><p className="font-medium">{viewingCard.productionOrderNo || "-"}</p></div>
-                  <div><p className="text-muted-foreground">当前工序</p><p className="font-medium">{viewingCard.currentProcess || "-"}</p></div>
-                  <div><p className="text-muted-foreground">下一工序</p><p className="font-medium">{viewingCard.nextProcess || "-"}</p></div>
-                  <div><p className="text-muted-foreground">需委外灭菌</p><p className="font-medium">{viewingCard.needsSterilization ? "是" : "否"}</p></div>
-                </div>
-                {viewingCard.remark && (
-                  <div><p className="text-sm text-muted-foreground mb-1">备注</p><p className="text-sm">{viewingCard.remark}</p></div>
-                )}
-              </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-              <Button onClick={() => { setViewDialogOpen(false); if (viewingCard) handleEdit(viewingCard); }}>编辑</Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+{/* 查看详情 */}
+{viewingCard && (
+  <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+    <DraggableDialogContent>
+      <div className="border-b pb-3">
+        <h2 className="text-lg font-semibold">生产流转单详情</h2>
+        <p className="text-sm text-muted-foreground">
+          {viewingCard.cardNo}
+          {viewingCard.status && (
+            <> · <Badge variant={statusMap[viewingCard.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingCard.status, statusMap[viewingCard.status]?.label)}`}>
+              {statusMap[viewingCard.status]?.label || String(viewingCard.status ?? "-")}
+            </Badge></>
+          )}
+        </p>
+      </div>
+
+      <div className="py-4 space-y-6">
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="产品名称">{viewingCard.productName || "-"}</FieldRow>
+              <FieldRow label="批号">{viewingCard.batchNo || "-"}</FieldRow>
+            </div>
+            <div>
+              <FieldRow label="数量">{viewingCard.quantity} {viewingCard.unit}</FieldRow>
+              <FieldRow label="关联生产任务">{viewingCard.productionOrderNo || "-"}</FieldRow>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">工序流转</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="当前工序">{viewingCard.currentProcess || "-"}</FieldRow>
+            </div>
+            <div>
+              <FieldRow label="下一工序">{viewingCard.nextProcess || "-"}</FieldRow>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+             <div>
+               <FieldRow label="需委外灭菌">{viewingCard.needsSterilization ? "是" : "否"}</FieldRow>
+            </div>
+            <div></div>
+          </div>
+        </div>
+
+        {viewingCard.remark && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingCard.remark}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+        <div className="flex gap-2 flex-wrap"></div>
+        <div className="flex gap-2 flex-wrap justify-end">
+          <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+          <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(viewingCard); }}>编辑</Button>
+        </div>
+      </div>
+    </DraggableDialogContent>
+  </DraggableDialog>
+)}
       </div>
     </ERPLayout>
   );

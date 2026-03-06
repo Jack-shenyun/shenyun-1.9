@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -283,6 +284,19 @@ export default function DepartmentsPage() {
   const totalMembers = departmentRows.reduce((sum, d) => sum + d.memberCount, 0);
   const activeDepts = departmentRows.filter((d) => d.status === "active").length;
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -348,13 +362,13 @@ export default function DepartmentsPage() {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>部门编码</TableHead>
-                    <TableHead>部门名称</TableHead>
-                    <TableHead>负责人</TableHead>
-                    <TableHead>人员数量</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead className="w-[100px]">操作</TableHead>
+                  <TableRow className="bg-muted/60">
+                    <TableHead className="text-center font-bold">部门编码</TableHead>
+                    <TableHead className="text-center font-bold">部门名称</TableHead>
+                    <TableHead className="text-center font-bold">负责人</TableHead>
+                    <TableHead className="text-center font-bold">人员数量</TableHead>
+                    <TableHead className="text-center font-bold">状态</TableHead>
+                    <TableHead className="w-[100px] text-center font-bold">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -367,21 +381,21 @@ export default function DepartmentsPage() {
                   ) : (
                     filteredDepartments.map((dept) => (
                       <TableRow key={dept.id}>
-                        <TableCell className="font-mono">{dept.code}</TableCell>
-                        <TableCell className="font-medium">{dept.name}</TableCell>
-                        <TableCell>{dept.managerName}</TableCell>
-                        <TableCell>
+                        <TableCell className="text-center font-mono">{dept.code}</TableCell>
+                        <TableCell className="text-center font-medium">{dept.name}</TableCell>
+                        <TableCell className="text-center">{dept.managerName}</TableCell>
+                        <TableCell className="text-center">
                           <div className="flex items-center gap-1">
                             <Users className="h-4 w-4 text-muted-foreground" />
                             {dept.memberCount}
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={dept.status === "active" ? "default" : "secondary"}>
+                        <TableCell className="text-center">
+                          <Badge variant={dept.status === "active" ? "default" : "secondary"} className={getStatusSemanticClass(dept.status)}>
                             {dept.status === "active" ? "启用" : "停用"}
                           </Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon">
@@ -520,53 +534,84 @@ export default function DepartmentsPage() {
         </DraggableDialogContent>
       </DraggableDialog>
 
-      <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DraggableDialogContent>
-          <DialogHeader>
-            <DialogTitle>部门详情</DialogTitle>
-          </DialogHeader>
-          {viewingDept && (
-            <div className="grid grid-cols-2 gap-4 py-4">
-              <div>
-                <p className="text-sm text-muted-foreground">部门编码</p>
-                <p className="font-medium">{viewingDept.code}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">部门名称</p>
-                <p className="font-medium">{viewingDept.name}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">负责人</p>
-                <p className="font-medium">{viewingDept.managerName}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">人员数量</p>
-                <p className="font-medium">{viewingDept.memberCount} 人</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-sm text-muted-foreground">部门成员</p>
-                <p className="font-medium">
-                  {viewingDept.memberNames.length > 0 ? viewingDept.memberNames.join("，") : "-"}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">状态</p>
-                <Badge variant={viewingDept.status === "active" ? "default" : "secondary"}>
-                  {viewingDept.status === "active" ? "启用" : "停用"}
+
+        {/* 查看详情 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingDept && (
+      <div className="space-y-4">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">部门详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingDept.code}
+            {viewingDept.status && (
+              <>
+                {" "}
+                ·
+                <Badge
+                  variant={statusMap[viewingDept.status]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(viewingDept.status)}`}
+                >
+                  {statusMap[viewingDept.status]?.label || String(viewingDept.status ?? "-")}
                 </Badge>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">创建时间</p>
-                <p className="font-medium">{new Date(viewingDept.createdAt).toLocaleDateString("zh-CN")}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-sm text-muted-foreground">部门描述</p>
-                <p className="font-medium">{viewingDept.description || "-"}</p>
-              </div>
+              </>
+            )}
+          </p>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="部门名称">{viewingDept.name}</FieldRow>
+              <FieldRow label="负责人">{viewingDept.managerName}</FieldRow>
+              <FieldRow label="创建时间">{new Date(viewingDept.createdAt).toLocaleDateString("zh-CN")}</FieldRow>
             </div>
-          )}
-        </DraggableDialogContent>
-      </DraggableDialog>
+            <div>
+              <FieldRow label="部门编码">{viewingDept.code}</FieldRow>
+              <FieldRow label="人员数量">{viewingDept.memberCount} 人</FieldRow>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">部门成员</h3>
+          <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">
+            {viewingDept.memberNames.length > 0 ? viewingDept.memberNames.join("，") : "无"}
+          </p>
+        </div>
+
+        {viewingDept.description && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">部门描述</h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">
+              {viewingDept.description}
+            </p>
+          </div>
+        )}
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>
+              关闭
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setViewDialogOpen(false);
+                handleEdit(viewingDept);
+              }}
+            >
+              编辑
+            </Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
     </ERPLayout>
   );
 }

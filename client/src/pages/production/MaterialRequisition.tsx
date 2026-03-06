@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -275,6 +276,19 @@ export default function MaterialRequisitionPage() {
     return { ...po, productName: product?.name || "-", productSpec: product?.specification || "" };
   });
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -323,13 +337,13 @@ export default function MaterialRequisitionPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>领料单号</TableHead>
-                  <TableHead>关联生产任务</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead>申请日期</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">领料单号</TableHead>
+                  <TableHead className="text-center font-bold">关联生产任务</TableHead>
+                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="text-center font-bold">申请日期</TableHead>
+                  <TableHead className="text-center font-bold">状态</TableHead>
+                  <TableHead className="text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -342,16 +356,16 @@ export default function MaterialRequisitionPage() {
                   const product = po ? (productsData as any[]).find((p: any) => p.id === po.productId) : null;
                   return (
                     <TableRow key={order.id}>
-                      <TableCell className="font-medium font-mono">{order.requisitionNo}</TableCell>
-                      <TableCell className="font-mono">{order.productionOrderNo || "-"}</TableCell>
-                      <TableCell>{product?.name || "-"}</TableCell>
-                      <TableCell>{order.applicationDate ? String(order.applicationDate).split("T")[0] : "-"}</TableCell>
-                      <TableCell>
-                        <Badge variant={statusMap[order.status]?.variant || "outline"}>
+                      <TableCell className="text-center font-medium font-mono">{order.requisitionNo}</TableCell>
+                      <TableCell className="text-center font-mono">{order.productionOrderNo || "-"}</TableCell>
+                      <TableCell className="text-center">{product?.name || "-"}</TableCell>
+                      <TableCell className="text-center">{order.applicationDate ? String(order.applicationDate).split("T")[0] : "-"}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={statusMap[order.status]?.variant || "outline"} className={getStatusSemanticClass(order.status, statusMap[order.status]?.label)}>
                           {statusMap[order.status]?.label || order.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
@@ -516,34 +530,34 @@ export default function MaterialRequisitionPage() {
                   <div className="border rounded-md overflow-hidden">
                     <Table>
                       <TableHeader>
-                        <TableRow>
-                          <TableHead>物料编码</TableHead>
-                          <TableHead>物料名称</TableHead>
-                          <TableHead>规格</TableHead>
-                          <TableHead>需求数量</TableHead>
-                          <TableHead>单位</TableHead>
-                          <TableHead className="w-[60px]">操作</TableHead>
+                        <TableRow className="bg-muted/60">
+                          <TableHead className="text-center font-bold">物料编码</TableHead>
+                          <TableHead className="text-center font-bold">物料名称</TableHead>
+                          <TableHead className="text-center font-bold">规格</TableHead>
+                          <TableHead className="text-center font-bold">需求数量</TableHead>
+                          <TableHead className="text-center font-bold">单位</TableHead>
+                          <TableHead className="w-[60px] text-center font-bold">操作</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {items.map((item, idx) => (
                           <TableRow key={idx}>
-                            <TableCell>
+                            <TableCell className="text-center">
                               <Input value={item.materialCode} onChange={(e) => updateItem(idx, "materialCode", e.target.value)} placeholder="编码" className="h-8 font-mono" />
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="text-center">
                               <Input value={item.materialName} onChange={(e) => updateItem(idx, "materialName", e.target.value)} placeholder="名称" className="h-8" />
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="text-center">
                               <Input value={item.specification} onChange={(e) => updateItem(idx, "specification", e.target.value)} placeholder="规格" className="h-8" />
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="text-center">
                               <Input type="number" value={item.requiredQty} onChange={(e) => updateItem(idx, "requiredQty", Number(e.target.value))} className="h-8 w-20" />
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="text-center">
                               <Input value={item.unit} onChange={(e) => updateItem(idx, "unit", e.target.value)} className="h-8 w-16" />
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="text-center">
                               <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeItem(idx)}>
                                 <Trash2 className="h-3 w-3 text-destructive" />
                               </Button>
@@ -599,60 +613,81 @@ export default function MaterialRequisitionPage() {
         />
 
         {/* 查看详情 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>领料单详情</DialogTitle>
-              <DialogDescription>{viewingOrder?.requisitionNo}</DialogDescription>
-            </DialogHeader>
-            {viewingOrder && (
-              <div className="space-y-4 py-2">
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div>
-                    <p className="font-semibold font-mono">{viewingOrder.requisitionNo}</p>
-                    <p className="text-sm text-muted-foreground">关联任务：{viewingOrder.productionOrderNo || "-"}</p>
-                  </div>
-                  <Badge variant={statusMap[viewingOrder.status]?.variant || "outline"}>
-                    {statusMap[viewingOrder.status]?.label || viewingOrder.status}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><p className="text-muted-foreground">申请日期</p><p className="font-medium">{viewingOrder.applicationDate ? String(viewingOrder.applicationDate).split("T")[0] : "-"}</p></div>
-                </div>
-                {getViewItems(viewingOrder).length > 0 && (
-                  <div>
-                    <p className="text-sm font-medium mb-2">物料明细（{getViewItems(viewingOrder).length} 项）</p>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>物料编码</TableHead>
-                          <TableHead>物料名称</TableHead>
-                          <TableHead>规格</TableHead>
-                          <TableHead className="text-right">需求数量</TableHead>
-                          <TableHead>单位</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {getViewItems(viewingOrder).map((item, idx) => (
-                          <TableRow key={idx}>
-                            <TableCell className="font-mono">{item.materialCode}</TableCell>
-                            <TableCell>{item.materialName}</TableCell>
-                            <TableCell className="text-muted-foreground">{item.specification || "-"}</TableCell>
-                            <TableCell className="text-right">{item.requiredQty}</TableCell>
-                            <TableCell>{item.unit}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </div>
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingOrder && (
+              <div className="space-y-4">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">领料单详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingOrder.requisitionNo}
+            {viewingOrder.status && (
+              <> · <Badge variant={statusMap[viewingOrder.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingOrder.status, statusMap[viewingOrder.status]?.label)}`}>
+                {statusMap[viewingOrder.status]?.label || String(viewingOrder.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="space-y-6 py-2">
+          {/* 基本信息分区 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="关联任务">{viewingOrder.productionOrderNo || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="申请日期">{viewingOrder.applicationDate ? String(viewingOrder.applicationDate).split("T")[0] : "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 物料明细分区 */}
+          {getViewItems(viewingOrder).length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">物料明细 ({getViewItems(viewingOrder).length} 项)</h3>
+              <div className="border rounded-md overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/60">
+                      <TableHead className="text-center font-bold">物料编码</TableHead>
+                      <TableHead className="text-center font-bold">物料名称</TableHead>
+                      <TableHead className="text-center font-bold">规格</TableHead>
+                      <TableHead className="text-center font-bold">需求数量</TableHead>
+                      <TableHead className="text-center font-bold">单位</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {getViewItems(viewingOrder).map((item, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="text-center font-mono">{item.materialCode}</TableCell>
+                        <TableCell className="text-center">{item.materialName}</TableCell>
+                        <TableCell className="text-center text-muted-foreground">{item.specification || "-"}</TableCell>
+                        <TableCell className="text-center">{item.requiredQty}</TableCell>
+                        <TableCell className="text-center">{item.unit}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => handleEdit(viewingOrder)}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -213,6 +214,12 @@ export default function SamplesPage() {
     return diffDays <= 90 && diffDays > 0;
   }).length;
   const expiredCount = samples.filter((s: any) => s.status === "expired").length;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -296,15 +303,15 @@ export default function SamplesPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[120px]">留样编号</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead className="w-[100px]">批次号</TableHead>
-                  <TableHead className="w-[80px]">数量</TableHead>
-                  <TableHead className="w-[100px]">存放位置</TableHead>
-                  <TableHead className="w-[100px]">到期日期</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[120px] text-center font-bold">留样编号</TableHead>
+                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">批次号</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">数量</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">存放位置</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">到期日期</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -316,23 +323,23 @@ export default function SamplesPage() {
 
                   return (
                     <TableRow key={sample.id}>
-                      <TableCell className="font-medium">{sample.sampleNo}</TableCell>
-                      <TableCell>{sample.productName}</TableCell>
-                      <TableCell>{sample.batchNo}</TableCell>
-                      <TableCell>{sample.quantity} {sample.unit}</TableCell>
-                      <TableCell>{sample.location}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-center font-medium">{sample.sampleNo}</TableCell>
+                      <TableCell className="text-center">{sample.productName}</TableCell>
+                      <TableCell className="text-center">{sample.batchNo}</TableCell>
+                      <TableCell className="text-center">{sample.quantity} {sample.unit}</TableCell>
+                      <TableCell className="text-center">{sample.location}</TableCell>
+                      <TableCell className="text-center">
                         <div className="flex items-center gap-1">
                           {formatDateValue(sample.expiryDate)}
                           {isNearExpiry && <AlertTriangle className="h-4 w-4 text-amber-500" />}
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <Badge variant={statusMap[sample.status]?.variant || "outline"}>
+                      <TableCell className="text-center">
+                        <Badge variant={statusMap[sample.status]?.variant || "outline"} className={getStatusSemanticClass(sample.status, statusMap[sample.status]?.label)}>
                           {statusMap[sample.status]?.label || String(sample.status ?? "-")}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
@@ -570,83 +577,83 @@ export default function SamplesPage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>留样详情</DialogTitle>
-              <DialogDescription>{viewingSample?.sampleNo}</DialogDescription>
-            </DialogHeader>
-            {viewingSample && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold">{viewingSample.productName}</h3>
-                    <p className="text-sm text-muted-foreground">批次：{viewingSample.batchNo}</p>
-                  </div>
-                  <Badge variant={statusMap[viewingSample.status]?.variant || "outline"}>
-                    {statusMap[viewingSample.status]?.label || String(viewingSample.status ?? "-")}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">产品编码</p>
-                    <p className="font-medium">{viewingSample.productCode || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">留样数量</p>
-                    <p className="font-medium">{viewingSample.quantity} {viewingSample.unit}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">存放位置</p>
-                    <p className="font-medium">{viewingSample.location}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">留样日期</p>
-                    <p className="font-medium">{formatDateValue(viewingSample.retainDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">留样期限</p>
-                    <p className="font-medium">{viewingSample.retainPeriod} 个月</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">到期日期</p>
-                    <p className="font-medium">{formatDateValue(viewingSample.expiryDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">留样人</p>
-                    <p className="font-medium">{viewingSample.retainBy || "-"}</p>
-                  </div>
-                </div>
-
-                {viewingSample.observationRecords && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">观察记录</p>
-                    <p className="text-sm bg-muted/30 p-3 rounded whitespace-pre-wrap">{viewingSample.observationRecords}</p>
-                  </div>
-                )}
-
-                {viewingSample.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingSample.remarks}</p>
-                  </div>
-                )}
-              </div>
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingSample && (
+      <>
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">留样详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingSample.sampleNo}
+            {viewingSample.status && (
+              <> · <Badge variant={statusMap[viewingSample.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingSample.status, statusMap[viewingSample.status]?.label)}`}>
+                {statusMap[viewingSample.status]?.label || String(viewingSample.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingSample) handleEdit(viewingSample);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="py-4 space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="产品名称">{viewingSample.productName}</FieldRow>
+                <FieldRow label="批次号">{viewingSample.batchNo}</FieldRow>
+                <FieldRow label="留样数量">{viewingSample.quantity} {viewingSample.unit}</FieldRow>
+                <FieldRow label="留样人">{viewingSample.retainBy || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="产品编码">{viewingSample.productCode || "-"}</FieldRow>
+                <FieldRow label="存放位置">{viewingSample.location}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">日期信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="留样日期">{formatDateValue(viewingSample.retainDate)}</FieldRow>
+                <FieldRow label="留样期限">{viewingSample.retainPeriod} 个月</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="到期日期">{formatDateValue(viewingSample.expiryDate)}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {viewingSample.observationRecords && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">观察记录</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3 whitespace-pre-wrap">{viewingSample.observationRecords}</p>
+            </div>
+          )}
+
+          {viewingSample.remarks && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingSample.remarks}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setViewDialogOpen(false);
+              if (viewingSample) handleEdit(viewingSample);
+            }}>
+              编辑
+            </Button>
+          </div>
+        </div>
+      </>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

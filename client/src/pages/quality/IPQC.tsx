@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { SignatureStatusCard, SignatureRecord } from "@/components/ElectronicSignature";
@@ -296,6 +297,12 @@ export default function IPQCPage() {
     qualified: data.filter((r) => r.result === "qualified").length,
     unqualified: data.filter((r) => r.result === "unqualified").length,
   };
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -376,16 +383,16 @@ export default function IPQCPage() {
         <Card>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>检验单号</TableHead>
-                <TableHead>产品名称</TableHead>
-                <TableHead>批次号</TableHead>
-                <TableHead>工序</TableHead>
-                <TableHead>检验类型</TableHead>
-                <TableHead>检验结果</TableHead>
-                <TableHead>签名状态</TableHead>
-                <TableHead>检验日期</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+              <TableRow className="bg-muted/60">
+                <TableHead className="text-center font-bold">检验单号</TableHead>
+                <TableHead className="text-center font-bold">产品名称</TableHead>
+                <TableHead className="text-center font-bold">批次号</TableHead>
+                <TableHead className="text-center font-bold">工序</TableHead>
+                <TableHead className="text-center font-bold">检验类型</TableHead>
+                <TableHead className="text-center font-bold">检验结果</TableHead>
+                <TableHead className="text-center font-bold">签名状态</TableHead>
+                <TableHead className="text-center font-bold">检验日期</TableHead>
+                <TableHead className="text-center font-bold">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -393,14 +400,14 @@ export default function IPQCPage() {
                 const signCount = record.signatures?.filter((s: any) => s.status === "valid").length || 0;
                 return (
                   <TableRow key={record.id}>
-                    <TableCell className="font-mono">{record.inspectionNo}</TableCell>
-                    <TableCell className="font-medium">{record.productName}</TableCell>
-                    <TableCell className="font-mono">{record.batchNo}</TableCell>
-                    <TableCell>{record.process}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-mono">{record.inspectionNo}</TableCell>
+                    <TableCell className="text-center font-medium">{record.productName}</TableCell>
+                    <TableCell className="text-center font-mono">{record.batchNo}</TableCell>
+                    <TableCell className="text-center">{record.process}</TableCell>
+                    <TableCell className="text-center">
                       <Badge variant="outline">{inspectionTypeMap[record.inspectionType] || record.inspectionType}</Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">
                       <Badge
                         variant={statusMap[record.result]?.variant || "outline"}
                         className={statusMap[record.result]?.color || ""}
@@ -408,7 +415,7 @@ export default function IPQCPage() {
                         {statusMap[record.result]?.label || record.result}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">
                       {signCount === 3 ? (
                         <Badge className="bg-green-100 text-green-800">
                           <FileCheck className="h-3 w-3 mr-1" />
@@ -424,8 +431,8 @@ export default function IPQCPage() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell>{formatDateValue(record.inspectionDate)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{formatDateValue(record.inspectionDate)}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -667,118 +674,97 @@ export default function IPQCPage() {
         </DraggableDialog>
 
         {/* 查看详情与电子签名对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <ClipboardList className="h-5 w-5" />
-                过程检验详情 - {selectedRecord?.inspectionNo}
-              </DialogTitle>
-            </DialogHeader>
+{selectedRecord && (
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    <div className="border-b pb-3">
+      <h2 className="text-lg font-semibold">过程检验详情</h2>
+      <p className="text-sm text-muted-foreground">
+        {selectedRecord.inspectionNo}
+        {selectedRecord.result && (
+          <> · <Badge variant={statusMap[selectedRecord.result]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(selectedRecord.result, statusMap[selectedRecord.result]?.label)}`}>
+            {statusMap[selectedRecord.result]?.label || String(selectedRecord.result ?? "-")}
+          </Badge></>
+        )}
+      </p>
+    </div>
 
-            {selectedRecord && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-                {/* 检验信息 */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">检验信息</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">检验单号</span>
-                        <p className="font-medium">{selectedRecord.inspectionNo}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">检验日期</span>
-                        <p className="font-medium">{formatDateValue(selectedRecord.inspectionDate)}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">产品名称</span>
-                        <p className="font-medium">{selectedRecord.productName}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">批次号</span>
-                        <p className="font-medium">{selectedRecord.batchNo}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">工序</span>
-                        <p className="font-medium">{selectedRecord.process}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">检验类型</span>
-                        <Badge variant="outline">{inspectionTypeMap[selectedRecord.inspectionType] || selectedRecord.inspectionType}</Badge>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">检验员</span>
-                        <p className="font-medium">{selectedRecord.inspector || "-"}</p>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">检验结果</span>
-                        <div className="mt-1">
-                          <Badge
-                            variant={statusMap[selectedRecord.result]?.variant || "outline"}
-                            className={statusMap[selectedRecord.result]?.color || ""}
-                          >
-                            {statusMap[selectedRecord.result]?.label || selectedRecord.result}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
+    <div className="space-y-6 py-4">
+      <div>
+        <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+          <div>
+            <FieldRow label="产品名称">{selectedRecord.productName}</FieldRow>
+            <FieldRow label="产品编码">{selectedRecord.productCode || "-"}</FieldRow>
+            <FieldRow label="批次号">{selectedRecord.batchNo}</FieldRow>
+            <FieldRow label="工序">{selectedRecord.process}</FieldRow>
+          </div>
+          <div>
+            <FieldRow label="检验类型">
+              <Badge variant="outline">{inspectionTypeMap[selectedRecord.inspectionType] || selectedRecord.inspectionType}</Badge>
+            </FieldRow>
+            <FieldRow label="检验日期">{formatDateValue(selectedRecord.inspectionDate)}</FieldRow>
+            <FieldRow label="检验员">{selectedRecord.inspector || "-"}</FieldRow>
+            <FieldRow label="工位">{selectedRecord.workstation || "-"}</FieldRow>
+          </div>
+        </div>
+      </div>
 
-                    <Separator />
-
-                    <div>
-                      <span className="text-sm text-muted-foreground">检验项目</span>
-                      <div className="mt-2 space-y-2">
-                        {selectedRecord.inspectionItems.length > 0 ? (
-                          selectedRecord.inspectionItems.map((item, index) => (
-                            <div key={index} className="flex justify-between text-sm p-2 bg-muted/50 rounded">
-                              <div>
-                                <span className="font-medium">{item.name}</span>
-                                <span className="text-muted-foreground ml-2">({item.standard})</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span>{item.result}</span>
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    item.conclusion === "qualified"
-                                      ? "text-green-600"
-                                      : item.conclusion === "unqualified"
-                                      ? "text-red-600"
-                                      : "text-gray-600"
-                                  }
-                                >
-                                  {item.conclusion === "qualified"
-                                    ? "合格"
-                                    : item.conclusion === "unqualified"
-                                    ? "不合格"
-                                    : "待定"}
-                                </Badge>
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-sm text-muted-foreground">暂无检验项目</p>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* 电子签名状态 */}
-                <SignatureStatusCard
-                  documentType="IPQC"
-                  documentNo={selectedRecord.inspectionNo}
-                  documentId={selectedRecord.id}
-                  signatures={selectedRecord.signatures || []}
-                  onSignComplete={handleSignComplete}
-                />
+      <div>
+        <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">检验项目</h3>
+        <div className="space-y-2">
+          {selectedRecord.inspectionItems.length > 0 ? (
+            selectedRecord.inspectionItems.map((item, index) => (
+              <div key={index} className="flex justify-between items-center text-sm p-2 bg-muted/50 rounded">
+                <div className="flex-1">
+                  <span className="font-medium">{item.name}</span>
+                  {item.standard && <span className="text-muted-foreground ml-2">({item.standard})</span>}
+                </div>
+                <div className="flex items-center gap-2 w-40 justify-end">
+                  <span className="flex-1 text-right break-all">{item.result}</span>
+                  <Badge
+                    variant="outline"
+                    className={`w-16 justify-center ${item.conclusion === "qualified" ? "text-green-600" : item.conclusion === "unqualified" ? "text-red-600" : "text-gray-600"}`}>
+                    {item.conclusion === "qualified" ? "合格" : item.conclusion === "unqualified" ? "不合格" : "待定"}
+                  </Badge>
+                </div>
               </div>
-            )}
-          </DraggableDialogContent>
-        </DraggableDialog>
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">暂无检验项目</p>
+          )}
+        </div>
+      </div>
+
+      {selectedRecord.remarks && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+          <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{selectedRecord.remarks}</p>
+        </div>
+      )}
+
+      <div>
+        <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">电子签名</h3>
+        <SignatureStatusCard
+          documentType="IPQC"
+          documentNo={selectedRecord.inspectionNo}
+          documentId={selectedRecord.id}
+          signatures={selectedRecord.signatures || []}
+          onSignComplete={handleSignComplete}
+        />
+      </div>
+    </div>
+
+    <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+      <div className="flex gap-2 flex-wrap"></div>
+      <div className="flex gap-2 flex-wrap justify-end">
+        <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+        <Button variant="outline" size="sm" onClick={() => handleEdit(selectedRecord)}>编辑</Button>
+      </div>
+    </div>
+  </DraggableDialogContent>
+</DraggableDialog>
+)}
       </div>
     </ERPLayout>
   );

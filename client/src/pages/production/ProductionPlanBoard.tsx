@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -227,6 +228,19 @@ export default function ProductionPlanBoardPage() {
   const completedCount = (plans as any[]).filter((p) => p.status === "completed").length;
   const urgentCount = (plans as any[]).filter((p) => p.priority === "urgent" && p.status !== "completed").length;
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -320,16 +334,16 @@ export default function ProductionPlanBoardPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>计划编号</TableHead>
-                  <TableHead>类型</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead>关联销售单</TableHead>
-                  <TableHead className="text-right">计划数量</TableHead>
-                  <TableHead>优先级</TableHead>
-                  <TableHead>交期</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">计划编号</TableHead>
+                  <TableHead className="text-center font-bold">类型</TableHead>
+                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="text-center font-bold">关联销售单</TableHead>
+                  <TableHead className="text-center font-bold">计划数量</TableHead>
+                  <TableHead className="text-center font-bold">优先级</TableHead>
+                  <TableHead className="text-center font-bold">交期</TableHead>
+                  <TableHead className="text-center font-bold">状态</TableHead>
+                  <TableHead className="text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -339,25 +353,25 @@ export default function ProductionPlanBoardPage() {
                   <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">暂无生产计划</TableCell></TableRow>
                 ) : filteredPlans.map((plan: any) => (
                   <TableRow key={plan.id}>
-                    <TableCell className="font-medium">{plan.planNo}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-medium">{plan.planNo}</TableCell>
+                    <TableCell className="text-center">
                       <Badge variant="outline">{planTypeMap[plan.planType] || plan.planType}</Badge>
                     </TableCell>
-                    <TableCell>{plan.productName || `产品#${plan.productId}`}</TableCell>
-                    <TableCell className="text-muted-foreground">{plan.salesOrderNo || "-"}</TableCell>
-                    <TableCell className="text-right">{plan.plannedQty} {plan.unit}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">{plan.productName || `产品#${plan.productId}`}</TableCell>
+                    <TableCell className="text-center text-muted-foreground">{plan.salesOrderNo || "-"}</TableCell>
+                    <TableCell className="text-center">{plan.plannedQty} {plan.unit}</TableCell>
+                    <TableCell className="text-center">
                       <span className={priorityMap[plan.priority]?.color || ""}>
                         {priorityMap[plan.priority]?.label || plan.priority}
                       </span>
                     </TableCell>
-                    <TableCell>{plan.plannedEndDate ? String(plan.plannedEndDate).split("T")[0] : "-"}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[plan.status]?.variant || "outline"}>
+                    <TableCell className="text-center">{plan.plannedEndDate ? String(plan.plannedEndDate).split("T")[0] : "-"}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[plan.status]?.variant || "outline"} className={getStatusSemanticClass(plan.status, statusMap[plan.status]?.label)}>
                         {statusMap[plan.status]?.label || plan.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -577,42 +591,74 @@ export default function ProductionPlanBoardPage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>生产计划详情</DialogTitle>
-              <DialogDescription>{viewingPlan?.planNo}</DialogDescription>
-            </DialogHeader>
-            {viewingPlan && (
-              <div className="space-y-4 py-2">
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div>
-                    <p className="font-semibold">{viewingPlan.productName || `产品#${viewingPlan.productId}`}</p>
-                    <p className="text-sm text-muted-foreground">{planTypeMap[viewingPlan.planType]}</p>
-                  </div>
-                  <Badge variant={statusMap[viewingPlan.status]?.variant || "outline"}>
-                    {statusMap[viewingPlan.status]?.label || viewingPlan.status}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><p className="text-muted-foreground">关联销售单</p><p className="font-medium">{viewingPlan.salesOrderNo || "-"}</p></div>
-                  <div><p className="text-muted-foreground">计划数量</p><p className="font-medium">{viewingPlan.plannedQty} {viewingPlan.unit}</p></div>
-                  <div><p className="text-muted-foreground">生产批号</p><p className="font-medium">{viewingPlan.batchNo || "-"}</p></div>
-                  <div><p className="text-muted-foreground">优先级</p><p className={`font-medium ${priorityMap[viewingPlan.priority]?.color}`}>{priorityMap[viewingPlan.priority]?.label}</p></div>
-                  <div><p className="text-muted-foreground">计划开始</p><p className="font-medium">{viewingPlan.plannedStartDate ? String(viewingPlan.plannedStartDate).split("T")[0] : "-"}</p></div>
-                  <div><p className="text-muted-foreground">交期</p><p className="font-medium">{viewingPlan.plannedEndDate ? String(viewingPlan.plannedEndDate).split("T")[0] : "-"}</p></div>
-                </div>
-                {viewingPlan.remark && (
-                  <div><p className="text-sm text-muted-foreground mb-1">备注</p><p className="text-sm">{viewingPlan.remark}</p></div>
-                )}
-              </div>
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingPlan && (
+              <div className="space-y-4">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">生产计划详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingPlan.planNo}
+            {viewingPlan.status && (
+              <> · <Badge variant={statusMap[viewingPlan.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingPlan.status, statusMap[viewingPlan.status]?.label)}`}>
+                {statusMap[viewingPlan.status]?.label || String(viewingPlan.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-              <Button onClick={() => { setViewDialogOpen(false); if (viewingPlan) handleEdit(viewingPlan); }}>编辑</Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="产品名称">{viewingPlan.productName || `-`}</FieldRow>
+                <FieldRow label="计划数量">{viewingPlan.plannedQty} {viewingPlan.unit}</FieldRow>
+                <FieldRow label="计划开始">{viewingPlan.plannedStartDate ? String(viewingPlan.plannedStartDate).split("T")[0] : "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="计划类型">{planTypeMap[viewingPlan.planType] || '-'}</FieldRow>
+                <FieldRow label="生产批号">{viewingPlan.batchNo || "-"}</FieldRow>
+                <FieldRow label="计划交期">{viewingPlan.plannedEndDate ? String(viewingPlan.plannedEndDate).split("T")[0] : "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">关联信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="关联销售单">{viewingPlan.salesOrderNo || "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="优先级">
+                  <span className={priorityMap[viewingPlan.priority]?.color}>
+                    {priorityMap[viewingPlan.priority]?.label || viewingPlan.priority}
+                  </span>
+                </FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {viewingPlan.remark && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingPlan.remark}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(viewingPlan); }}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

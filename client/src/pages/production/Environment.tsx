@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/table";
 import { Thermometer, Plus, Search, Edit, Trash2, Eye, AlertTriangle, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 
 interface EnvironmentRecord {
   id: number;
@@ -201,6 +202,12 @@ export default function ProductionEnvironmentPage() {
   );
 
   const abnormalCount = records.filter(r => !r.isNormal).length;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -245,44 +252,44 @@ export default function ProductionEnvironmentPage() {
         <Card>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>记录编号</TableHead>
-                <TableHead>车间/区域</TableHead>
-                <TableHead>记录时间</TableHead>
-                <TableHead className="text-right">温度(℃)</TableHead>
-                <TableHead className="text-right">湿度(%)</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>关联指令</TableHead>
-                <TableHead>记录人</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+              <TableRow className="bg-muted/60">
+                <TableHead className="text-center font-bold">记录编号</TableHead>
+                <TableHead className="text-center font-bold">车间/区域</TableHead>
+                <TableHead className="text-center font-bold">记录时间</TableHead>
+                <TableHead className="text-center font-bold">温度(℃)</TableHead>
+                <TableHead className="text-center font-bold">湿度(%)</TableHead>
+                <TableHead className="text-center font-bold">状态</TableHead>
+                <TableHead className="text-center font-bold">关联指令</TableHead>
+                <TableHead className="text-center font-bold">记录人</TableHead>
+                <TableHead className="text-center font-bold">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map(record => (
                 <TableRow key={record.id}>
-                  <TableCell className="font-mono text-sm">{record.recordNo}</TableCell>
-                  <TableCell>{record.roomName}</TableCell>
-                  <TableCell>{record.recordDate} {record.recordTime}</TableCell>
-                  <TableCell className="text-right font-medium">
+                  <TableCell className="text-center font-mono text-sm">{record.recordNo}</TableCell>
+                  <TableCell className="text-center">{record.roomName}</TableCell>
+                  <TableCell className="text-center">{record.recordDate} {record.recordTime}</TableCell>
+                  <TableCell className="text-center font-medium">
                     <span className={record.temperature < record.tempMin || record.temperature > record.tempMax ? "text-red-600" : ""}>
                       {record.temperature}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right font-medium">
+                  <TableCell className="text-center font-medium">
                     <span className={record.humidity < record.humidityMin || record.humidity > record.humidityMax ? "text-red-600" : ""}>
                       {record.humidity}
                     </span>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-center">
                     {record.isNormal ? (
                       <Badge className="bg-green-50 text-green-700 border-green-200"><CheckCircle className="h-3 w-3 mr-1" />正常</Badge>
                     ) : (
                       <Badge className="bg-red-50 text-red-700 border-red-200"><AlertTriangle className="h-3 w-3 mr-1" />异常</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="font-mono text-sm">{record.productionOrderNo || "-"}</TableCell>
-                  <TableCell>{record.recorder}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-center font-mono text-sm">{record.productionOrderNo || "-"}</TableCell>
+                  <TableCell className="text-center">{record.recorder}</TableCell>
+                  <TableCell className="text-center">
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="sm" onClick={() => { setSelectedRecord(record); setViewDialogOpen(true); }}><Eye className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="sm" onClick={() => handleEdit(record)}><Edit className="h-4 w-4" /></Button>
@@ -374,34 +381,87 @@ export default function ProductionEnvironmentPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>环境记录详情 — {selectedRecord?.recordNo}</DialogTitle>
-            </DialogHeader>
-            {selectedRecord && (
-              <div className="space-y-4 py-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div><span className="text-muted-foreground">车间/区域</span><p className="font-medium">{selectedRecord.roomName}</p></div>
-                  <div><span className="text-muted-foreground">记录时间</span><p className="font-medium">{selectedRecord.recordDate} {selectedRecord.recordTime}</p></div>
-                  <div><span className="text-muted-foreground">温度</span><p className={`font-medium text-lg ${selectedRecord.temperature < selectedRecord.tempMin || selectedRecord.temperature > selectedRecord.tempMax ? "text-red-600" : "text-green-600"}`}>{selectedRecord.temperature} ℃</p></div>
-                  <div><span className="text-muted-foreground">湿度</span><p className={`font-medium text-lg ${selectedRecord.humidity < selectedRecord.humidityMin || selectedRecord.humidity > selectedRecord.humidityMax ? "text-red-600" : "text-green-600"}`}>{selectedRecord.humidity} %</p></div>
-                  <div><span className="text-muted-foreground">温度范围</span><p className="font-medium">{selectedRecord.tempMin} ~ {selectedRecord.tempMax} ℃</p></div>
-                  <div><span className="text-muted-foreground">湿度范围</span><p className="font-medium">{selectedRecord.humidityMin} ~ {selectedRecord.humidityMax} %</p></div>
-                  <div><span className="text-muted-foreground">状态</span><div className="mt-1">{selectedRecord.isNormal ? <Badge className="bg-green-50 text-green-700">正常</Badge> : <Badge className="bg-red-50 text-red-700">异常</Badge>}</div></div>
-                  <div><span className="text-muted-foreground">记录人</span><p className="font-medium">{selectedRecord.recorder}</p></div>
-                  {selectedRecord.productionOrderNo && <div><span className="text-muted-foreground">关联指令</span><p className="font-medium font-mono">{selectedRecord.productionOrderNo}</p></div>}
-                  {selectedRecord.abnormalDesc && <div className="col-span-2"><span className="text-muted-foreground">异常描述</span><p className="font-medium text-red-600">{selectedRecord.abnormalDesc}</p></div>}
-                  {selectedRecord.correctionAction && <div className="col-span-2"><span className="text-muted-foreground">纠正措施</span><p className="font-medium">{selectedRecord.correctionAction}</p></div>}
-                </div>
+{/* 查看详情对话框 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {selectedRecord && (
+      <div className="space-y-4">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">环境记录详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {selectedRecord.recordNo}
+            <Badge variant={selectedRecord.isNormal ? "outline" : "destructive"} className={`ml-2 ${selectedRecord.isNormal ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+              {selectedRecord.isNormal ? '正常' : '异常'}
+            </Badge>
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="车间/区域">{selectedRecord.roomName}</FieldRow>
+                <FieldRow label="记录时间">{selectedRecord.recordDate} {selectedRecord.recordTime}</FieldRow>
+                <FieldRow label="记录人">{selectedRecord.recorder}</FieldRow>
               </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+              <div>
+                <FieldRow label="关联指令">{selectedRecord.productionOrderNo || "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">环境参数</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="温度">{selectedRecord.temperature} ℃</FieldRow>
+                <FieldRow label="温度范围">{selectedRecord.tempMin} ~ {selectedRecord.tempMax} ℃</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="湿度">{selectedRecord.humidity} %</FieldRow>
+                <FieldRow label="湿度范围">{selectedRecord.humidityMin} ~ {selectedRecord.humidityMax} %</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {!selectedRecord.isNormal && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">异常与纠正</h3>
+              {selectedRecord.abnormalDesc && (
+                <div className="mb-2">
+                  <p className="text-sm font-semibold text-muted-foreground">异常描述</p>
+                  <p className="text-sm text-red-600 bg-muted/40 rounded-lg px-4 py-3 mt-1">{selectedRecord.abnormalDesc}</p>
+                </div>
+              )}
+              {selectedRecord.correctionAction && (
+                <div>
+                  <p className="text-sm font-semibold text-muted-foreground">纠正措施</p>
+                  <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3 mt-1">{selectedRecord.correctionAction}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {selectedRecord.remark && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{selectedRecord.remark}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => handleEdit(selectedRecord)}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

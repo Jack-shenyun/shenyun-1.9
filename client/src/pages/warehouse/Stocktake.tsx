@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -293,6 +294,12 @@ export default function StocktakePage() {
   const completedCount = stocktakes.filter((s: any) => s.status === "completed").length;
   const inProgressCount = stocktakes.filter((s: any) => s.status === "in_progress").length;
   const profitLossCount = stocktakes.filter((s: any) => s.profitLoss !== 0).length;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -388,34 +395,34 @@ export default function StocktakePage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[120px]">盘点单号</TableHead>
-                  <TableHead className="w-[100px]">盘点类型</TableHead>
-                  <TableHead className="w-[100px]">盘点仓库</TableHead>
-                  <TableHead className="w-[90px]">物料数</TableHead>
-                  <TableHead className="w-[90px]">盘点人</TableHead>
-                  <TableHead className="w-[100px]">状态</TableHead>
-                  <TableHead className="w-[100px]">盘点日期</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[120px] text-center font-bold">盘点单号</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">盘点类型</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">盘点仓库</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">物料数</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">盘点人</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">盘点日期</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredStocktakes.map((stocktake: any) => (
                   <TableRow key={stocktake.id}>
-                    <TableCell className="font-medium">{stocktake.stocktakeNo}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-medium">{stocktake.stocktakeNo}</TableCell>
+                    <TableCell className="text-center">
                       <Badge variant="outline">{typeMap[stocktake.type]}</Badge>
                     </TableCell>
-                    <TableCell>{stocktake.warehouse}</TableCell>
-                    <TableCell>{stocktake.itemCount}</TableCell>
-                    <TableCell>{stocktake.operator || "待分配"}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[stocktake.status]?.variant || "outline"}>
+                    <TableCell className="text-center">{stocktake.warehouse}</TableCell>
+                    <TableCell className="text-center">{stocktake.itemCount}</TableCell>
+                    <TableCell className="text-center">{stocktake.operator || "待分配"}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[stocktake.status]?.variant || "outline"} className={getStatusSemanticClass(stocktake.status, statusMap[stocktake.status]?.label)}>
                         {statusMap[stocktake.status]?.label || stocktake.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>{formatDateValue(stocktake.date)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{formatDateValue(stocktake.date)}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -584,104 +591,110 @@ export default function StocktakePage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>盘点详情</DialogTitle>
-              <DialogDescription>{viewingStocktake?.stocktakeNo}</DialogDescription>
-            </DialogHeader>
-            {viewingStocktake && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold">{viewingStocktake.warehouse}</h3>
-                    <p className="text-sm text-muted-foreground">{typeMap[viewingStocktake.type]}</p>
-                  </div>
-                  <Badge variant={statusMap[viewingStocktake.status]?.variant || "outline"}>
-                    {statusMap[viewingStocktake.status]?.label || viewingStocktake.status}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">物料数量</p>
-                    <p className="font-medium">{viewingStocktake.itemCount} 种</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">盘点人</p>
-                    <p className="font-medium">{viewingStocktake.operator || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">审核人</p>
-                    <p className="font-medium">{viewingStocktake.reviewer || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">计划日期</p>
-                    <p className="font-medium">{formatDateValue(viewingStocktake.date)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">完成日期</p>
-                    <p className="font-medium">{formatDateValue(viewingStocktake.completedDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">盘盈盘亏</p>
-                    <p className={`font-medium ${viewingStocktake.profitLoss < 0 ? "text-red-600" : viewingStocktake.profitLoss > 0 ? "text-green-600" : ""}`}>
-                      {viewingStocktake.profitLoss === 0 ? "-" : `¥${viewingStocktake.profitLoss?.toLocaleString?.() ?? "0"}`}
-                    </p>
-                  </div>
-                </div>
-
-                {viewingStocktake.items.length > 0 && (
-                  <div>
-                    <h4 className="font-medium mb-2">盘点明细</h4>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>物料编码</TableHead>
-                          <TableHead>物料名称</TableHead>
-                          <TableHead className="text-right">系统数量</TableHead>
-                          <TableHead className="text-right">实盘数量</TableHead>
-                          <TableHead className="text-right">差异</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {viewingStocktake.items.map((item, idx) => (
-                          <TableRow key={idx}>
-                            <TableCell>{item.materialCode}</TableCell>
-                            <TableCell>{item.materialName}</TableCell>
-                            <TableCell className="text-right">{item.systemQty} {item.unit}</TableCell>
-                            <TableCell className="text-right">{item.actualQty} {item.unit}</TableCell>
-                            <TableCell className={`text-right ${item.difference < 0 ? "text-red-600" : item.difference > 0 ? "text-green-600" : ""}`}>
-                              {item.difference > 0 ? "+" : ""}{item.difference} {item.unit}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-
-                {viewingStocktake.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingStocktake.remarks}</p>
-                  </div>
-                )}
-              </div>
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingStocktake && (
+      <div className="flex flex-col gap-4">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">盘点计划详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingStocktake.stocktakeNo}
+            {viewingStocktake.status && (
+              <>
+                {' '}
+                ·
+                <Badge
+                  variant={statusMap[viewingStocktake.status]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(
+                    viewingStocktake.status,
+                    statusMap[viewingStocktake.status]?.label
+                  )}`}
+                >
+                  {statusMap[viewingStocktake.status]?.label || String(viewingStocktake.status ?? "-")}
+                </Badge>
+              </>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingStocktake) handleEdit(viewingStocktake);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        {/* 基本信息分区 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="盘点类型">{typeMap[viewingStocktake.type]}</FieldRow>
+              <FieldRow label="盘点仓库">{viewingStocktake.warehouse}</FieldRow>
+              <FieldRow label="物料种类">{viewingStocktake.itemCount > 0 ? `${viewingStocktake.itemCount} 种` : "-"}</FieldRow>
+              <FieldRow label="盘盈盘亏">
+                <span className={`${viewingStocktake.profitLoss < 0 ? "text-red-600" : viewingStocktake.profitLoss > 0 ? "text-green-600" : ""}`}>
+                  {viewingStocktake.profitLoss === 0 ? "-" : `¥${viewingStocktake.profitLoss?.toLocaleString?.() ?? "0"}`}
+                </span>
+              </FieldRow>
+            </div>
+            <div>
+              <FieldRow label="盘点员">{viewingStocktake.operator || "-"}</FieldRow>
+              <FieldRow label="审核员">{viewingStocktake.reviewer || "-"}</FieldRow>
+              <FieldRow label="计划日期">{formatDateValue(viewingStocktake.date)}</FieldRow>
+              <FieldRow label="完成日期">{formatDateValue(viewingStocktake.completedDate)}</FieldRow>
+            </div>
+          </div>
+        </div>
+
+        {/* 盘点明细表格 */}
+        {viewingStocktake.items.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">盘点明细</h3>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">物料编码</TableHead>
+                  <TableHead className="text-center font-bold">物料名称</TableHead>
+                  <TableHead className="text-center font-bold">系统数量</TableHead>
+                  <TableHead className="text-center font-bold">实盘数量</TableHead>
+                  <TableHead className="text-center font-bold">差异</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {viewingStocktake.items.map((item, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell className="text-center">{item.materialCode}</TableCell>
+                    <TableCell className="text-center">{item.materialName}</TableCell>
+                    <TableCell className="text-center">{item.systemQty} {item.unit}</TableCell>
+                    <TableCell className="text-center">{item.actualQty} {item.unit}</TableCell>
+                    <TableCell className={`text-right ${item.difference < 0 ? "text-red-600" : item.difference > 0 ? "text-green-600" : ""}`}>
+                      {item.difference > 0 ? "+" : ""}{item.difference} {item.unit}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {/* 备注 */}
+        {viewingStocktake.remarks && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingStocktake.remarks}</p>
+          </div>
+        )}
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              setViewDialogOpen(false);
+              handleEdit(viewingStocktake);
+            }}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

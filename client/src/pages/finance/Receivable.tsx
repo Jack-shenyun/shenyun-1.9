@@ -657,6 +657,13 @@ export default function ReceivablePage() {
   const resolveLinkedOrder = (r: any) => {
     const orderNo = String(r?.orderNo ?? "").trim();
     const salesOrderId = Number(r?.salesOrderId);
+    const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+      <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+        <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+        <span className="flex-1 text-sm text-right break-all">{children}</span>
+      </div>
+    );
+
     return (
       (orderNo ? salesOrderLookups.byNo.get(orderNo) : undefined) ??
       (Number.isFinite(salesOrderId) && salesOrderId > 0 ? salesOrderLookups.byId.get(salesOrderId) : undefined)
@@ -1662,217 +1669,92 @@ export default function ReceivablePage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>应收详情</DialogTitle>
-              <DialogDescription>{viewingReceivable?.invoiceNo}</DialogDescription>
-            </DialogHeader>
-            {viewingReceivable && (
+        {
+/* 查看详情 */
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingReceivable && (
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold">{viewingReceivable.customerName}</h3>
-                    <p className="text-sm text-muted-foreground">订单号: {viewingReceivable.orderNo}</p>
-                  </div>
-                  <Badge
-                    variant={getStatusMeta(getDisplayStatus(viewingReceivable.status)).variant}
-                    className={getStatusSemanticClass(getDisplayStatus(viewingReceivable.status), getStatusMeta(getDisplayStatus(viewingReceivable.status)).label)}
-                  >
-                    {getStatusMeta(getDisplayStatus(viewingReceivable.status)).label}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">应收金额</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Input
-                        type="number"
-                        value={viewAmount}
-                        onChange={(e) => setViewAmount(e.target.value)}
-                        className="h-8"
-                      />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={async () => {
-                          const idNum = Number((viewingReceivable as any).id);
-                          if (!Number.isFinite(idNum) || idNum <= 0) {
-                            toast.error("保存失败", { description: "记录编号无效" });
-                            return;
-                          }
-                          const nextAmount = toSafeNumber(viewAmount);
-                          if (nextAmount <= 0) {
-                            toast.error("保存失败", { description: "金额必须大于0" });
-                            return;
-                          }
-                          await updateMutation.mutateAsync({
-                            id: idNum,
-                            data: { amount: String(nextAmount) },
-                          });
-                          setViewingReceivable({ ...(viewingReceivable as any), amount: nextAmount } as any);
-                          toast.success("应收金额已更新");
-                        }}
-                      >
-                        保存
-                      </Button>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">已收金额</p>
-                    <p className="font-medium text-lg text-green-600">{getMoneyText(viewingReceivable, getReceivedAmount(viewingReceivable))}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">到期日</p>
-                    <p className="font-medium">{formatDateValue(viewingReceivable.dueDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">收款方式</p>
-                    <p className="font-medium">{viewingReceivable.paymentMethod || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">对账状态</p>
-                    <p className="font-medium">
-                      {isAccountPeriodCustomer(viewingReceivable)
-                        ? (isReconciled(viewingReceivable) ? "已对账" : "未对账")
-                        : "不适用"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">最近收款日期</p>
-                    <p className="font-medium">{formatDateValue(viewingReceivable.receiptDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">待收金额</p>
-                    <p className="font-medium text-amber-600">
-                      {getMoneyText(viewingReceivable, getPendingAmount(viewingReceivable))}
-                    </p>
-                  </div>
-                </div>
-
-                {viewingReceivable.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingReceivable.remarks}</p>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label>附件上传（支持图片 / PDF / 文档）</Label>
-                  <div
-                    className={`rounded-md border border-dashed p-3 transition-colors ${detailDragging ? "border-primary bg-primary/5" : "border-border"}`}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setDetailDragging(true);
-                    }}
-                    onDragLeave={(e) => {
-                      e.preventDefault();
-                      setDetailDragging(false);
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setDetailDragging(false);
-                      const files = Array.from(e.dataTransfer.files || []);
-                      const next = files
-                        .filter((f) => ATTACHMENT_EXTENSIONS.includes(`.${String(f.name.split(".").pop() || "").toLowerCase()}` as any))
-                        .map((file) => ({ id: `${Date.now()}-${Math.random()}`, file }));
-                      setDetailFiles((prev) => [...prev, ...next]);
-                    }}
-                  >
-                    <input
-                      type="file"
-                      multiple
-                      accept={ATTACHMENT_ACCEPT}
-                      onChange={(e) => {
-                        const files = Array.from(e.target.files || []);
-                        const next = files
-                          .filter((f) => ATTACHMENT_EXTENSIONS.includes(`.${String(f.name.split(".").pop() || "").toLowerCase()}` as any))
-                          .map((file) => ({ id: `${Date.now()}-${Math.random()}`, file }));
-                        setDetailFiles((prev) => [...prev, ...next]);
-                        e.currentTarget.value = "";
-                      }}
-                    />
-                  </div>
-                  {detailFiles.length > 0 && (
-                    <div className="space-y-1">
-                      {detailFiles.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between text-xs border rounded px-2 py-1">
-                          <span className="truncate mr-2">{item.file.name}</span>
-                          <Button size="icon" variant="ghost" onClick={() => setDetailFiles((prev) => prev.filter((x) => x.id !== item.id))}>
-                            <X className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {isSalesCollaboration ? (
-                    <p className="text-xs text-muted-foreground">附件会在点击“提交财务”后自动上传并关联到单据。</p>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={detailFiles.length === 0 || saveAttachmentsMutation.isPending}
-                      onClick={async () => {
-                        if (!viewingReceivable || detailFiles.length === 0) return;
-                        const payload = await Promise.all(
-                          detailFiles.map(async (item) => ({
-                            name: item.file.name,
-                            mimeType: item.file.type,
-                            base64: await toBase64(item.file),
-                          }))
-                        );
-                        const created = await saveAttachmentsMutation.mutateAsync({
-                          invoiceNo: String(viewingReceivable.invoiceNo || viewingReceivable.orderNo || "收款单"),
-                          customerName: String(viewingReceivable.customerName || ""),
-                          department: normalizeDepartmentForUpload(String(user?.department || "财务部")),
-                          files: payload,
-                        });
-                        const names = detailFiles.map((f) => f.file.name).join("、");
-                        const baseRemark = String((viewingReceivable as any).remarks ?? (viewingReceivable as any).remark ?? "");
-                        const docNos = (created || []).map((x: any) => String(x?.docNo || "")).filter(Boolean).join("、");
-                        const mergedRemark = [baseRemark, `详情附件: ${names}`, docNos ? `附件单据: ${docNos}` : ""].filter(Boolean).join("\n");
-                        const idNum = Number((viewingReceivable as any).id);
-                        if (Number.isFinite(idNum) && idNum > 0) {
-                          await updateMutation.mutateAsync({ id: idNum, data: { remark: mergedRemark } });
-                        }
-                        setDetailFiles([]);
-                        toast.success("附件已上传");
-                      }}
-                    >
-                      上传附件
-                    </Button>
-                  )}
-                </div>
-              </div>
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">应收详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingReceivable.invoiceNo}
+            {viewingReceivable.status && (
+              <> · <Badge variant={statusMap[viewingReceivable.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingReceivable.status, statusMap[viewingReceivable.status]?.label)}`}>
+                {statusMap[viewingReceivable.status]?.label || String(viewingReceivable.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              {isSalesCollaboration ? (
-                <Button
-                  onClick={handleSubmitFinanceFromDetail}
-                  disabled={!viewingReceivable || normalizeStatus(viewingReceivable?.status) === "received" || updateMutation.isPending || saveAttachmentsMutation.isPending}
-                >
-                  提交财务
-                </Button>
-              ) : (
-                <>
-                  <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                    关闭
+          </p>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="客户名称">{viewingReceivable.customerName}</FieldRow>
+              <FieldRow label="订单号">{viewingReceivable.orderNo}</FieldRow>
+              <FieldRow label="应收金额">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={viewAmount}
+                    onChange={(e) => setViewAmount(e.target.value)}
+                    className="h-8 w-32 text-right"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      const idNum = Number((viewingReceivable as any).id);
+                      if (!Number.isFinite(idNum) || idNum <= 0) {
+                        toast.error("保存失败", { description: "记录编号无效" });
+                        return;
+                      }
+                      const nextAmount = toSafeNumber(viewAmount);
+                      if (nextAmount <= 0) {
+                        toast.error("保存失败", { description: "金额必须大于0" });
+                        return;
+                      }
+                      await updateMutation.mutateAsync({
+                        id: idNum,
+                        data: { amount: String(nextAmount) },
+                      });
+                      setViewingReceivable({ ...(viewingReceivable as any), amount: nextAmount } as any);
+                      toast.success("应收金额已更新");
+                    }}
+                  >
+                    保存
                   </Button>
-                  {viewingReceivable && !(viewingReceivable as any).synthetic && normalizeStatus(viewingReceivable.status) !== "received" && (
-                    <Button onClick={() => {
-                      setViewDialogOpen(false);
-                      handleReceive(viewingReceivable);
-                    }}>
-                      收款
-                    </Button>
-                  )}
-                </>
-              )}
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+                </div>
+              </FieldRow>
+            </div>
+            <div>
+              <FieldRow label="已收金额">{formatMoneyByCurrency(viewingReceivable.currency, getReceivedAmount(viewingReceivable))}</FieldRow>
+              <FieldRow label="待收金额">{formatMoneyByCurrency(viewingReceivable.currency, getPendingAmount(viewingReceivable))}</FieldRow>
+              <FieldRow label="到期日">{formatDateValue(viewingReceivable.dueDate)}</FieldRow>
+            </div>
+          </div>
+        </div>
+
+        {(viewingReceivable.remarks) && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{stripReconcileMeta(viewingReceivable.remarks)}</p>
+          </div>
+        )}
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => handleEdit(viewingReceivable)}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
+}
       </div>
     </ERPLayout>
   );

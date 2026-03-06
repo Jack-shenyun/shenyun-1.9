@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -212,6 +213,19 @@ export default function AuditPage() {
   const inProgressCount = audits.filter((a: any) => a.status === "in_progress").length;
   const totalNc = audits.reduce((sum: any, a: any) => sum + a.majorNc + a.minorNc, 0);
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -294,32 +308,32 @@ export default function AuditPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[120px]">审核编号</TableHead>
-                  <TableHead>审核主题</TableHead>
-                  <TableHead className="w-[90px]">审核类型</TableHead>
-                  <TableHead className="w-[90px]">审核员</TableHead>
-                  <TableHead className="w-[90px]">受审部门</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[100px]">审核日期</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[120px] text-center font-bold">审核编号</TableHead>
+                  <TableHead className="text-center font-bold">审核主题</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">审核类型</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">审核员</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">受审部门</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">审核日期</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredAudits.map((audit: any) => (
                   <TableRow key={audit.id}>
-                    <TableCell className="font-medium">{audit.auditNo}</TableCell>
-                    <TableCell>{audit.title}</TableCell>
-                    <TableCell>{audit.auditType}</TableCell>
-                    <TableCell>{audit.auditor}</TableCell>
-                    <TableCell>{audit.department}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[audit.status]?.variant || "outline"}>
+                    <TableCell className="text-center font-medium">{audit.auditNo}</TableCell>
+                    <TableCell className="text-center">{audit.title}</TableCell>
+                    <TableCell className="text-center">{audit.auditType}</TableCell>
+                    <TableCell className="text-center">{audit.auditor}</TableCell>
+                    <TableCell className="text-center">{audit.department}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[audit.status]?.variant || "outline"} className={getStatusSemanticClass(audit.status, statusMap[audit.status]?.label)}>
                         {statusMap[audit.status]?.label || String(audit.status ?? "-")}
                       </Badge>
                     </TableCell>
-                    <TableCell>{formatDateValue(audit.date)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{formatDateValue(audit.date)}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -565,119 +579,113 @@ export default function AuditPage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>内审详情</DialogTitle>
-              <DialogDescription>
-                {viewingAudit?.auditNo} - {viewingAudit?.title}
-              </DialogDescription>
-            </DialogHeader>
-            {viewingAudit && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <FileSearch className="h-8 w-8 text-primary" />
-                    <div>
-                      <h3 className="font-semibold">{viewingAudit.title}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {viewingAudit.auditType} · {viewingAudit.department}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant={statusMap[viewingAudit.status]?.variant || "outline"}>
-                    {statusMap[viewingAudit.status]?.label || String(viewingAudit.status ?? "-")}
-                  </Badge>
-                </div>
+{viewingAudit && (
+  <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+    <DraggableDialogContent>
+      {/* 标准头部 */}
+      <div className="border-b pb-3">
+        <h2 className="text-lg font-semibold">内审详情</h2>
+        <p className="text-sm text-muted-foreground">
+          {viewingAudit.auditNo}
+          {viewingAudit.status && (
+            <> · <Badge variant={statusMap[viewingAudit.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingAudit.status, statusMap[viewingAudit.status]?.label)}`}>
+              {statusMap[viewingAudit.status]?.label || String(viewingAudit.status ?? "-")}
+            </Badge></>
+          )}
+        </p>
+      </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">审核编号</p>
-                    <p className="font-medium">{viewingAudit.auditNo}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">主审核员</p>
-                    <p className="font-medium">{viewingAudit.auditor}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">审核组成员</p>
-                    <p className="font-medium">{viewingAudit.auditTeam}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">开始日期</p>
-                    <p className="font-medium">{formatDateValue(viewingAudit.date)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">结束日期</p>
-                    <p className="font-medium">{formatDateValue(viewingAudit.endDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">审核依据</p>
-                    <p className="font-medium">{viewingAudit.standard}</p>
-                  </div>
-                </div>
+      <div className="py-4 space-y-6">
+        {/* 基本信息分区 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="审核主题">{viewingAudit.title}</FieldRow>
+              <FieldRow label="审核类型">{viewingAudit.auditType}</FieldRow>
+              <FieldRow label="受审部门">{viewingAudit.department}</FieldRow>
+              <FieldRow label="审核依据">{viewingAudit.standard}</FieldRow>
+            </div>
+            <div>
+              <FieldRow label="主审核员">{viewingAudit.auditor}</FieldRow>
+              <FieldRow label="审核组成员">{viewingAudit.auditTeam}</FieldRow>
+              <FieldRow label="开始日期">{formatDateValue(viewingAudit.date)}</FieldRow>
+              <FieldRow label="结束日期">{formatDateValue(viewingAudit.endDate)}</FieldRow>
+            </div>
+          </div>
+        </div>
 
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">审核范围</p>
-                  <p className="text-sm">{viewingAudit.scope || "-"}</p>
-                </div>
+        {/* 审核范围与目的 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">审核范围与目的</h3>
+          <div className="space-y-3">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">审核范围</p>
+              <p className="text-sm">{viewingAudit.scope || "-"}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">审核目的</p>
+              <p className="text-sm">{viewingAudit.objectives || "-"}</p>
+            </div>
+          </div>
+        </div>
 
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">审核目的</p>
-                  <p className="text-sm">{viewingAudit.objectives || "-"}</p>
-                </div>
-
-                {/* 发现项统计 */}
-                <div className="p-4 bg-muted/30 rounded-lg">
-                  <p className="text-sm font-medium mb-3">发现项统计</p>
-                  <div className="grid grid-cols-4 gap-4 text-center">
-                    <div>
-                      <p className="text-2xl font-bold">{viewingAudit.findings}</p>
-                      <p className="text-xs text-muted-foreground">发现项总数</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-red-600">{viewingAudit.majorNc}</p>
-                      <p className="text-xs text-muted-foreground">严重不符合</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-amber-600">{viewingAudit.minorNc}</p>
-                      <p className="text-xs text-muted-foreground">一般不符合</p>
-                    </div>
-                    <div>
-                      <p className="text-2xl font-bold text-blue-600">{viewingAudit.observations}</p>
-                      <p className="text-xs text-muted-foreground">观察项</p>
-                    </div>
-                  </div>
-                </div>
-
-                {viewingAudit.conclusion && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">审核结论</p>
-                    <p className="text-sm">{viewingAudit.conclusion}</p>
-                  </div>
-                )}
-
-                {viewingAudit.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingAudit.remarks}</p>
-                  </div>
-                )}
+        {/* 发现项统计 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">发现项统计</h3>
+          <div className="p-4 bg-muted/40 rounded-lg">
+            <div className="grid grid-cols-4 gap-4 text-center">
+              <div>
+                <p className="text-2xl font-bold">{viewingAudit.findings}</p>
+                <p className="text-xs text-muted-foreground">发现项总数</p>
               </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingAudit) handleEdit(viewingAudit);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+              <div>
+                <p className="text-2xl font-bold text-red-600">{viewingAudit.majorNc}</p>
+                <p className="text-xs text-muted-foreground">严重不符合</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-amber-600">{viewingAudit.minorNc}</p>
+                <p className="text-xs text-muted-foreground">一般不符合</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-blue-600">{viewingAudit.observations}</p>
+                <p className="text-xs text-muted-foreground">观察项</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 审核结论 */}
+        {viewingAudit.conclusion && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">审核结论</h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingAudit.conclusion}</p>
+          </div>
+        )}
+
+        {/* 备注 */}
+        {viewingAudit.remarks && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingAudit.remarks}</p>
+          </div>
+        )}
+      </div>
+
+      {/* 标准操作按钮 */}
+      <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+        <div className="flex gap-2 flex-wrap"></div>
+        <div className="flex gap-2 flex-wrap justify-end">
+          <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+          <Button variant="outline" size="sm" onClick={() => {
+            setViewDialogOpen(false);
+            if (viewingAudit) handleEdit(viewingAudit);
+          }}>编辑</Button>
+        </div>
+      </div>
+    </DraggableDialogContent>
+  </DraggableDialog>
+)}
       </div>
     </ERPLayout>
   );

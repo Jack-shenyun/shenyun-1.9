@@ -1,6 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { LOCAL_AUTH_USER_KEY } from "@/const";
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useMemo, useState } from "react";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -356,6 +357,12 @@ export default function UsersPage() {
   const activeUsers = users.filter((u: any) => u.status === "active").length;
   const adminUsers = users.filter((u: any) => u.role === "admin").length;
   const lockedUsers = users.filter((u: any) => u.status === "locked").length;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -426,14 +433,14 @@ export default function UsersPage() {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>用户</TableHead>
-                    <TableHead>用户名</TableHead>
-                    <TableHead>部门</TableHead>
-                    <TableHead>角色</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead>最后登录</TableHead>
-                    <TableHead className="w-[100px]">操作</TableHead>
+                  <TableRow className="bg-muted/60">
+                    <TableHead className="text-center font-bold">用户</TableHead>
+                    <TableHead className="text-center font-bold">用户名</TableHead>
+                    <TableHead className="text-center font-bold">部门</TableHead>
+                    <TableHead className="text-center font-bold">角色</TableHead>
+                    <TableHead className="text-center font-bold">状态</TableHead>
+                    <TableHead className="text-center font-bold">最后登录</TableHead>
+                    <TableHead className="w-[100px] text-center font-bold">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -446,7 +453,7 @@ export default function UsersPage() {
                   ) : (
                     filteredUsers.map((user: any) => (
                       <TableRow key={user.id}>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <div className="flex items-center gap-3">
                             <Avatar className="h-8 w-8">
                               <AvatarFallback className="bg-primary/10 text-primary text-xs">
@@ -459,9 +466,9 @@ export default function UsersPage() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="font-mono">{user.username}</TableCell>
-                        <TableCell>{user.department}</TableCell>
-                        <TableCell>
+                        <TableCell className="text-center font-mono">{user.username}</TableCell>
+                        <TableCell className="text-center">{user.department}</TableCell>
+                        <TableCell className="text-center">
                           <div className="flex items-center gap-1">
                             {user.role === "admin" ? (
                               <ShieldCheck className="h-4 w-4 text-primary" />
@@ -471,15 +478,15 @@ export default function UsersPage() {
                             <span>{user.role === "admin" ? "管理员" : "普通用户"}</span>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <Badge variant={statusMap[user.status]?.variant || "default"}>
+                        <TableCell className="text-center">
+                          <Badge variant={statusMap[user.status]?.variant || "outline"} className={getStatusSemanticClass(user.status, statusMap[user.status]?.label)}>
                             {statusMap[user.status]?.label || "正常"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="text-center text-sm text-muted-foreground">
                           {user.lastLogin}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon">
@@ -645,52 +652,46 @@ export default function UsersPage() {
       </DraggableDialog>
 
       {/* 查看详情对话框 */}
-      <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DraggableDialogContent>
-          <DialogHeader>
-            <DialogTitle>用户详情</DialogTitle>
-          </DialogHeader>
-          {viewingUser && (
-            <div className="py-4">
-              <div className="flex items-center gap-4 mb-6">
-                <Avatar className="h-16 w-16">
-                  <AvatarFallback className="bg-primary/10 text-primary text-xl">
-                    {viewingUser.name.slice(0, 2)}
-                  </AvatarFallback>
-                </Avatar>
-                <div>
-                  <h3 className="text-lg font-semibold">{viewingUser.name}</h3>
-                  <p className="text-sm text-muted-foreground">@{viewingUser.username}</p>
-                </div>
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingUser && (
+      <div className="space-y-4">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">用户详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingUser.name} (@{viewingUser.username})
+            {viewingUser.status && (
+              <>
+                {" "}
+                ·
+                <Badge
+                  variant={statusMap[viewingUser.status]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(
+                    viewingUser.status,
+                    statusMap[viewingUser.status]?.label
+                  )}`}
+                >
+                  {statusMap[viewingUser.status]?.label || String(viewingUser.status ?? "-")}
+                </Badge>
+              </>
+            )}
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="姓名">{viewingUser.name}</FieldRow>
+                <FieldRow label="邮箱">{viewingUser.email || "-"}</FieldRow>
+                <FieldRow label="手机号">{viewingUser.phone || "-"}</FieldRow>
+                <FieldRow label="所属部门">{viewingUser.department || "-"}</FieldRow>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">邮箱</p>
-                  <p className="font-medium">{viewingUser.email}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">手机号</p>
-                  <p className="font-medium">{viewingUser.phone}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">所属部门</p>
-                  <p className="font-medium">{viewingUser.department}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-sm text-muted-foreground">首页显示应用</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {getVisibleAppLabels(viewingUser.visibleApps ?? []).length > 0 ? (
-                      getVisibleAppLabels(viewingUser.visibleApps ?? []).map((label) => (
-                        <Badge key={label} variant="secondary">{label}</Badge>
-                      ))
-                    ) : (
-                      <span className="text-sm text-muted-foreground">未单独配置，按部门默认显示</span>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">用户角色</p>
-                  <div className="flex items-center gap-1">
+              <div>
+                <FieldRow label="用户名">@{viewingUser.username}</FieldRow>
+                <FieldRow label="用户角色">
+                  <div className="flex items-center gap-1 justify-end">
                     {viewingUser.role === "admin" ? (
                       <ShieldCheck className="h-4 w-4 text-primary" />
                     ) : (
@@ -698,20 +699,38 @@ export default function UsersPage() {
                     )}
                     <span>{viewingUser.role === "admin" ? "管理员" : "普通用户"}</span>
                   </div>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">创建时间</p>
-                  <p className="font-medium">{formatDateValue(viewingUser.createdAt)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">最后登录</p>
-                  <p className="font-medium">{viewingUser.lastLogin}</p>
-                </div>
+                </FieldRow>
+                <FieldRow label="创建时间">{formatDateValue(viewingUser.createdAt)}</FieldRow>
+                <FieldRow label="最后登录">{viewingUser.lastLogin}</FieldRow>
               </div>
             </div>
-          )}
-        </DraggableDialogContent>
-      </DraggableDialog>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">应用权限</h3>
+            <div className="flex flex-wrap gap-2">
+              {getVisibleAppLabels(viewingUser.visibleApps ?? []).length > 0 ? (
+                getVisibleAppLabels(viewingUser.visibleApps ?? []).map((label) => (
+                  <Badge key={label} variant="secondary">{label}</Badge>
+                ))
+              ) : (
+                <span className="text-sm text-muted-foreground">未单独配置，按部门默认显示</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => handleEdit(viewingUser)} disabled={!isAdmin}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
 
       <DraggableDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
         <DraggableDialogContent>

@@ -1,4 +1,5 @@
 import { formatDateValue } from "@/lib/formatters";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -208,6 +209,19 @@ export default function TrainingPage() {
   const ongoingCount = trainings.filter((t: any) => t.status === "ongoing").length;
   const plannedCount = trainings.filter((t: any) => t.status === "planned").length;
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -290,32 +304,32 @@ export default function TrainingPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[120px]">培训编号</TableHead>
-                  <TableHead>培训主题</TableHead>
-                  <TableHead className="w-[100px]">培训类型</TableHead>
-                  <TableHead className="w-[100px]">讲师</TableHead>
-                  <TableHead className="w-[80px]">人数</TableHead>
-                  <TableHead className="w-[90px]">状态</TableHead>
-                  <TableHead className="w-[100px]">培训日期</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[120px] text-center font-bold">培训编号</TableHead>
+                  <TableHead className="text-center font-bold">培训主题</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">培训类型</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">讲师</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">人数</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">培训日期</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredTrainings.map((training: any) => (
                   <TableRow key={training.id}>
-                    <TableCell className="font-medium">{training.trainingNo}</TableCell>
-                    <TableCell>{training.title}</TableCell>
-                    <TableCell>{training.type}</TableCell>
-                    <TableCell>{training.trainer}</TableCell>
-                    <TableCell>{training.participants}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[training.status]?.variant || "outline"}>
+                    <TableCell className="text-center font-medium">{training.trainingNo}</TableCell>
+                    <TableCell className="text-center">{training.title}</TableCell>
+                    <TableCell className="text-center">{training.type}</TableCell>
+                    <TableCell className="text-center">{training.trainer}</TableCell>
+                    <TableCell className="text-center">{training.participants}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[training.status]?.variant || "outline"} className={getStatusSemanticClass(training.status, statusMap[training.status]?.label)}>
                         {statusMap[training.status]?.label || String(training.status ?? "-")}
                       </Badge>
                     </TableCell>
-                    <TableCell>{formatDateValue(training.date)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">{formatDateValue(training.date)}</TableCell>
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -553,106 +567,96 @@ export default function TrainingPage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>培训详情</DialogTitle>
-              <DialogDescription>
-                {viewingTraining?.trainingNo} - {viewingTraining?.title}
-              </DialogDescription>
-            </DialogHeader>
-            {viewingTraining && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <GraduationCap className="h-8 w-8 text-primary" />
-                    <div>
-                      <h3 className="font-semibold">{viewingTraining.title}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {viewingTraining.type} · {viewingTraining.category}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant={statusMap[viewingTraining.status]?.variant || "outline"}>
-                    {statusMap[viewingTraining.status]?.label || String(viewingTraining.status ?? "-")}
-                  </Badge>
-                </div>
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingTraining && (() => {
+      return (
+        <div className="space-y-4">
+          {/* 标准头部 */}
+          <div className="border-b pb-3">
+            <h2 className="text-lg font-semibold">培训详情</h2>
+            <p className="text-sm text-muted-foreground">
+              {viewingTraining.trainingNo}
+              {viewingTraining.status && (
+                <> · <Badge variant={statusMap[viewingTraining.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingTraining.status, statusMap[viewingTraining.status]?.label)}`}>
+                  {statusMap[viewingTraining.status]?.label || String(viewingTraining.status ?? "-")}
+                </Badge></>
+              )}
+            </p>
+          </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">培训编号</p>
-                    <p className="font-medium">{viewingTraining.trainingNo}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">培训讲师</p>
-                    <p className="font-medium">{viewingTraining.trainer}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">讲师部门</p>
-                    <p className="font-medium">{viewingTraining.trainerDept}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">参训人数</p>
-                    <p className="font-medium">{viewingTraining.participants}人</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">培训时长</p>
-                    <p className="font-medium">{viewingTraining.duration}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">培训地点</p>
-                    <p className="font-medium">{viewingTraining.location}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">开始日期</p>
-                    <p className="font-medium">{formatDateValue(viewingTraining.date)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">结束日期</p>
-                    <p className="font-medium">{formatDateValue(viewingTraining.endDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">考核方式</p>
-                    <p className="font-medium">{viewingTraining.assessment || "-"}</p>
-                  </div>
-                </div>
-
+          {/* 详细信息 */}
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">培训目标</p>
-                  <p className="text-sm">{viewingTraining.objectives || "-"}</p>
+                  <FieldRow label="培训主题">{viewingTraining.title || "-"}</FieldRow>
+                  <FieldRow label="培训类型">{viewingTraining.type || "-"}</FieldRow>
+                  <FieldRow label="培训类别">{viewingTraining.category || "-"}</FieldRow>
+                  <FieldRow label="培训地点">{viewingTraining.location || "-"}</FieldRow>
                 </div>
-
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">培训内容</p>
-                  <p className="text-sm">{viewingTraining.content || "-"}</p>
+                  <FieldRow label="开始日期">{formatDateValue(viewingTraining.date)}</FieldRow>
+                  <FieldRow label="结束日期">{formatDateValue(viewingTraining.endDate)}</FieldRow>
+                  <FieldRow label="培训时长">{viewingTraining.duration || "-"}</FieldRow>
                 </div>
+              </div>
+            </div>
 
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">讲师与学员</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">培训材料</p>
-                  <p className="text-sm">{viewingTraining.materials || "-"}</p>
+                  <FieldRow label="培训讲师">{viewingTraining.trainer || "-"}</FieldRow>
+                  <FieldRow label="讲师部门">{viewingTraining.trainerDept || "-"}</FieldRow>
                 </div>
+                <div>
+                  <FieldRow label="参训人数">{viewingTraining.participants ? `${viewingTraining.participants}人` : "-"}</FieldRow>
+                </div>
+              </div>
+            </div>
 
-                {viewingTraining.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingTraining.remarks}</p>
-                  </div>
-                )}
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">内容与考核</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div>
+                  <FieldRow label="培训目标">{viewingTraining.objectives || "-"}</FieldRow>
+                  <FieldRow label="培训内容">{viewingTraining.content || "-"}</FieldRow>
+                </div>
+                <div>
+                  <FieldRow label="培训材料">{viewingTraining.materials || "-"}</FieldRow>
+                  <FieldRow label="考核方式">{viewingTraining.assessment || "-"}</FieldRow>
+                </div>
+              </div>
+            </div>
+
+            {viewingTraining.remarks && (
+              <div>
+                <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+                <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingTraining.remarks}</p>
               </div>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
+          </div>
+
+          {/* 标准操作按钮 */}
+          <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+            <div className="flex gap-2 flex-wrap"></div>
+            <div className="flex gap-2 flex-wrap justify-end">
+              <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+              <Button variant="outline" size="sm" onClick={() => {
                 setViewDialogOpen(false);
                 if (viewingTraining) handleEdit(viewingTraining);
               }}>
                 编辑
               </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

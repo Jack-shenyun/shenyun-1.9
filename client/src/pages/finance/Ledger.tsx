@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -245,6 +246,19 @@ export default function LedgerPage() {
   const pendingCount = vouchers.filter((v: any) => v.status === "pending").length;
   const draftCount = vouchers.filter((v: any) => v.status === "draft").length;
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -339,34 +353,34 @@ export default function LedgerPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[150px]">凭证号</TableHead>
-                  <TableHead className="w-[100px]">日期</TableHead>
-                  <TableHead className="w-[100px]">类型</TableHead>
-                  <TableHead>摘要</TableHead>
-                  <TableHead className="w-[120px] text-right">借方金额</TableHead>
-                  <TableHead className="w-[120px] text-right">贷方金额</TableHead>
-                  <TableHead className="w-[90px]">状态</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[150px] text-center font-bold">凭证号</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">日期</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">类型</TableHead>
+                  <TableHead className="text-center font-bold">摘要</TableHead>
+                  <TableHead className="w-[120px] text-center font-bold">借方金额</TableHead>
+                  <TableHead className="w-[120px] text-center font-bold">贷方金额</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredVouchers.map((voucher: any) => (
                   <TableRow key={voucher.id}>
-                    <TableCell className="font-medium">{voucher.voucherNo}</TableCell>
-                    <TableCell>{formatDateValue(voucher.date)}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-medium">{voucher.voucherNo}</TableCell>
+                    <TableCell className="text-center">{formatDateValue(voucher.date)}</TableCell>
+                    <TableCell className="text-center">
                       <Badge variant="outline">{getTypeLabel(voucher.type)}</Badge>
                     </TableCell>
-                    <TableCell className="max-w-[200px] truncate">{voucher.summary}</TableCell>
-                    <TableCell className="text-right">¥{formatNumber(voucher.debitAmount)}</TableCell>
-                    <TableCell className="text-right">¥{formatNumber(voucher.creditAmount)}</TableCell>
-                    <TableCell>
-                      <Badge variant={getStatusMeta(voucher.status).variant}>
+                    <TableCell className="text-center max-w-[200px] truncate">{voucher.summary}</TableCell>
+                    <TableCell className="text-center">¥{formatNumber(voucher.debitAmount)}</TableCell>
+                    <TableCell className="text-center">¥{formatNumber(voucher.creditAmount)}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={getStatusMeta(voucher.status).variant} className={getStatusSemanticClass(voucher.status, getStatusMeta(voucher.status).label)}>
                         {getStatusMeta(voucher.status).label}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -489,32 +503,32 @@ export default function LedgerPage() {
                 </div>
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[100px]">科目代码</TableHead>
-                      <TableHead>科目名称</TableHead>
-                      <TableHead className="w-[120px]">借方金额</TableHead>
-                      <TableHead className="w-[120px]">贷方金额</TableHead>
-                      <TableHead>摘要</TableHead>
+                    <TableRow className="bg-muted/60">
+                      <TableHead className="w-[100px] text-center font-bold">科目代码</TableHead>
+                      <TableHead className="text-center font-bold">科目名称</TableHead>
+                      <TableHead className="w-[120px] text-center font-bold">借方金额</TableHead>
+                      <TableHead className="w-[120px] text-center font-bold">贷方金额</TableHead>
+                      <TableHead className="text-center font-bold">摘要</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {formData.entries.map((entry, index) => (
                       <TableRow key={index}>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Input
                             value={entry.accountCode}
                             onChange={(e) => updateEntry(index, "accountCode", e.target.value)}
                             placeholder="代码"
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Input
                             value={entry.accountName}
                             onChange={(e) => updateEntry(index, "accountName", e.target.value)}
                             placeholder="科目名称"
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Input
                             type="number"
                             value={entry.debit || ""}
@@ -522,7 +536,7 @@ export default function LedgerPage() {
                             placeholder="0.00"
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Input
                             type="number"
                             value={entry.credit || ""}
@@ -530,7 +544,7 @@ export default function LedgerPage() {
                             placeholder="0.00"
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <Input
                             value={entry.summary}
                             onChange={(e) => updateEntry(index, "summary", e.target.value)}
@@ -541,13 +555,13 @@ export default function LedgerPage() {
                     ))}
                     <TableRow className="bg-muted/50">
                       <TableCell colSpan={2} className="text-right font-medium">合计</TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="text-center font-medium">
                         ¥{formatNumber(formData.entries.reduce((sum: any, e: any) => sum + toSafeNumber(e.debit), 0))}
                       </TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="text-center font-medium">
                         ¥{formatNumber(formData.entries.reduce((sum: any, e: any) => sum + toSafeNumber(e.credit), 0))}
                       </TableCell>
-                      <TableCell></TableCell>
+                      <TableCell className="text-center"></TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -565,89 +579,109 @@ export default function LedgerPage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>凭证详情</DialogTitle>
-              <DialogDescription>{viewingVoucher?.voucherNo}</DialogDescription>
-            </DialogHeader>
-            {viewingVoucher && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold">{viewingVoucher.summary}</h3>
-                    <p className="text-sm text-muted-foreground">{getTypeLabel(viewingVoucher.type)}</p>
-                  </div>
-                  <Badge variant={getStatusMeta(viewingVoucher.status).variant}>
-                    {getStatusMeta(viewingVoucher.status).label}
-                  </Badge>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">凭证日期</p>
-                    <p className="font-medium">{formatDateValue(viewingVoucher.date)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">借方合计</p>
-                    <p className="font-medium">¥{formatNumber((viewingVoucher as any).debitAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">贷方合计</p>
-                    <p className="font-medium">¥{formatNumber((viewingVoucher as any).creditAmount)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">制单人</p>
-                    <p className="font-medium">{viewingVoucher.preparedBy}</p>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium mb-2">分录明细</h4>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>科目代码</TableHead>
-                        <TableHead>科目名称</TableHead>
-                        <TableHead className="text-right">借方</TableHead>
-                        <TableHead className="text-right">贷方</TableHead>
-                        <TableHead>摘要</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(viewingVoucher.entries ?? []).map((entry, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell>{entry.accountCode}</TableCell>
-                          <TableCell>{entry.accountName}</TableCell>
-                          <TableCell className="text-right">
-                            {toSafeNumber(entry.debit) > 0 ? `¥${formatNumber(entry.debit)}` : "-"}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {toSafeNumber(entry.credit) > 0 ? `¥${formatNumber(entry.credit)}` : "-"}
-                          </TableCell>
-                          <TableCell>{entry.summary}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
+{viewingVoucher && (
+  <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+    <DraggableDialogContent>
+              <div className="space-y-6 p-6">
+        {/* 标准头部 */}
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">凭证详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingVoucher.voucherNo}
+            {viewingVoucher.status && (
+              <>
+                {' \u00b7 '}
+                <Badge
+                  variant={statusMap[viewingVoucher.status]?.variant || "outline"}
+                  className={`ml-1 ${getStatusSemanticClass(
+                    viewingVoucher.status,
+                    statusMap[viewingVoucher.status]?.label
+                  )}`}
+                >
+                  {statusMap[viewingVoucher.status]?.label || String(viewingVoucher.status ?? "-")}
+                </Badge>
+              </>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
+          </p>
+        </div>
+
+        {/* 基本信息 */}
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="凭证日期">{formatDateValue(viewingVoucher.date)}</FieldRow>
+                <FieldRow label="凭证类型">{getTypeLabel(viewingVoucher.type)}</FieldRow>
+                <FieldRow label="制单人">{viewingVoucher.preparedBy || '-'}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="借方合计">¥{formatNumber(viewingVoucher.debitAmount)}</FieldRow>
+                <FieldRow label="贷方合计">¥{formatNumber(viewingVoucher.creditAmount)}</FieldRow>
+                <FieldRow label="审核人">{viewingVoucher.approvedBy || '-'}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {/* 摘要 */}
+          {viewingVoucher.summary && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">摘要</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingVoucher.summary}</p>
+            </div>
+          )}
+
+          {/* 分录明细 */}
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">分录明细</h3>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">科目代码</TableHead>
+                  <TableHead className="text-center font-bold">科目名称</TableHead>
+                  <TableHead className="text-center font-bold">借方</TableHead>
+                  <TableHead className="text-center font-bold">贷方</TableHead>
+                  <TableHead className="text-center font-bold">摘要</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(viewingVoucher.entries ?? []).map((entry, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell className="text-center">{entry.accountCode}</TableCell>
+                    <TableCell className="text-center">{entry.accountName}</TableCell>
+                    <TableCell className="text-center">
+                      {toSafeNumber(entry.debit) > 0 ? `¥${formatNumber(entry.debit)}` : "-"}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {toSafeNumber(entry.credit) > 0 ? `¥${formatNumber(entry.credit)}` : "-"}
+                    </TableCell>
+                    <TableCell className="text-center">{entry.summary}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        {/* 标准操作按钮 */}
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap">{/* 左侧功能按钮 */ }</div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            {viewingVoucher.status !== "posted" && (
+              <Button variant="outline" size="sm" onClick={() => {
+                setViewDialogOpen(false);
+                handleEdit(viewingVoucher);
+              }}>
+                编辑
               </Button>
-              {viewingVoucher && viewingVoucher.status !== "posted" && (
-                <Button onClick={() => {
-                  setViewDialogOpen(false);
-                  handleEdit(viewingVoucher);
-                }}>
-                  编辑
-                </Button>
-              )}
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+            )}
+          </div>
+        </div>
+      </div>
+    </DraggableDialogContent>
+  </DraggableDialog>
+)}
       </div>
     </ERPLayout>
   );

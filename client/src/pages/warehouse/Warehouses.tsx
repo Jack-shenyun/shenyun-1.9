@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Warehouse, Plus, Search, Edit, Trash2, MoreHorizontal, Building2 } from "lucide-react";
@@ -283,41 +284,41 @@ export default function WarehousesPage() {
         <Card>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>仓库编码</TableHead>
-                <TableHead>仓库名称</TableHead>
-                <TableHead>仓库类型</TableHead>
-                <TableHead>负责人</TableHead>
-                <TableHead>联系电话</TableHead>
-                <TableHead>仓库地址</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+              <TableRow className="bg-muted/60">
+                <TableHead className="text-center font-bold">仓库编码</TableHead>
+                <TableHead className="text-center font-bold">仓库名称</TableHead>
+                <TableHead className="text-center font-bold">仓库类型</TableHead>
+                <TableHead className="text-center font-bold">负责人</TableHead>
+                <TableHead className="text-center font-bold">联系电话</TableHead>
+                <TableHead className="text-center font-bold">仓库地址</TableHead>
+                <TableHead className="text-center font-bold">状态</TableHead>
+                <TableHead className="text-center font-bold">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredList.map((record) => (
                 <TableRow key={record.id}>
-                  <TableCell className="font-mono">{record.code}</TableCell>
-                  <TableCell className="font-medium">
+                  <TableCell className="text-center font-mono">{record.code}</TableCell>
+                  <TableCell className="text-center font-medium">
                     <div className="flex items-center gap-2">
                       <Warehouse className="h-4 w-4 text-muted-foreground" />
                       {record.name}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="text-center">
                     <span className={`text-sm font-medium ${warehouseTypeMap[record.type]?.color || ""}`}>
                       {warehouseTypeMap[record.type]?.label || record.type}
                     </span>
                   </TableCell>
-                  <TableCell>{record.manager || "-"}</TableCell>
-                  <TableCell>{record.phone || "-"}</TableCell>
-                  <TableCell className="max-w-[200px] truncate">{record.address || "-"}</TableCell>
-                  <TableCell>
-                    <Badge variant={statusMap[record.status]?.variant || "outline"}>
+                  <TableCell className="text-center">{record.manager || "-"}</TableCell>
+                  <TableCell className="text-center">{record.phone || "-"}</TableCell>
+                  <TableCell className="text-center max-w-[200px] truncate">{record.address || "-"}</TableCell>
+                  <TableCell className="text-center">
+                    <Badge variant={statusMap[record.status]?.variant || "outline"} className={getStatusSemanticClass(record.status, statusMap[record.status]?.label)}>
                       {statusMap[record.status]?.label || record.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-center">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon">

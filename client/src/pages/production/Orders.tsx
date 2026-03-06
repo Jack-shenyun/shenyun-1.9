@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -362,6 +363,19 @@ export default function ProductionOrdersPage() {
     inProgress: (ordersRaw as any[]).filter((r: any) => r.status === "in_progress").length,
   };
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -419,16 +433,16 @@ export default function ProductionOrdersPage() {
         <Card>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>指令单号</TableHead>
-                <TableHead>指令类型</TableHead>
-                <TableHead>批次号</TableHead>
-                <TableHead>产品名称</TableHead>
-                <TableHead>生产进度</TableHead>
-                <TableHead>生产日期</TableHead>
-                <TableHead>有效期至</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+              <TableRow className="bg-muted/60">
+                <TableHead className="text-center font-bold">指令单号</TableHead>
+                <TableHead className="text-center font-bold">指令类型</TableHead>
+                <TableHead className="text-center font-bold">批次号</TableHead>
+                <TableHead className="text-center font-bold">产品名称</TableHead>
+                <TableHead className="text-center font-bold">生产进度</TableHead>
+                <TableHead className="text-center font-bold">生产日期</TableHead>
+                <TableHead className="text-center font-bold">有效期至</TableHead>
+                <TableHead className="text-center font-bold">状态</TableHead>
+                <TableHead className="text-center font-bold">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -439,18 +453,18 @@ export default function ProductionOrdersPage() {
                 const typeInfo = orderTypeMap[record.orderType as OrderType] || orderTypeMap.finished;
                 return (
                   <TableRow key={record.id}>
-                    <TableCell className="font-mono">{record.orderNo}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-mono">{record.orderNo}</TableCell>
+                    <TableCell className="text-center">
                       <Badge variant={typeInfo.badge} className={typeInfo.color}>{typeInfo.label}</Badge>
                     </TableCell>
-                    <TableCell className="font-medium font-mono">{record.batchNo || "-"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-medium font-mono">{record.batchNo || "-"}</TableCell>
+                    <TableCell className="text-center">
                       <div>
                         <div className="font-medium">{record.productName}</div>
                         {record.productCode && <div className="text-xs text-muted-foreground font-mono">{record.productCode}</div>}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">
                       <div className="space-y-1 w-32">
                         <div className="flex items-center justify-between text-xs">
                           <span>{completed?.toLocaleString?.() ?? "0"}</span>
@@ -459,14 +473,14 @@ export default function ProductionOrdersPage() {
                         <Progress value={progress} className="h-1.5" />
                       </div>
                     </TableCell>
-                    <TableCell>{record.productionDate ? String(record.productionDate).split("T")[0] : "-"}</TableCell>
-                    <TableCell>{record.expiryDate ? String(record.expiryDate).split("T")[0] : "-"}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[record.status]?.variant || "outline"} className={statusMap[record.status]?.color || ""}>
+                    <TableCell className="text-center">{record.productionDate ? String(record.productionDate).split("T")[0] : "-"}</TableCell>
+                    <TableCell className="text-center">{record.expiryDate ? String(record.expiryDate).split("T")[0] : "-"}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[record.status]?.variant || "outline"} className={getStatusSemanticClass(record.status, statusMap[record.status]?.label)}>
                         {statusMap[record.status]?.label || record.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
@@ -708,128 +722,102 @@ export default function ProductionOrdersPage() {
           onSelect={handleProductSelect}
         />
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Cog className="h-5 w-5" />
-                生产指令详情 - {selectedRecord?.orderNo}
-              </DialogTitle>
-            </DialogHeader>
-            {selectedRecord && (() => {
-              const planned = Number(selectedRecord.plannedQty || 0);
-              const completed = Number(selectedRecord.completedQty || 0);
-              const progress = planned > 0 ? (completed / planned) * 100 : 0;
-              const typeInfo = orderTypeMap[selectedRecord.orderType] || orderTypeMap.finished;
-              const product = (productsData as any[]).find((p: any) => p.id === selectedRecord.productId);
-              return (
-                <div className="space-y-6 mt-4">
-                  <Card className="bg-primary/5 border-primary/20">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">总体生产进度</span>
-                        <span className="text-lg font-bold">{progress.toFixed(1)}%</span>
-                      </div>
-                      <Progress value={progress} className="h-3" />
-                      <div className="flex justify-between mt-2 text-sm text-muted-foreground">
-                        <span>已完成: {completed?.toLocaleString?.() ?? "0"}</span>
-                        <span>计划: {planned?.toLocaleString?.() ?? "0"}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card>
-                      <CardHeader className="pb-3"><CardTitle className="text-base">基本信息</CardTitle></CardHeader>
-                      <CardContent className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">指令类型</span>
-                          <Badge variant={typeInfo.badge} className={typeInfo.color}>{typeInfo.label}</Badge>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">产品名称</span>
-                          <span className="font-medium">{selectedRecord.productName}</span>
-                        </div>
-                        {product?.specification && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">规格型号</span>
-                            <span>{product.specification}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">批次号</span>
-                          <span className="font-medium font-mono">{selectedRecord.batchNo || "-"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">计划数量</span>
-                          <span className="font-medium">{planned?.toLocaleString?.() ?? "0"} {selectedRecord.unit || ""}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">完成数量</span>
-                          <span className="font-medium">{completed?.toLocaleString?.() ?? "0"} {selectedRecord.unit || ""}</span>
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-3"><CardTitle className="text-base">时间信息</CardTitle></CardHeader>
-                      <CardContent className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">生产日期</span>
-                          <span className="font-medium">{selectedRecord.productionDate ? String(selectedRecord.productionDate).split("T")[0] : "-"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">有效期至</span>
-                          <span className="font-medium">{selectedRecord.expiryDate ? String(selectedRecord.expiryDate).split("T")[0] : "-"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">计划开始</span>
-                          <span className="font-medium">{selectedRecord.plannedStartDate ? String(selectedRecord.plannedStartDate).split("T")[0] : "-"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">计划完成</span>
-                          <span className="font-medium">{selectedRecord.plannedEndDate ? String(selectedRecord.plannedEndDate).split("T")[0] : "-"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">实际开始</span>
-                          <span className="font-medium">{selectedRecord.actualStartDate ? String(selectedRecord.actualStartDate).split("T")[0] : "-"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">实际完成</span>
-                          <span className="font-medium">{selectedRecord.actualEndDate ? String(selectedRecord.actualEndDate).split("T")[0] : "-"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">状态</span>
-                          <Badge variant={statusMap[selectedRecord.status]?.variant || "outline"} className={statusMap[selectedRecord.status]?.color || ""}>
-                            {statusMap[selectedRecord.status]?.label || selectedRecord.status}
-                          </Badge>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                  {selectedRecord.remark && (
-                    <Card>
-                      <CardHeader className="pb-3"><CardTitle className="text-base">备注</CardTitle></CardHeader>
-                      <CardContent><p className="text-sm text-muted-foreground">{selectedRecord.remark}</p></CardContent>
-                    </Card>
-                  )}
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-                    <Button variant="outline" onClick={() => { setViewDialogOpen(false); handleEdit(selectedRecord); }}>编辑指令</Button>
-                    {selectedRecord.status === "draft" && (
-                      <Button onClick={() => handleStatusChange(selectedRecord, "planned")}>确认计划</Button>
-                    )}
-                    {selectedRecord.status === "planned" && (
-                      <Button onClick={() => handleStatusChange(selectedRecord, "in_progress")}><Play className="h-4 w-4 mr-2" />开始生产</Button>
-                    )}
-                    {selectedRecord.status === "in_progress" && (
-                      <Button onClick={() => handleStatusChange(selectedRecord, "completed")}><CheckCircle className="h-4 w-4 mr-2" />完成生产</Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-          </DraggableDialogContent>
-        </DraggableDialog>
+        {/* 查看详情 */}
+{selectedRecord && (
+  <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+    <DraggableDialogContent>
+      <div className="border-b pb-3">
+        <h2 className="text-lg font-semibold">生产指令详情</h2>
+        <p className="text-sm text-muted-foreground">
+          {selectedRecord.orderNo}
+          {selectedRecord.status && (
+            <> · <Badge variant={statusMap[selectedRecord.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(selectedRecord.status, statusMap[selectedRecord.status]?.label)}`}>
+              {statusMap[selectedRecord.status]?.label || String(selectedRecord.status ?? "-")}
+            </Badge></>
+          )}
+        </p>
+      </div>
+
+      <div className="py-4 space-y-6 max-h-[65vh] overflow-y-auto pr-2">
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="产品名称">{selectedRecord.productName}</FieldRow>
+              <FieldRow label="产品编码">{selectedRecord.productCode}</FieldRow>
+              <FieldRow label="规格型号">{selectedRecord.productSpec || '-'}</FieldRow>
+            </div>
+            <div>
+              <FieldRow label="指令类型">
+                <Badge variant={orderTypeMap[selectedRecord.orderType].badge} className={orderTypeMap[selectedRecord.orderType].color}>
+                  {orderTypeMap[selectedRecord.orderType].label}
+                </Badge>
+              </FieldRow>
+              <FieldRow label="批次号">{selectedRecord.batchNo || '-'}</FieldRow>
+              <FieldRow label="关联计划">{selectedRecord.planId || '-'}</FieldRow>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">生产进度</h3>
+          <div className="space-y-2">
+            <Progress value={(Number(selectedRecord.completedQty || 0) / Number(selectedRecord.plannedQty)) * 100} className="h-2" />
+            <div className="flex justify-between text-sm">
+              <span className="font-medium">
+                {Number(selectedRecord.completedQty || 0).toLocaleString()} / <span className="text-muted-foreground">{Number(selectedRecord.plannedQty).toLocaleString()} {selectedRecord.unit}</span>
+              </span>
+              <span className="font-bold text-lg">
+                {((Number(selectedRecord.completedQty || 0) / Number(selectedRecord.plannedQty)) * 100).toFixed(1)}%
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">时间安排</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="计划开始">{selectedRecord.plannedStartDate ? String(selectedRecord.plannedStartDate).split("T")[0] : "-"}</FieldRow>
+              <FieldRow label="计划完成">{selectedRecord.plannedEndDate ? String(selectedRecord.plannedEndDate).split("T")[0] : "-"}</FieldRow>
+              <FieldRow label="生产日期">{selectedRecord.productionDate ? String(selectedRecord.productionDate).split("T")[0] : "-"}</FieldRow>
+            </div>
+            <div>
+              <FieldRow label="实际开始">{selectedRecord.actualStartDate ? String(selectedRecord.actualStartDate).split("T")[0] : "-"}</FieldRow>
+              <FieldRow label="实际完成">{selectedRecord.actualEndDate ? String(selectedRecord.actualEndDate).split("T")[0] : "-"}</FieldRow>
+              <FieldRow label="有效期至">{selectedRecord.expiryDate ? String(selectedRecord.expiryDate).split("T")[0] : "-"}</FieldRow>
+            </div>
+          </div>
+        </div>
+
+        {selectedRecord.remark && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{selectedRecord.remark}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+        <div className="flex gap-2 flex-wrap">
+          {selectedRecord.status === "planned" && (
+            <Button size="sm" onClick={() => handleStatusChange(selectedRecord, "in_progress")}><Play className="h-4 w-4 mr-2" />开始生产</Button>
+          )}
+          {selectedRecord.status === "in_progress" && (
+            <Button size="sm" onClick={() => handleStatusChange(selectedRecord, "completed")}><CheckCircle className="h-4 w-4 mr-2" />完成生产</Button>
+          )}
+        </div>
+        <div className="flex gap-2 flex-wrap justify-end">
+          <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+          <Button variant="outline" size="sm" onClick={() => handleEdit(selectedRecord)}>编辑</Button>
+          {canDelete && (
+            <Button variant="destructive" size="sm" onClick={() => handleDelete(selectedRecord)}>删除</Button>
+          )}
+        </div>
+      </div>
+    </DraggableDialogContent>
+  </DraggableDialog>
+)}
       </div>
     </ERPLayout>
   );

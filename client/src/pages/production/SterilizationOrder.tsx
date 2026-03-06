@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -241,6 +242,12 @@ export default function SterilizationOrderPage() {
   const arrivedCount = allOrders.filter((o) => o.status === "arrived").length;
   const qualifiedCount = allOrders.filter((o) => o.status === "qualified").length;
   const unqualifiedCount = allOrders.filter((o) => o.status === "unqualified").length;
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
 
   return (
     <ERPLayout>
@@ -297,18 +304,18 @@ export default function SterilizationOrderPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>灭菌单号</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead>生产批号</TableHead>
-                  <TableHead>灭菌批号</TableHead>
-                  <TableHead className="text-right">数量</TableHead>
-                  <TableHead>灭菌方式</TableHead>
-                  <TableHead>灭菌供应商</TableHead>
-                  <TableHead>发出日期</TableHead>
-                  <TableHead>预计回收</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">灭菌单号</TableHead>
+                  <TableHead className="text-center font-bold">产品名称</TableHead>
+                  <TableHead className="text-center font-bold">生产批号</TableHead>
+                  <TableHead className="text-center font-bold">灭菌批号</TableHead>
+                  <TableHead className="text-center font-bold">数量</TableHead>
+                  <TableHead className="text-center font-bold">灭菌方式</TableHead>
+                  <TableHead className="text-center font-bold">灭菌供应商</TableHead>
+                  <TableHead className="text-center font-bold">发出日期</TableHead>
+                  <TableHead className="text-center font-bold">预计回收</TableHead>
+                  <TableHead className="text-center font-bold">状态</TableHead>
+                  <TableHead className="text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -318,25 +325,25 @@ export default function SterilizationOrderPage() {
                   <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">暂无委外灭菌单</TableCell></TableRow>
                 ) : filteredOrders.map((order: any) => (
                   <TableRow key={order.id}>
-                    <TableCell className="font-medium font-mono">{order.orderNo}</TableCell>
-                    <TableCell>{order.productName || "-"}</TableCell>
-                    <TableCell className="font-mono">{order.batchNo || "-"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-center font-medium font-mono">{order.orderNo}</TableCell>
+                    <TableCell className="text-center">{order.productName || "-"}</TableCell>
+                    <TableCell className="text-center font-mono">{order.batchNo || "-"}</TableCell>
+                    <TableCell className="text-center">
                       {order.sterilizationBatchNo ? (
                         <span className="font-mono text-orange-600 font-medium">{order.sterilizationBatchNo}</span>
                       ) : <span className="text-muted-foreground">-</span>}
                     </TableCell>
-                    <TableCell className="text-right">{order.quantity} {order.unit}</TableCell>
-                    <TableCell>{order.sterilizationMethod || "-"}</TableCell>
-                    <TableCell>{order.supplierName || "-"}</TableCell>
-                    <TableCell>{order.sendDate ? String(order.sendDate).split("T")[0] : "-"}</TableCell>
-                    <TableCell>{order.expectedReturnDate ? String(order.expectedReturnDate).split("T")[0] : "-"}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusMap[order.status]?.variant || "outline"}>
+                    <TableCell className="text-center">{order.quantity} {order.unit}</TableCell>
+                    <TableCell className="text-center">{order.sterilizationMethod || "-"}</TableCell>
+                    <TableCell className="text-center">{order.supplierName || "-"}</TableCell>
+                    <TableCell className="text-center">{order.sendDate ? String(order.sendDate).split("T")[0] : "-"}</TableCell>
+                    <TableCell className="text-center">{order.expectedReturnDate ? String(order.expectedReturnDate).split("T")[0] : "-"}</TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={statusMap[order.status]?.variant || "outline"} className={getStatusSemanticClass(order.status, statusMap[order.status]?.label)}>
                         {statusMap[order.status]?.label || order.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-center">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
@@ -515,54 +522,79 @@ export default function SterilizationOrderPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>委外灭菌单详情</DialogTitle>
-              <DialogDescription>{viewingOrder?.orderNo}</DialogDescription>
-            </DialogHeader>
-            {viewingOrder && (
-              <div className="space-y-4 py-2">
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                  <div>
-                    <p className="font-semibold">{viewingOrder.productName || "-"}</p>
-                    <p className="text-sm text-muted-foreground">生产批号：<span className="font-mono">{viewingOrder.batchNo || "-"}</span></p>
-                    {viewingOrder.sterilizationBatchNo && (
-                      <p className="text-sm text-orange-600 font-medium">灭菌批号：<span className="font-mono">{viewingOrder.sterilizationBatchNo}</span></p>
-                    )}
-                  </div>
-                  <Badge variant={statusMap[viewingOrder.status]?.variant || "outline"}>
-                    {statusMap[viewingOrder.status]?.label || viewingOrder.status}
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div><p className="text-muted-foreground">数量</p><p className="font-medium">{viewingOrder.quantity} {viewingOrder.unit}</p></div>
-                  <div><p className="text-muted-foreground">灭菌方式</p><p className="font-medium">{viewingOrder.sterilizationMethod || "-"}</p></div>
-                  <div><p className="text-muted-foreground">灭菌供应商</p><p className="font-medium">{viewingOrder.supplierName || "-"}</p></div>
-                  <div><p className="text-muted-foreground">关联流转单</p><p className="font-medium">{viewingOrder.routingCardNo || "-"}</p></div>
-                  <div><p className="text-muted-foreground">发出日期</p><p className="font-medium">{viewingOrder.sendDate ? String(viewingOrder.sendDate).split("T")[0] : "-"}</p></div>
-                  <div><p className="text-muted-foreground">预计回收</p><p className="font-medium">{viewingOrder.expectedReturnDate ? String(viewingOrder.expectedReturnDate).split("T")[0] : "-"}</p></div>
-                  {viewingOrder.actualReturnDate && (
-                    <div><p className="text-muted-foreground">实际到货</p><p className="font-medium">{String(viewingOrder.actualReturnDate).split("T")[0]}</p></div>
-                  )}
-                </div>
-                {viewingOrder.remark && (
-                  <div><p className="text-sm text-muted-foreground mb-1">备注</p><p className="text-sm">{viewingOrder.remark}</p></div>
-                )}
-                {viewingOrder.status === "arrived" && (
-                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm text-blue-700">
-                    <Bell className="h-4 w-4 inline mr-1" />已通知质量部进行 OQC 检验，请等待检验结果
-                  </div>
-                )}
-              </div>
+{/* 查看详情 */}
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    {viewingOrder && (
+      <div className="space-y-4">
+        <div className="border-b pb-3">
+          <h2 className="text-lg font-semibold">委外灭菌单详情</h2>
+          <p className="text-sm text-muted-foreground">
+            {viewingOrder.orderNo}
+            {viewingOrder.status && (
+              <> · <Badge variant={statusMap[viewingOrder.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingOrder.status, statusMap[viewingOrder.status]?.label)}`}>
+                {statusMap[viewingOrder.status]?.label || String(viewingOrder.status ?? "-")}
+              </Badge></>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-              <Button onClick={() => { setViewDialogOpen(false); if (viewingOrder) handleEdit(viewingOrder); }}>编辑</Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="产品名称">{viewingOrder.productName || "-"}</FieldRow>
+                <FieldRow label="生产批号">{viewingOrder.batchNo ? <span className="font-mono">{viewingOrder.batchNo}</span> : "-"}</FieldRow>
+                <FieldRow label="灭菌批号">{viewingOrder.sterilizationBatchNo ? <span className="font-mono text-orange-600 font-medium">{viewingOrder.sterilizationBatchNo}</span> : "-"}</FieldRow>
+                <FieldRow label="数量">{viewingOrder.quantity} {viewingOrder.unit}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="灭菌方式">{viewingOrder.sterilizationMethod || "-"}</FieldRow>
+                <FieldRow label="灭菌供应商">{viewingOrder.supplierName || "-"}</FieldRow>
+                <FieldRow label="关联流转单">{viewingOrder.routingCardNo || "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">日期信息</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div>
+                <FieldRow label="发出日期">{viewingOrder.sendDate ? String(viewingOrder.sendDate).split("T")[0] : "-"}</FieldRow>
+                <FieldRow label="预计回收">{viewingOrder.expectedReturnDate ? String(viewingOrder.expectedReturnDate).split("T")[0] : "-"}</FieldRow>
+              </div>
+              <div>
+                <FieldRow label="实际到货">{viewingOrder.actualReturnDate ? String(viewingOrder.actualReturnDate).split("T")[0] : "-"}</FieldRow>
+              </div>
+            </div>
+          </div>
+
+          {viewingOrder.remark && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingOrder.remark}</p>
+            </div>
+          )}
+
+          {viewingOrder.status === "arrived" && (
+            <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm text-blue-700">
+              <Bell className="h-4 w-4 inline mr-1" />已通知质量部进行 OQC 检验，请等待检验结果
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+          <div className="flex gap-2 flex-wrap"></div>
+          <div className="flex gap-2 flex-wrap justify-end">
+            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+            <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); if (viewingOrder) handleEdit(viewingOrder); }}>编辑</Button>
+          </div>
+        </div>
+      </div>
+    )}
+  </DraggableDialogContent>
+</DraggableDialog>
       </div>
     </ERPLayout>
   );

@@ -585,13 +585,13 @@ export default function FinanceAccountsPage() {
             <div className="rounded-md border max-h-[420px] overflow-auto">
               <Table>
                 <TableHeader className="sticky top-0 z-10 bg-slate-50">
-                  <TableRow>
-                    <TableHead className="text-center font-semibold">账户编码</TableHead>
-                    <TableHead className="text-center font-semibold">账户名称</TableHead>
-                    <TableHead className="text-center font-semibold">币种</TableHead>
-                    <TableHead className="text-center font-semibold">状态</TableHead>
-                    <TableHead className="text-center font-semibold">银行账号</TableHead>
-                    <TableHead className="text-center font-semibold">操作</TableHead>
+                  <TableRow className="bg-muted/60">
+                    <TableHead className="text-center font-bold">账户编码</TableHead>
+                    <TableHead className="text-center font-bold">账户名称</TableHead>
+                    <TableHead className="text-center font-bold">币种</TableHead>
+                    <TableHead className="text-center font-bold">状态</TableHead>
+                    <TableHead className="text-center font-bold">银行账号</TableHead>
+                    <TableHead className="text-center font-bold">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -625,7 +625,7 @@ export default function FinanceAccountsPage() {
                             {row.accountNo || "-"}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
                             <Button
                               variant="ghost"
@@ -973,13 +973,13 @@ export default function FinanceAccountsPage() {
               <div className="rounded-md border max-h-[120px] overflow-auto">
                 <Table>
                   <TableHeader className="sticky top-0 z-10 bg-slate-50">
-                    <TableRow>
-                      <TableHead className="text-center font-semibold">原币种</TableHead>
-                      <TableHead className="text-center font-semibold">目标币种</TableHead>
-                      <TableHead className="text-center font-semibold">汇率</TableHead>
-                      <TableHead className="text-center font-semibold">生效日期</TableHead>
-                      <TableHead className="text-center font-semibold">来源</TableHead>
-                      <TableHead className="text-center font-semibold">操作</TableHead>
+                    <TableRow className="bg-muted/60">
+                      <TableHead className="text-center font-bold">原币种</TableHead>
+                      <TableHead className="text-center font-bold">目标币种</TableHead>
+                      <TableHead className="text-center font-bold">汇率</TableHead>
+                      <TableHead className="text-center font-bold">生效日期</TableHead>
+                      <TableHead className="text-center font-bold">来源</TableHead>
+                      <TableHead className="text-center font-bold">操作</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1003,7 +1003,7 @@ export default function FinanceAccountsPage() {
                           <TableCell className="text-center font-medium">{toSafeNumber(row.rate).toFixed(6)}</TableCell>
                           <TableCell className="text-center">{formatDateValue(row.effectiveDate)}</TableCell>
                           <TableCell className="text-center">{row.source || "-"}</TableCell>
-                          <TableCell>
+                          <TableCell className="text-center">
                             <div className="flex items-center justify-center gap-1">
                               <Button variant="ghost" size="icon" onClick={() => handleEdit(row)}>
                                 <Edit className="h-4 w-4" />

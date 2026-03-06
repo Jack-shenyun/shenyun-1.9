@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -216,6 +217,19 @@ export default function EquipmentPage() {
     return diffDays <= 7 && e.status === "normal";
   }).length;
 
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+
+    </div>
+
+  );
+
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -298,15 +312,15 @@ export default function EquipmentPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[90px]">设备编号</TableHead>
-                  <TableHead>设备名称</TableHead>
-                  <TableHead className="w-[90px]">型号规格</TableHead>
-                  <TableHead className="w-[110px]">安装位置</TableHead>
-                  <TableHead className="w-[80px]">使用部门</TableHead>
-                  <TableHead className="w-[80px]">状态</TableHead>
-                  <TableHead className="w-[100px]">下次保养</TableHead>
-                  <TableHead className="w-[80px] text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="w-[90px] text-center font-bold">设备编号</TableHead>
+                  <TableHead className="text-center font-bold">设备名称</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">型号规格</TableHead>
+                  <TableHead className="w-[110px] text-center font-bold">安装位置</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">使用部门</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">下次保养</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -318,17 +332,17 @@ export default function EquipmentPage() {
                   
                   return (
                     <TableRow key={equipment.id}>
-                      <TableCell className="font-medium">{equipment.code}</TableCell>
-                      <TableCell>{equipment.name}</TableCell>
-                      <TableCell>{equipment.model}</TableCell>
-                      <TableCell>{equipment.location}</TableCell>
-                      <TableCell>{equipment.department}</TableCell>
-                      <TableCell>
-                        <Badge variant={statusMap[equipment.status]?.variant || "outline"}>
+                      <TableCell className="text-center font-medium">{equipment.code}</TableCell>
+                      <TableCell className="text-center">{equipment.name}</TableCell>
+                      <TableCell className="text-center">{equipment.model}</TableCell>
+                      <TableCell className="text-center">{equipment.location}</TableCell>
+                      <TableCell className="text-center">{equipment.department}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={statusMap[equipment.status]?.variant || "outline"} className={getStatusSemanticClass(equipment.status, statusMap[equipment.status]?.label)}>
                           {statusMap[equipment.status]?.label || String(equipment.status ?? "-")}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-center">
                         <div className="flex items-center gap-1">
                           {equipment.nextMaintenance}
                           {isNearMaintenance && (
@@ -336,7 +350,7 @@ export default function EquipmentPage() {
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-center">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
@@ -575,113 +589,105 @@ export default function EquipmentPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
-        {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>设备详情</DialogTitle>
-              <DialogDescription>{viewingEquipment?.code}</DialogDescription>
-            </DialogHeader>
-            {viewingEquipment && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <Wrench className="h-8 w-8 text-primary" />
-                    <div>
-                      <h3 className="font-semibold">{viewingEquipment.name}</h3>
-                      <p className="text-sm text-muted-foreground">{viewingEquipment.model}</p>
-                    </div>
-                  </div>
-                  <Badge variant={statusMap[viewingEquipment.status]?.variant || "outline"}>
-                    {statusMap[viewingEquipment.status]?.label || String(viewingEquipment.status ?? "-")}
-                  </Badge>
-                </div>
+        '''
+{/* 查看详情对话框 */}
+{viewingEquipment && (
+<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialogContent>
+    <div className="border-b pb-3">
+      <h2 className="text-lg font-semibold">设备详情</h2>
+      <p className="text-sm text-muted-foreground">
+        {viewingEquipment.code}
+        {viewingEquipment.status && (
+          <> · <Badge variant={statusMap[viewingEquipment.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingEquipment.status, statusMap[viewingEquipment.status]?.label)}`}>
+            {statusMap[viewingEquipment.status]?.label || String(viewingEquipment.status ?? "-")}
+          </Badge></>
+        )}
+      </p>
+    </div>
 
-                <div className="text-sm font-medium">基本信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">设备编号</p>
-                    <p className="font-medium">{viewingEquipment.code}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">制造商</p>
-                    <p className="font-medium">{viewingEquipment.manufacturer || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">出厂编号</p>
-                    <p className="font-medium">{viewingEquipment.serialNo || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">资产价值</p>
-                    <p className="font-medium">¥{viewingEquipment.assetValue?.toLocaleString?.() ?? "0"}</p>
-                  </div>
+    <div className="space-y-6 py-4">
+      {(() => {
+        return (
+          <>
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div>
+                  <FieldRow label="设备名称">{viewingEquipment.name}</FieldRow>
+                  <FieldRow label="型号规格">{viewingEquipment.model}</FieldRow>
+                  <FieldRow label="制造商">{viewingEquipment.manufacturer}</FieldRow>
                 </div>
-
-                <div className="text-sm font-medium">位置与责任</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">安装位置</p>
-                    <p className="font-medium">{viewingEquipment.location}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">使用部门</p>
-                    <p className="font-medium">{viewingEquipment.department}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">责任人</p>
-                    <p className="font-medium">{viewingEquipment.responsible || "-"}</p>
-                  </div>
+                <div>
+                  <FieldRow label="出厂编号">{viewingEquipment.serialNo}</FieldRow>
+                  <FieldRow label="资产价值">¥{viewingEquipment.assetValue?.toLocaleString?.() ?? "0"}</FieldRow>
                 </div>
+              </div>
+            </div>
 
-                <div className="text-sm font-medium">日期信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">购置日期</p>
-                    <p className="font-medium">{formatDateValue(viewingEquipment.purchaseDate)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">保修截止</p>
-                    <p className="font-medium">{formatDateValue(viewingEquipment.warrantyDate)}</p>
-                  </div>
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">位置与责任</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div>
+                  <FieldRow label="安装位置">{viewingEquipment.location}</FieldRow>
+                  <FieldRow label="使用部门">{viewingEquipment.department}</FieldRow>
                 </div>
-
-                <div className="text-sm font-medium">保养信息</div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">上次保养</p>
-                    <p className="font-medium">{viewingEquipment.lastMaintenance || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">下次保养</p>
-                    <p className="font-medium">{viewingEquipment.nextMaintenance}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">保养周期</p>
-                    <p className="font-medium">{viewingEquipment.maintenanceCycle} 天</p>
-                  </div>
+                <div>
+                  <FieldRow label="责任人">{viewingEquipment.responsible}</FieldRow>
                 </div>
+              </div>
+            </div>
 
-                {viewingEquipment.remarks && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-1">备注</p>
-                    <p className="text-sm">{viewingEquipment.remarks}</p>
-                  </div>
-                )}
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">日期信息</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div>
+                  <FieldRow label="购置日期">{formatDateValue(viewingEquipment.purchaseDate)}</FieldRow>
+                </div>
+                <div>
+                  <FieldRow label="保修截止">{formatDateValue(viewingEquipment.warrantyDate)}</FieldRow>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">保养信息</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div>
+                  <FieldRow label="上次保养">{formatDateValue(viewingEquipment.lastMaintenance)}</FieldRow>
+                  <FieldRow label="保养周期">{viewingEquipment.maintenanceCycle} 天</FieldRow>
+                </div>
+                <div>
+                  <FieldRow label="下次保养">{formatDateValue(viewingEquipment.nextMaintenance)}</FieldRow>
+                </div>
+              </div>
+            </div>
+
+            {viewingEquipment.remarks && (
+              <div>
+                <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+                <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingEquipment.remarks}</p>
               </div>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-                关闭
-              </Button>
-              <Button onClick={() => {
-                setViewDialogOpen(false);
-                if (viewingEquipment) handleEdit(viewingEquipment);
-              }}>
-                编辑
-              </Button>
-            </DialogFooter>
-          </DraggableDialogContent>
-        </DraggableDialog>
+          </>
+        );
+      })()}
+    </div>
+
+    <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+      <div className="flex gap-2 flex-wrap"></div>
+      <div className="flex gap-2 flex-wrap justify-end">
+        <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+        <Button variant="outline" size="sm" onClick={() => {
+          setViewDialogOpen(false);
+          if (viewingEquipment) handleEdit(viewingEquipment);
+        }}>编辑</Button>
+      </div>
+    </div>
+  </DraggableDialogContent>
+</DraggableDialog>
+)}
+'''))oxiawt-erp-/client/src/pages/production/Equipment.tsx", has_view_dialog = True, notes = "The FieldRow component is defined inline to avoid polluting the component
       </div>
     </ERPLayout>
   );

@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
+import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { ArchiveRestore, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -162,15 +163,15 @@ export default function RecycleBinPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>类型</TableHead>
-                  <TableHead>数据名称</TableHead>
-                  <TableHead>来源表</TableHead>
-                  <TableHead>删除时间</TableHead>
-                  <TableHead>到期时间</TableHead>
-                  <TableHead>剩余天数</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
+                <TableRow className="bg-muted/60">
+                  <TableHead className="text-center font-bold">类型</TableHead>
+                  <TableHead className="text-center font-bold">数据名称</TableHead>
+                  <TableHead className="text-center font-bold">来源表</TableHead>
+                  <TableHead className="text-center font-bold">删除时间</TableHead>
+                  <TableHead className="text-center font-bold">到期时间</TableHead>
+                  <TableHead className="text-center font-bold">剩余天数</TableHead>
+                  <TableHead className="text-center font-bold">状态</TableHead>
+                  <TableHead className="text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -185,18 +186,18 @@ export default function RecycleBinPage() {
                     const statusInfo = statusMap[row.status] ?? statusMap.active;
                     return (
                       <TableRow key={row.id}>
-                        <TableCell>{row.entityType || "-"}</TableCell>
-                        <TableCell>{row.displayName || "-"}</TableCell>
-                        <TableCell>{row.sourceTable || "-"}</TableCell>
-                        <TableCell>{formatDateTime(row.deletedAt)}</TableCell>
-                        <TableCell>{formatDateTime(row.expiresAt)}</TableCell>
-                        <TableCell>{Number(row.daysLeft ?? 0)} 天</TableCell>
-                        <TableCell>
+                        <TableCell className="text-center">{row.entityType || "-"}</TableCell>
+                        <TableCell className="text-center">{row.displayName || "-"}</TableCell>
+                        <TableCell className="text-center">{row.sourceTable || "-"}</TableCell>
+                        <TableCell className="text-center">{formatDateTime(row.deletedAt)}</TableCell>
+                        <TableCell className="text-center">{formatDateTime(row.expiresAt)}</TableCell>
+                        <TableCell className="text-center">{Number(row.daysLeft ?? 0)} 天</TableCell>
+                        <TableCell className="text-center">
                           <Badge variant="outline" className={statusInfo.className}>
                             {statusInfo.label}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right space-x-2">
+                        <TableCell className="text-center space-x-2">
                           <Button
                             size="sm"
                             variant="outline"
