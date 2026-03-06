@@ -1312,7 +1312,8 @@ export const materialRequisitionOrders = mysqlTable("material_requisition_orders
   applicantId: int("applicantId"),             // 申请人
   applicationDate: date("applicationDate"),
   status: mysqlEnum("status", ["draft", "pending", "approved", "issued", "rejected"]).default("draft").notNull(),
-  remark: text("remark"),                      // JSON存储明细行（materialCode, materialName, qty, unit, actualQty）
+  items: text("items"),                        // JSON存储物料明细行
+  remark: text("remark"),                      // 备注
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

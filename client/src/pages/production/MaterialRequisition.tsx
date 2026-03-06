@@ -174,8 +174,9 @@ export default function MaterialRequisitionPage() {
     setEditingOrder(order);
     let parsedItems: MaterialItem[] = [];
     try {
-      const extra = JSON.parse(order.remark || "{}");
-      parsedItems = extra.items || [];
+      // 优先从独立 items 字段读取，兼容旧数据
+      if (order.items) { parsedItems = JSON.parse(order.items) || []; }
+      else { const extra = JSON.parse(order.remark || "{}"); parsedItems = extra.items || []; }
     } catch {}
     setItems(parsedItems.length > 0 ? parsedItems : []);
     setSelectedProductId(0);
@@ -356,7 +357,9 @@ export default function MaterialRequisitionPage() {
       toast.error("请填写领料单号");
       return;
     }
-    const remarkData = JSON.stringify({ items, note: formData.remark, selfServiceMode });
+    // items 单独存入 items 字段（JSON 字符串），remark 存备注 + selfServiceMode 元数据
+    const itemsJson = JSON.stringify(items);
+    const remarkMeta = JSON.stringify({ selfServiceMode, note: formData.remark });
     const payload = {
       requisitionNo: formData.requisitionNo,
       productionOrderId: formData.productionOrderId ? Number(formData.productionOrderId) : undefined,
@@ -364,10 +367,11 @@ export default function MaterialRequisitionPage() {
       warehouseId: formData.warehouseId ? Number(formData.warehouseId) : undefined,
       applicationDate: formData.applicationDate || undefined,
       status: "draft" as const,
-      remark: remarkData,
+      items: itemsJson,
+      remark: remarkMeta,
     };
     if (editingOrder) {
-      updateMutation.mutate({ id: editingOrder.id, data: { remark: remarkData } });
+      updateMutation.mutate({ id: editingOrder.id, data: { items: itemsJson, remark: remarkMeta } });
     } else {
       createMutation.mutate(payload);
     }
@@ -375,6 +379,8 @@ export default function MaterialRequisitionPage() {
 
   const getViewItems = (order: any): MaterialItem[] => {
     try {
+      // 优先从独立的 items 字段读取，兼容旧数据（存在 remark.items 中）
+      if (order.items) return JSON.parse(order.items) || [];
       const extra = JSON.parse(order.remark || "{}");
       return extra.items || [];
     } catch { return []; }
@@ -393,8 +399,10 @@ export default function MaterialRequisitionPage() {
       const poId = o.productionOrderId;
       if (!poId) return;
       try {
-        const extra = JSON.parse(o.remark || "{}");
-        const items: MaterialItem[] = extra.items || [];
+        // 优先从独立 items 字段读取，兼容旧数据
+        let items: MaterialItem[] = [];
+        if (o.items) { items = JSON.parse(o.items) || []; }
+        else { const extra = JSON.parse(o.remark || "{}"); items = extra.items || []; }
         if (!map[poId]) map[poId] = {};
         items.forEach((item) => {
           const key = item.materialCode || item.materialName;

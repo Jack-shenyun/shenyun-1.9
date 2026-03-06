@@ -249,9 +249,9 @@ async function syncOneReceivableFromSalesOrder(orderId: number, operatorId?: num
     // 使用最小字段原生 SQL 写入，规避 drizzle 在不同 DATE/DECIMAL 映射下的兼容问题
     await db.execute(sql`
       INSERT INTO accounts_receivable
-      (invoiceNo, customerId, salesOrderId, amount, currency, invoiceDate, dueDate, paymentMethod, remark)
+      (invoiceNo, customerId, salesOrderId, amount, currency, exchangeRate, amountBase, invoiceDate, dueDate, paymentMethod, remark)
       VALUES
-      (${`AR-${order.orderNo}`}, ${order.customerId}, ${order.id}, ${round2(receivableAmount)}, ${order.currency || "CNY"}, ${toDateOnly(order.orderDate)}, ${toDateOnly(dueDate)}, ${paymentMethod || null}, ${mergedRemark || null})
+      (${`AR-${order.orderNo}`}, ${order.customerId}, ${order.id}, ${round2(receivableAmount)}, ${order.currency || "CNY"}, ${round2(exchangeRate)}, ${round2(receivableAmountBase)}, ${toDateOnly(order.orderDate)}, ${toDateOnly(dueDate)}, ${paymentMethod || null}, ${mergedRemark || null})
     `);
     return { created: true, reason: "", orderNo: String(order.orderNo || "") };
   } catch (error: any) {
@@ -3125,6 +3125,7 @@ export const appRouter = router({
       applicantId: z.number().optional(),
       applicationDate: z.string().optional(),
       status: z.enum(["draft", "pending", "approved", "issued", "rejected"]).optional(),
+      items: z.string().optional(),
       remark: z.string().optional(),
     })).mutation(async ({ input, ctx }) => {
       const { applicationDate, ...rest } = input;
@@ -3139,6 +3140,7 @@ export const appRouter = router({
       id: z.number(),
       data: z.object({
         status: z.enum(["draft", "pending", "approved", "issued", "rejected"]).optional(),
+        items: z.string().optional(),
         remark: z.string().optional(),
       }),
     })).mutation(async ({ input }) => {
