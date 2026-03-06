@@ -1995,6 +1995,7 @@ export async function getBomList() {
       p.unit AS productUnit,
       p.category AS productCategory,
       p.productCategory AS productType,
+      p.description AS productDescription,
       COUNT(*) AS itemCount,
       COALESCE(SUM(b.quantity * b.unitPrice), 0) AS totalCost,
       MIN(b.createdAt) AS createdAt,

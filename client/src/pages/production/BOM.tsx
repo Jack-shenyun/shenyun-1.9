@@ -310,6 +310,12 @@ function BOMDetailDialog({
                     <span className="text-muted-foreground">BOM版本</span>
                     <p className="font-medium">{bomRecord.version || "-"}</p>
                   </div>
+                  {bomRecord.productDescription && (
+                    <div className="col-span-2 md:col-span-4">
+                      <span className="text-muted-foreground">产品描述</span>
+                      <p className="font-medium text-muted-foreground/80 leading-relaxed">{bomRecord.productDescription}</p>
+                    </div>
+                  )}
                   <div>
                     <span className="text-muted-foreground">物料总数</span>
                     <p className="font-medium">{bomRecord.itemCount}</p>
