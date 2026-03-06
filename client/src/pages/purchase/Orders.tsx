@@ -75,7 +75,7 @@ export default function PurchaseOrdersPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<PurchaseOrder | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const { canDelete } = usePermission();
+  const { canDelete, isAdmin, isGM } = usePermission();
 
   // ===== 数据库查询 =====
   const { data: ordersData = [], isLoading, refetch } = trpc.purchaseOrders.list.useQuery(
@@ -630,9 +630,16 @@ export default function PurchaseOrdersPage() {
           <div className="flex gap-2 flex-wrap">
             {/* 左侧功能按钮 */}
             {selectedRecord.status === "draft" && (
-              <Button variant="outline" className="text-amber-600 border-amber-300" size="sm" onClick={() => { handleStatusChange(selectedRecord, "dept_review"); toast.info("已提交部门审核"); }}>
-                <UserCheck className="h-4 w-4 mr-1" />提交部门审核
-              </Button>
+              <>
+                <Button variant="outline" className="text-amber-600 border-amber-300" size="sm" onClick={() => { handleStatusChange(selectedRecord, "dept_review"); toast.info("已提交部门审核"); }}>
+                  <UserCheck className="h-4 w-4 mr-1" />提交部门审核
+                </Button>
+                {(isAdmin || isGM) && (
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => { handleStatusChange(selectedRecord, "approved"); toast.success("总经理审批通过！采购订单已批准。"); }}>
+                    <CheckCircle className="h-4 w-4 mr-1" />直接审批通过
+                  </Button>
+                )}
+              </>
             )}
             {selectedRecord.status === "dept_review" && (
               <>

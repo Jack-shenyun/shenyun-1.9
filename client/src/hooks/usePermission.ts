@@ -53,6 +53,8 @@ interface UsePermissionReturn {
   isFinanceDept: boolean;
   /** 是否是部门负责人 */
   isDeptManager: boolean;
+  /** 是否是总经理 */
+  isGM: boolean;
   /** 用户部门列表 */
   departments: string[];
   /** 检查是否有指定权限 */
@@ -108,6 +110,11 @@ export function usePermission(): UsePermissionReturn {
     return position === "部门负责人" || position === "经理" || position === "总监";
   }, [user]);
 
+  const isGM = useMemo(() => {
+    const position = String((user as any)?.position ?? "").trim();
+    return position === "总经理" || position === "CEO" || position === "董事长";
+  }, [user]);
+
   // 导入导出仅管理员和部门负责人可用
   const canImport = isAdmin || isDeptManager;
   const canExport = isAdmin || isDeptManager;
@@ -124,6 +131,7 @@ export function usePermission(): UsePermissionReturn {
     isSalesDept,
     isFinanceDept,
     isDeptManager,
+    isGM,
     departments,
     hasPermission,
     permissions,
