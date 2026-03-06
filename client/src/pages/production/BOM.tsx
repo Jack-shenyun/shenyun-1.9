@@ -131,27 +131,27 @@ function BOMTreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
   const subtotal = calcSubtotal(node.quantity, node.unitPrice);
 
   return (
-    <div style={{ marginLeft: depth > 0 ? 24 : 0 }}>
+    <div style={{ marginLeft: depth > 0 ? 16 : 0 }}>
       <div
-        className={`flex items-center gap-2 py-2.5 px-3 rounded-lg border mb-1 ${
+        className={`flex items-center gap-1.5 py-1.5 px-2 rounded border mb-0.5 ${
           depth === 0 ? "bg-primary/5 border-primary/20" : "bg-background border-muted hover:bg-muted/30"
         }`}
       >
         {hasChildren ? (
-          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setIsOpen(!isOpen)}>
-            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <Button variant="ghost" size="icon" className="h-4 w-4 shrink-0" onClick={() => setIsOpen(!isOpen)}>
+            {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           </Button>
         ) : (
-          <div className="w-6 shrink-0" />
+          <div className="w-4 shrink-0" />
         )}
-        <LevelIcon className={`h-4 w-4 shrink-0 ${config.color.split(" ")[0]}`} />
-        <Badge variant="outline" className={`text-xs shrink-0 ${config.color}`}>{config.label}</Badge>
-        <span className="font-mono text-sm text-muted-foreground shrink-0">{node.materialCode}</span>
-        <span className="font-medium truncate">{node.materialName}</span>
+        <LevelIcon className={`h-3 w-3 shrink-0 ${config.color.split(" ")[0]}`} />
+        <Badge variant="outline" className={`text-[10px] px-1 py-0 shrink-0 leading-4 ${config.color}`}>{config.label}</Badge>
+        <span className="font-mono text-xs text-muted-foreground shrink-0">{node.materialCode}</span>
+        <span className="text-xs font-medium truncate">{node.materialName}</span>
         {node.specification && (
-          <span className="text-sm text-muted-foreground truncate hidden md:inline">{node.specification}</span>
+          <span className="text-xs text-muted-foreground truncate hidden md:inline">{node.specification}</span>
         )}
-        <div className="ml-auto flex items-center gap-3 shrink-0 text-sm">
+        <div className="ml-auto flex items-center gap-2 shrink-0 text-xs">
           <span>{node.quantity} {node.unit || ""}</span>
           {node.level !== 1 && (
             <>
@@ -162,7 +162,7 @@ function BOMTreeItem({ node, depth = 0 }: { node: TreeNode; depth?: number }) {
         </div>
       </div>
       {hasChildren && isOpen && (
-        <div className="border-l-2 border-muted/60 ml-3">
+        <div className="border-l-2 border-muted/60 ml-2">
           {node.children.map((child) => (
             <BOMTreeItem key={child.id} node={child} depth={depth + 1} />
           ))}
