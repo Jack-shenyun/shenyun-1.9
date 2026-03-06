@@ -328,6 +328,8 @@ export default function MaterialRequisitionPage() {
   const openBatchPicker = (idx: number) => {
     const item = items[idx];
     setBatchPickerItemIdx(idx);
+    // 优先用物料编码搜索，若无编码则用物料名称
+    // 后端 search 字段同时匹配 itemName / batchNo / materialCode
     setBatchSearchCode(item.materialCode || item.materialName || "");
     setBatchPickerOpen(true);
   };

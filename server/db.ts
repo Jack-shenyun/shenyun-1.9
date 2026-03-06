@@ -55,6 +55,8 @@ import {
   leaveRequests, InsertLeaveRequest, LeaveRequest,
   outingRequests, InsertOutingRequest, OutingRequest,
   productSupplierPrices, InsertProductSupplierPrice, ProductSupplierPrice,
+  electronicSignatures,
+  signatureAuditLog,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -805,6 +807,9 @@ export async function deleteUser(id: number, deletedBy?: number) {
 export async function deleteDocument(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：电子签名、签名审计日志
+  await db.delete(electronicSignatures).where(eq(electronicSignatures.documentId, id));
+  await db.delete(signatureAuditLog).where(eq(signatureAuditLog.documentId, id));
   await deleteSingleWithRecycle(db, {
     table: documents,
     idColumn: documents.id,
@@ -931,6 +936,20 @@ export async function updateProduct(id: number, data: Partial<InsertProduct>) {
 export async function deleteProduct(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：所有引用该产品的子表
+  await db.delete(bom).where(eq(bom.productId, id));
+  await db.delete(productSupplierPrices).where(eq(productSupplierPrices.productId, id));
+  await db.delete(materialRequestItems).where(eq(materialRequestItems.productId, id));
+  await db.delete(salesOrderItems).where(eq(salesOrderItems.productId, id));
+  await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.productId, id));
+  await db.delete(productionRecords).where(eq(productionRecords.productId, id));
+  await db.delete(productionRoutingCards).where(eq(productionRoutingCards.productId, id));
+  await db.delete(sterilizationOrders).where(eq(sterilizationOrders.productId, id));
+  await db.delete(productionWarehouseEntries).where(eq(productionWarehouseEntries.productId, id));
+  await db.delete(productionPlans).where(eq(productionPlans.productId, id));
+  await db.delete(qualityIncidents).where(eq(qualityIncidents.productId, id));
+  await db.delete(samples).where(eq(samples.productId, id));
+  await db.delete(inventory).where(eq(inventory.productId, id));
   await deleteSingleWithRecycle(db, {
     table: products,
     idColumn: products.id,
@@ -1189,6 +1208,19 @@ export async function updateCustomer(id: number, data: Partial<InsertCustomer>) 
 export async function deleteCustomer(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：应收账款、经销商资质、报关单、收款记录、销售订单及其子表
+  await db.delete(accountsReceivable).where(eq(accountsReceivable.customerId, id));
+  await db.delete(dealerQualifications).where(eq(dealerQualifications.customerId, id));
+  await db.delete(customsDeclarations).where(eq(customsDeclarations.customerId, id));
+  await db.delete(paymentRecords).where(eq(paymentRecords.customerId, id));
+  // 删除关联销售订单及其子表
+  const relatedOrders = await db.select({ id: salesOrders.id }).from(salesOrders).where(eq(salesOrders.customerId, id));
+  for (const order of relatedOrders) {
+    await db.delete(salesOrderItems).where(eq(salesOrderItems.orderId, order.id));
+    await db.delete(orderApprovals).where(and(eq(orderApprovals.orderId, order.id), eq(orderApprovals.orderType, 'sales')));
+    await db.delete(productionPlans).where(eq(productionPlans.salesOrderId, order.id));
+  }
+  await db.delete(salesOrders).where(eq(salesOrders.customerId, id));
   await deleteSingleWithRecycle(db, {
     table: customers,
     idColumn: customers.id,
@@ -1263,6 +1295,18 @@ export async function updateSupplier(id: number, data: Partial<InsertSupplier>) 
 export async function deleteSupplier(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：应付账款、供应商价格、委外灭菌单、付款记录、采购订单及其子表
+  await db.delete(accountsPayable).where(eq(accountsPayable.supplierId, id));
+  await db.delete(productSupplierPrices).where(eq(productSupplierPrices.supplierId, id));
+  await db.delete(sterilizationOrders).where(eq(sterilizationOrders.supplierId, id));
+  await db.delete(paymentRecords).where(eq(paymentRecords.supplierId, id));
+  // 删除关联采购订单及其子表
+  const relatedPOs = await db.select({ id: purchaseOrders.id }).from(purchaseOrders).where(eq(purchaseOrders.supplierId, id));
+  for (const po of relatedPOs) {
+    await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.orderId, po.id));
+    await db.delete(orderApprovals).where(and(eq(orderApprovals.orderId, po.id), eq(orderApprovals.orderType, 'purchase')));
+  }
+  await db.delete(purchaseOrders).where(eq(purchaseOrders.supplierId, id));
   await deleteSingleWithRecycle(db, {
     table: suppliers,
     idColumn: suppliers.id,
@@ -1455,6 +1499,10 @@ export async function updateSalesOrder(id: number, data: Partial<InsertSalesOrde
 export async function deleteSalesOrder(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：应收账款、审批记录、生产计划
+  await db.delete(accountsReceivable).where(eq(accountsReceivable.salesOrderId, id));
+  await db.delete(orderApprovals).where(and(eq(orderApprovals.orderId, id), eq(orderApprovals.orderType, 'sales')));
+  await db.delete(productionPlans).where(eq(productionPlans.salesOrderId, id));
   await deleteBundleWithRecycle(db, {
     rootTable: salesOrders,
     rootIdColumn: salesOrders.id,
@@ -1638,6 +1686,9 @@ export async function updatePurchaseOrder(id: number, data: Partial<InsertPurcha
 export async function deletePurchaseOrder(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：应付账款、审批记录
+  await db.delete(accountsPayable).where(eq(accountsPayable.purchaseOrderId, id));
+  await db.delete(orderApprovals).where(and(eq(orderApprovals.orderId, id), eq(orderApprovals.orderType, 'purchase')));
   await deleteBundleWithRecycle(db, {
     rootTable: purchaseOrders,
     rootIdColumn: purchaseOrders.id,
@@ -1660,10 +1711,7 @@ export async function deletePurchaseOrder(id: number, deletedBy?: number) {
 export async function getProductionOrders(params?: { search?: string; status?: string; limit?: number; offset?: number }) {
   const db = await getDb();
   if (!db) return [];
-
-  let query = db.select().from(productionOrders);
   const conditions = [];
-
   if (params?.search) {
     conditions.push(
       or(
@@ -1672,20 +1720,41 @@ export async function getProductionOrders(params?: { search?: string; status?: s
       )
     );
   }
-
   if (params?.status) {
     conditions.push(eq(productionOrders.status, params.status as "draft" | "planned" | "in_progress" | "completed" | "cancelled"));
   }
-
+  let query = db
+    .select({
+      id: productionOrders.id,
+      orderNo: productionOrders.orderNo,
+      orderType: productionOrders.orderType,
+      productId: productionOrders.productId,
+      plannedQty: productionOrders.plannedQty,
+      completedQty: productionOrders.completedQty,
+      unit: productionOrders.unit,
+      batchNo: productionOrders.batchNo,
+      plannedStartDate: productionOrders.plannedStartDate,
+      plannedEndDate: productionOrders.plannedEndDate,
+      actualStartDate: productionOrders.actualStartDate,
+      actualEndDate: productionOrders.actualEndDate,
+      productionDate: productionOrders.productionDate,
+      expiryDate: productionOrders.expiryDate,
+      planId: productionOrders.planId,
+      status: productionOrders.status,
+      salesOrderId: productionOrders.salesOrderId,
+      remark: productionOrders.remark,
+      createdAt: productionOrders.createdAt,
+      planNo: productionPlans.planNo,
+    })
+    .from(productionOrders)
+    .leftJoin(productionPlans, eq(productionOrders.planId, productionPlans.id));
   if (conditions.length > 0) {
     query = query.where(and(...conditions)) as typeof query;
   }
-
   const result = await query
     .orderBy(desc(productionOrders.createdAt))
     .limit(params?.limit || 100)
     .offset(params?.offset || 0);
-
   return result;
 }
 
@@ -1715,6 +1784,14 @@ export async function updateProductionOrder(id: number, data: Partial<InsertProd
 export async function deleteProductionOrder(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：生产计划、领料单、批记录、流转卡、灵菁单、入库申请、审批记录
+  await db.delete(productionPlans).where(eq(productionPlans.productionOrderId, id));
+  await db.delete(materialRequisitionOrders).where(eq(materialRequisitionOrders.productionOrderId, id));
+  await db.delete(productionRecords).where(eq(productionRecords.productionOrderId, id));
+  await db.delete(productionRoutingCards).where(eq(productionRoutingCards.productionOrderId, id));
+  await db.delete(sterilizationOrders).where(eq(sterilizationOrders.productionOrderId, id));
+  await db.delete(productionWarehouseEntries).where(eq(productionWarehouseEntries.productionOrderId, id));
+  await db.delete(orderApprovals).where(and(eq(orderApprovals.orderId, id), eq(orderApprovals.orderType, 'production')));
   await deleteSingleWithRecycle(db, {
     table: productionOrders,
     idColumn: productionOrders.id,
@@ -1738,7 +1815,8 @@ export async function getInventory(params?: { search?: string; warehouseId?: num
     conditions.push(
       or(
         like(inventory.itemName, `%${params.search}%`),
-        like(inventory.batchNo, `%${params.search}%`)
+        like(inventory.batchNo, `%${params.search}%`),
+        like(inventory.materialCode, `%${params.search}%`)
       )
     );
   }
@@ -1986,6 +2064,11 @@ export async function updateWarehouse(id: number, data: Partial<InsertWarehouse>
 export async function deleteWarehouse(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：库存、库存流水、盘点单、领料单
+  await db.delete(inventory).where(eq(inventory.warehouseId, id));
+  await db.delete(inventoryTransactions).where(eq(inventoryTransactions.warehouseId, id));
+  await db.delete(stocktakes).where(eq(stocktakes.warehouseId, id));
+  await db.delete(materialRequisitionOrders).where(eq(materialRequisitionOrders.warehouseId, id));
   await deleteSingleWithRecycle(db, {
     table: warehouses,
     idColumn: warehouses.id,
@@ -3963,6 +4046,8 @@ export async function updateSample(id: number, data: Partial<InsertSample>) {
 export async function deleteSample(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：实验室记录
+  await db.delete(labRecords).where(eq(labRecords.sampleId, id));
   await deleteSingleWithRecycle(db, {
     table: samples,
     idColumn: samples.id,
@@ -4035,6 +4120,7 @@ export async function getAccountsReceivable(params?: { search?: string; status?:
     customerId: accountsReceivable.customerId,
     customerName: customers.name,
     salesOrderId: accountsReceivable.salesOrderId,
+    orderNo: salesOrders.orderNo,
     amount: accountsReceivable.amount,
     paidAmount: accountsReceivable.paidAmount,
     currency: accountsReceivable.currency,
@@ -4050,9 +4136,22 @@ export async function getAccountsReceivable(params?: { search?: string; status?:
     createdBy: accountsReceivable.createdBy,
     createdAt: accountsReceivable.createdAt,
     updatedAt: accountsReceivable.updatedAt,
-  }).from(accountsReceivable).leftJoin(customers, eq(accountsReceivable.customerId, customers.id));
+  }).from(accountsReceivable)
+    .leftJoin(customers, eq(accountsReceivable.customerId, customers.id))
+    .leftJoin(salesOrders, eq(accountsReceivable.salesOrderId, salesOrders.id));
   if (conditions.length > 0) query = query.where(and(...conditions)) as typeof query;
-  return await query.orderBy(desc(accountsReceivable.createdAt)).limit(params?.limit || 100).offset(params?.offset || 0);
+  const rows = await query.orderBy(desc(accountsReceivable.createdAt)).limit(params?.limit || 100).offset(params?.offset || 0);
+  const now = new Date();
+  return rows.map((r: any) => {
+    const status = String(r.status ?? "");
+    if (status === "pending" || status === "partial") {
+      const due = r.dueDate ? new Date(String(r.dueDate)) : null;
+      if (due && !isNaN(due.getTime()) && due < now) {
+        return { ...r, status: "overdue" };
+      }
+    }
+    return r;
+  });
 }
 
 export async function getAccountsReceivableById(id: number) {
@@ -4289,7 +4388,34 @@ export async function getProductionPlans(params?: { search?: string; status?: st
   }
   if (params?.status) conditions.push(eq(productionPlans.status, params.status as any));
   if (params?.planType) conditions.push(eq(productionPlans.planType, params.planType as any));
-  let query = db.select().from(productionPlans);
+  let query = db.select({
+    id: productionPlans.id,
+    planNo: productionPlans.planNo,
+    planType: productionPlans.planType,
+    salesOrderId: productionPlans.salesOrderId,
+    salesOrderNo: productionPlans.salesOrderNo,
+    productId: productionPlans.productId,
+    productName: productionPlans.productName,
+    plannedQty: productionPlans.plannedQty,
+    unit: productionPlans.unit,
+    batchNo: productionPlans.batchNo,
+    plannedStartDate: productionPlans.plannedStartDate,
+    plannedEndDate: productionPlans.plannedEndDate,
+    priority: productionPlans.priority,
+    status: productionPlans.status,
+    remark: productionPlans.remark,
+    createdBy: productionPlans.createdBy,
+    createdAt: productionPlans.createdAt,
+    updatedAt: productionPlans.updatedAt,
+    productSourceType: products.sourceType,
+    productIsSterilized: products.isSterilized,
+    productSpecification: products.specification,
+    productCode: products.code,
+    productManufacturer: products.manufacturer,
+    productRegistrationNo: products.registrationNo,
+    productUnit: products.unit,
+    productCategory: products.productCategory,
+  }).from(productionPlans).leftJoin(products, eq(productionPlans.productId, products.id));
   if (conditions.length > 0) query = query.where(and(...conditions)) as typeof query;
   return await query.orderBy(asc(productionPlans.plannedEndDate), desc(productionPlans.createdAt)).limit(params?.limit || 100).offset(params?.offset || 0);
 }
@@ -4518,6 +4644,12 @@ export async function updateProductionRoutingCard(id: number, data: Partial<Inse
 export async function deleteProductionRoutingCard(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：委外灭菌单及其关联的入库申请
+  const relatedSterilizations = await db.select({ id: sterilizationOrders.id }).from(sterilizationOrders).where(eq(sterilizationOrders.routingCardId, id));
+  for (const s of relatedSterilizations) {
+    await db.delete(productionWarehouseEntries).where(eq(productionWarehouseEntries.sterilizationOrderId, s.id));
+  }
+  await db.delete(sterilizationOrders).where(eq(sterilizationOrders.routingCardId, id));
   await deleteSingleWithRecycle(db, {
     table: productionRoutingCards,
     idColumn: productionRoutingCards.id,
@@ -4560,6 +4692,8 @@ export async function updateSterilizationOrder(id: number, data: Partial<InsertS
 export async function deleteSterilizationOrder(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  // 级联删除：生产入库申请
+  await db.delete(productionWarehouseEntries).where(eq(productionWarehouseEntries.sterilizationOrderId, id));
   await deleteSingleWithRecycle(db, {
     table: sterilizationOrders,
     idColumn: sterilizationOrders.id,
