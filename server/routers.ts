@@ -1122,7 +1122,7 @@ export const appRouter = router({
         if (nextApprovalState?.stage === "none") {
           try {
             const [approvedOrder] = await db.select().from(salesOrdersTable).where(eq(salesOrdersTable.id, input.id)).limit(1);
-            const paymentCond = String(approvedOrder?.paymentCondition || "").toLowerCase();
+            const paymentCond = String(approvedOrder?.paymentMethod || "").toLowerCase();
             if (paymentCond.includes("账期") || paymentCond.includes("credit") || paymentCond.includes("net")) {
               await autoGenerateProductionPlans(input.id, ctx.user?.id);
             }
@@ -2895,7 +2895,7 @@ export const appRouter = router({
             const [receivable] = await db.select().from(accountsReceivableTable).where(eq(accountsReceivableTable.id, input.id)).limit(1);
             if (receivable?.salesOrderId) {
               const [order] = await db.select().from(salesOrdersTable).where(eq(salesOrdersTable.id, receivable.salesOrderId)).limit(1);
-              const paymentCond = String(order?.paymentCondition || "").toLowerCase();
+              const paymentCond = String(order?.paymentMethod || "").toLowerCase();
               if (paymentCond.includes("预付") || paymentCond.includes("prepay") || paymentCond.includes("advance")) {
                 await autoGenerateProductionPlans(receivable.salesOrderId, ctx.user?.id);
               }
