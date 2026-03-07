@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import {
   PackageMinus, Plus, Search, Eye, Edit, Trash2, MoreHorizontal,
@@ -97,15 +97,26 @@ type OutboundRecord = {
   createdAt: string;
 };
 
+// 出库明细行
+type OutboundDetailLine = {
+  key: string; // 唯一标识
+  productId: number;
+  productCode: string;
+  productName: string;
+  specification: string;
+  unit: string;
+  orderQty: number;       // 订单数量
+  deliveredQty: number;   // 已发数量
+  outboundQty: string;    // 本次出库数量
+  batchNo: string;        // 批号
+  sterilizationBatchNo: string; // 灭菌批号
+  isMedicalDevice: boolean;
+};
+
 type FormData = {
   documentNo: string;
   type: string;
   relatedOrderId: string;
-  productId: string;
-  batchNo: string;
-  sterilizationBatchNo: string;
-  quantity: string;
-  unit: string;
   warehouseId: string;
   remark: string;
 };
@@ -130,14 +141,12 @@ export default function OutboundPage() {
     documentNo: "",
     type: "sales_out",
     relatedOrderId: "",
-    productId: "",
-    batchNo: "",
-    sterilizationBatchNo: "",
-    quantity: "",
-    unit: "",
     warehouseId: "",
     remark: "",
   });
+
+  // ---- 明细行 ----
+  const [detailLines, setDetailLines] = useState<OutboundDetailLine[]>([]);
 
   // ---- 销售订单选择弹窗 ----
   const [soDialogOpen, setSoDialogOpen] = useState(false);
@@ -155,6 +164,9 @@ export default function OutboundPage() {
     ...(readyOrders as SalesOrderOption[]),
   ];
 
+  // 库存列表（用于获取批号）
+  const { data: inventoryList = [] } = trpc.inventory.list.useQuery({ limit: 2000 });
+
   // 出库记录列表
   const { data: rawData = [], refetch } = trpc.inventoryTransactions.list.useQuery({ limit: 200 });
   const data: OutboundRecord[] = (rawData as OutboundRecord[]).filter((r) =>
@@ -163,6 +175,37 @@ export default function OutboundPage() {
 
   const products = (productList as ProductOption[]) || [];
   const productsById = new Map(products.map((p) => [p.id, p]));
+
+  // 选中的销售订单详情查询
+  const selectedOrderId = formData.relatedOrderId ? Number(formData.relatedOrderId) : null;
+  const { data: orderDetail } = trpc.salesOrders.getById.useQuery(
+    { id: selectedOrderId! },
+    { enabled: !!selectedOrderId && formData.type === "sales_out" }
+  );
+
+  // 当选择订单后，自动加载明细
+  useEffect(() => {
+    if (orderDetail?.items && formData.type === "sales_out" && selectedOrderId) {
+      const lines: OutboundDetailLine[] = (orderDetail.items as any[]).map((item: any, idx: number) => {
+        const product = productsById.get(Number(item.productId));
+        return {
+          key: `${selectedOrderId}-${item.productId}-${idx}`,
+          productId: Number(item.productId),
+          productCode: item.productCode || product?.code || "",
+          productName: item.productName || product?.name || "",
+          specification: item.specification || product?.specification || "",
+          unit: item.unit || product?.unit || "",
+          orderQty: parseFloat(item.quantity || "0"),
+          deliveredQty: parseFloat(item.deliveredQty || "0"),
+          outboundQty: String(Math.max(0, parseFloat(item.quantity || "0") - parseFloat(item.deliveredQty || "0"))),
+          batchNo: "",
+          sterilizationBatchNo: "",
+          isMedicalDevice: product?.isMedicalDevice ?? false,
+        };
+      });
+      setDetailLines(lines);
+    }
+  }, [orderDetail, selectedOrderId, formData.type]);
 
   // ==================== Mutations ====================
   const createMutation = trpc.inventoryTransactions.create.useMutation({
@@ -177,7 +220,6 @@ export default function OutboundPage() {
     onSuccess: () => { toast.success("出库单已删除"); refetch(); },
     onError: (e) => toast.error("删除失败：" + e.message),
   });
-  // 发货确认：更新销售订单状态为 shipped
   const updateSalesOrderMutation = trpc.salesOrders.update.useMutation({
     onSuccess: () => {
       toast.success("发货确认成功，销售订单已更新为已发货");
@@ -214,6 +256,16 @@ export default function OutboundPage() {
     return map[status] || status;
   };
 
+  // 获取某个产品在指定仓库的可用批号列表
+  const getBatchOptions = (productId: number, warehouseId: number) => {
+    return (inventoryList as any[]).filter(
+      (inv: any) =>
+        inv.productId === productId &&
+        inv.warehouseId === warehouseId &&
+        parseFloat(inv.quantity || "0") > 0
+    );
+  };
+
   // ==================== 表单操作 ====================
   const buildDefaultDocumentNo = () =>
     `OUT-${new Date().getFullYear()}-${String(data.length + 1).padStart(4, "0")}`;
@@ -223,14 +275,10 @@ export default function OutboundPage() {
       documentNo: buildDefaultDocumentNo(),
       type: "sales_out",
       relatedOrderId: "",
-      productId: "",
-      batchNo: "",
-      sterilizationBatchNo: "",
-      quantity: "",
-      unit: "",
       warehouseId: "",
       remark: "",
     });
+    setDetailLines([]);
   };
 
   const handleAdd = () => {
@@ -245,14 +293,25 @@ export default function OutboundPage() {
       documentNo: record.documentNo || "",
       type: record.type,
       relatedOrderId: record.relatedOrderId ? String(record.relatedOrderId) : "",
-      productId: record.productId ? String(record.productId) : "",
-      batchNo: record.batchNo || "",
-      sterilizationBatchNo: record.sterilizationBatchNo || "",
-      quantity: record.quantity || "",
-      unit: record.unit || "",
       warehouseId: record.warehouseId ? String(record.warehouseId) : "",
       remark: record.remark || "",
     });
+    // 编辑时加载单条明细
+    const product = record.productId ? productsById.get(record.productId) : null;
+    setDetailLines([{
+      key: `edit-${record.id}`,
+      productId: record.productId || 0,
+      productCode: product?.code || "",
+      productName: record.itemName,
+      specification: product?.specification || "",
+      unit: record.unit || product?.unit || "",
+      orderQty: 0,
+      deliveredQty: 0,
+      outboundQty: record.quantity || "",
+      batchNo: record.batchNo || "",
+      sterilizationBatchNo: record.sterilizationBatchNo || "",
+      isMedicalDevice: product?.isMedicalDevice ?? false,
+    }]);
     setFormOpen(true);
   };
 
@@ -273,59 +332,96 @@ export default function OutboundPage() {
       ...prev,
       relatedOrderId: String(order.id),
     }));
+    // 明细会通过 useEffect 自动加载
   };
 
-  // 产品变更时自动填充单位
-  const handleProductChange = (productId: string) => {
-    const product = productsById.get(Number(productId));
-    setFormData((prev) => ({
-      ...prev,
-      productId,
-      unit: product?.unit || prev.unit,
-    }));
+  // 更新明细行
+  const updateDetailLine = (key: string, field: keyof OutboundDetailLine, value: string) => {
+    setDetailLines((prev) =>
+      prev.map((line) => (line.key === key ? { ...line, [field]: value } : line))
+    );
   };
 
   const handleSubmit = () => {
-    if (!formData.productId) { toast.error("请选择物料"); return; }
     if (!formData.warehouseId) { toast.error("请选择出库仓库"); return; }
-    if (!formData.quantity || parseFloat(formData.quantity) <= 0) {
-      toast.error("请输入有效的出库数量"); return;
+
+    // 过滤出有效的明细行（出库数量 > 0）
+    const validLines = detailLines.filter((line) => parseFloat(line.outboundQty) > 0);
+    if (validLines.length === 0) {
+      toast.error("请至少填写一条出库明细");
+      return;
     }
-    const selectedProduct = productsById.get(Number(formData.productId));
-    if (!selectedProduct) { toast.error("请选择产品库中的物料"); return; }
-    if (selectedProduct.isMedicalDevice && !formData.sterilizationBatchNo.trim()) {
-      toast.error("医疗器械必须填写灭菌批号"); return;
+
+    // 验证医疗器械灭菌批号
+    for (const line of validLines) {
+      if (line.isMedicalDevice && !line.sterilizationBatchNo.trim()) {
+        toast.error(`${line.productName} 为医疗器械，必须填写灭菌批号`);
+        return;
+      }
     }
-    const payload = {
-      productId: selectedProduct.id,
-      warehouseId: Number(formData.warehouseId),
-      type: formData.type as any,
-      documentNo: formData.documentNo || undefined,
-      itemName: selectedProduct.name,
-      batchNo: formData.batchNo || undefined,
-      sterilizationBatchNo: formData.sterilizationBatchNo || undefined,
-      quantity: String(formData.quantity),
-      unit: formData.unit || selectedProduct.unit || undefined,
-      remark: formData.remark || undefined,
-      relatedOrderId: formData.relatedOrderId ? Number(formData.relatedOrderId) : undefined,
-    };
+
     if (editingRecord) {
+      // 编辑模式：只更新第一条
+      const line = validLines[0];
       updateMutation.mutate({
         id: editingRecord.id,
         data: {
-          documentNo: payload.documentNo,
-          productId: payload.productId,
-          itemName: payload.itemName,
-          batchNo: payload.batchNo,
-          sterilizationBatchNo: payload.sterilizationBatchNo,
-          quantity: payload.quantity,
-          unit: payload.unit,
-          remark: payload.remark,
-          relatedOrderId: payload.relatedOrderId,
+          documentNo: formData.documentNo || undefined,
+          productId: line.productId,
+          itemName: line.productName,
+          batchNo: line.batchNo || undefined,
+          sterilizationBatchNo: line.sterilizationBatchNo || undefined,
+          quantity: String(line.outboundQty),
+          unit: line.unit || undefined,
+          remark: formData.remark || undefined,
+          relatedOrderId: formData.relatedOrderId ? Number(formData.relatedOrderId) : undefined,
         },
       });
     } else {
-      createMutation.mutate(payload);
+      // 新建模式：为每条明细创建一条出库记录
+      let successCount = 0;
+      let errorCount = 0;
+      const total = validLines.length;
+
+      validLines.forEach((line, idx) => {
+        const docNo = total > 1
+          ? `${formData.documentNo || buildDefaultDocumentNo()}-${String(idx + 1).padStart(2, "0")}`
+          : formData.documentNo || buildDefaultDocumentNo();
+
+        createMutation.mutate({
+          productId: line.productId,
+          warehouseId: Number(formData.warehouseId),
+          type: formData.type as any,
+          documentNo: docNo,
+          itemName: line.productName,
+          batchNo: line.batchNo || undefined,
+          sterilizationBatchNo: line.sterilizationBatchNo || undefined,
+          quantity: String(line.outboundQty),
+          unit: line.unit || undefined,
+          remark: formData.remark || undefined,
+          relatedOrderId: formData.relatedOrderId ? Number(formData.relatedOrderId) : undefined,
+        }, {
+          onSuccess: () => {
+            successCount++;
+            if (successCount + errorCount === total) {
+              refetch();
+              setFormOpen(false);
+              if (errorCount > 0) {
+                toast.warning(`${successCount} 条创建成功，${errorCount} 条失败`);
+              }
+            }
+          },
+          onError: () => {
+            errorCount++;
+            if (successCount + errorCount === total) {
+              refetch();
+              if (successCount > 0) {
+                toast.warning(`${successCount} 条创建成功，${errorCount} 条失败`);
+              }
+            }
+          },
+        });
+      });
     }
   };
 
@@ -359,10 +455,6 @@ export default function OutboundPage() {
       (o.customerName || "").toLowerCase().includes(q)
     );
   });
-
-  // ==================== 选中产品信息 ====================
-  const selectedProduct = productsById.get(Number(formData.productId));
-  const isMedicalDevice = selectedProduct?.isMedicalDevice ?? false;
 
   // ==================== 渲染 ====================
   return (
@@ -508,7 +600,7 @@ export default function OutboundPage() {
 
       {/* ==================== 新建/编辑出库单对话框 ==================== */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingRecord ? "编辑出库单" : "新建出库单"}</DialogTitle>
           </DialogHeader>
@@ -527,9 +619,10 @@ export default function OutboundPage() {
                 <Label>出库类型 <span className="text-destructive">*</span></Label>
                 <Select
                   value={formData.type}
-                  onValueChange={(v) =>
-                    setFormData((p) => ({ ...p, type: v, relatedOrderId: "" }))
-                  }
+                  onValueChange={(v) => {
+                    setFormData((p) => ({ ...p, type: v, relatedOrderId: "" }));
+                    setDetailLines([]);
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -593,7 +686,10 @@ export default function OutboundPage() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      onClick={() => setFormData((p) => ({ ...p, relatedOrderId: "" }))}
+                      onClick={() => {
+                        setFormData((p) => ({ ...p, relatedOrderId: "" }));
+                        setDetailLines([]);
+                      }}
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -602,71 +698,205 @@ export default function OutboundPage() {
               </div>
             )}
 
-            {/* 第二行：物料名称 + 批次号 + 灭菌批号（医疗器械） */}
-            <div className={`grid gap-4 ${isMedicalDevice ? "grid-cols-3" : "grid-cols-2"}`}>
-              <div className="space-y-1.5">
-                <Label>物料名称 <span className="text-destructive">*</span></Label>
-                <Select value={formData.productId} onValueChange={handleProductChange}>
-                  <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        products.length > 0 ? "请选择产品库物料" : "请先在产品管理维护产品"
-                      }
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {products.map((p) => (
-                      <SelectItem key={p.id} value={String(p.id)}>
-                        {p.code} - {p.name}
-                        {p.specification ? `（${p.specification}）` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            {/* ==================== 出库明细表 ==================== */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">出库明细</Label>
+                {formData.type !== "sales_out" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setDetailLines((prev) => [
+                        ...prev,
+                        {
+                          key: `manual-${Date.now()}`,
+                          productId: 0,
+                          productCode: "",
+                          productName: "",
+                          specification: "",
+                          unit: "",
+                          orderQty: 0,
+                          deliveredQty: 0,
+                          outboundQty: "",
+                          batchNo: "",
+                          sterilizationBatchNo: "",
+                          isMedicalDevice: false,
+                        },
+                      ]);
+                    }}
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />添加明细
+                  </Button>
+                )}
               </div>
-              <div className="space-y-1.5">
-                <Label>批次号</Label>
-                <Input
-                  value={formData.batchNo}
-                  onChange={(e) => setFormData((p) => ({ ...p, batchNo: e.target.value }))}
-                  placeholder="请输入批次号"
-                />
-              </div>
-              {isMedicalDevice && (
-                <div className="space-y-1.5">
-                  <Label>灭菌批号 <span className="text-destructive">*</span></Label>
-                  <Input
-                    value={formData.sterilizationBatchNo}
-                    onChange={(e) =>
-                      setFormData((p) => ({ ...p, sterilizationBatchNo: e.target.value }))
-                    }
-                    placeholder="医疗器械必填"
-                  />
+
+              {detailLines.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+                  {formData.type === "sales_out"
+                    ? "请先选择销售订单，系统将自动加载订单产品明细"
+                    : "请点击「添加明细」按钮添加出库物料"}
+                </div>
+              ) : (
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="w-[50px]">序号</TableHead>
+                        {formData.type !== "sales_out" && (
+                          <TableHead className="min-w-[160px]">产品 <span className="text-destructive">*</span></TableHead>
+                        )}
+                        {formData.type === "sales_out" && (
+                          <TableHead>产品编码</TableHead>
+                        )}
+                        <TableHead>产品名称</TableHead>
+                        <TableHead>规格型号</TableHead>
+                        <TableHead>单位</TableHead>
+                        {formData.type === "sales_out" && (
+                          <>
+                            <TableHead className="text-right">订单数量</TableHead>
+                            <TableHead className="text-right">已发数量</TableHead>
+                          </>
+                        )}
+                        <TableHead className="min-w-[100px]">
+                          批号
+                        </TableHead>
+                        <TableHead className="min-w-[100px]">
+                          出库数量 <span className="text-destructive">*</span>
+                        </TableHead>
+                        <TableHead className="w-[50px]">操作</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {detailLines.map((line, idx) => {
+                        const batchOptions = line.productId && formData.warehouseId
+                          ? getBatchOptions(line.productId, Number(formData.warehouseId))
+                          : [];
+                        return (
+                          <TableRow key={line.key}>
+                            <TableCell className="text-center text-sm text-muted-foreground">
+                              {idx + 1}
+                            </TableCell>
+
+                            {/* 非销售出库：手动选择产品 */}
+                            {formData.type !== "sales_out" && (
+                              <TableCell>
+                                <Select
+                                  value={line.productId ? String(line.productId) : ""}
+                                  onValueChange={(v) => {
+                                    const product = productsById.get(Number(v));
+                                    if (product) {
+                                      setDetailLines((prev) =>
+                                        prev.map((l) =>
+                                          l.key === line.key
+                                            ? {
+                                                ...l,
+                                                productId: product.id,
+                                                productCode: product.code,
+                                                productName: product.name,
+                                                specification: product.specification || "",
+                                                unit: product.unit || "",
+                                                isMedicalDevice: product.isMedicalDevice,
+                                              }
+                                            : l
+                                        )
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue placeholder="选择产品" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {products.map((p) => (
+                                      <SelectItem key={p.id} value={String(p.id)}>
+                                        {p.code} - {p.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                            )}
+
+                            {/* 销售出库：显示产品编码 */}
+                            {formData.type === "sales_out" && (
+                              <TableCell className="text-sm font-mono">{line.productCode}</TableCell>
+                            )}
+
+                            <TableCell className="text-sm font-medium">{line.productName}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground">{line.specification || "-"}</TableCell>
+                            <TableCell className="text-sm">{line.unit || "-"}</TableCell>
+
+                            {formData.type === "sales_out" && (
+                              <>
+                                <TableCell className="text-right text-sm">{line.orderQty}</TableCell>
+                                <TableCell className="text-right text-sm">{line.deliveredQty}</TableCell>
+                              </>
+                            )}
+
+                            {/* 批号选择 */}
+                            <TableCell>
+                              {batchOptions.length > 0 ? (
+                                <Select
+                                  value={line.batchNo}
+                                  onValueChange={(v) => updateDetailLine(line.key, "batchNo", v)}
+                                >
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue placeholder="选择批号" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {batchOptions.map((inv: any) => (
+                                      <SelectItem key={inv.id} value={inv.batchNo || `inv-${inv.id}`}>
+                                        {inv.batchNo || `批次${inv.id}`}
+                                        {` (库存: ${parseFloat(inv.quantity).toLocaleString()})`}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Input
+                                  className="h-8 text-xs"
+                                  value={line.batchNo}
+                                  onChange={(e) => updateDetailLine(line.key, "batchNo", e.target.value)}
+                                  placeholder="输入批号"
+                                />
+                              )}
+                            </TableCell>
+
+                            {/* 出库数量 */}
+                            <TableCell>
+                              <Input
+                                type="number"
+                                min="0"
+                                className="h-8 text-xs w-24"
+                                value={line.outboundQty}
+                                onChange={(e) => updateDetailLine(line.key, "outboundQty", e.target.value)}
+                                placeholder="数量"
+                              />
+                            </TableCell>
+
+                            {/* 删除 */}
+                            <TableCell>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() =>
+                                  setDetailLines((prev) => prev.filter((l) => l.key !== line.key))
+                                }
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
-            </div>
-
-            {/* 第三行：数量 + 单位 */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1.5 col-span-2">
-                <Label>出库数量 <span className="text-destructive">*</span></Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={formData.quantity}
-                  onChange={(e) => setFormData((p) => ({ ...p, quantity: e.target.value }))}
-                  placeholder="请输入出库数量"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>单位</Label>
-                <Input
-                  value={formData.unit}
-                  readOnly
-                  placeholder="自动从产品带入"
-                  className="bg-muted/50"
-                />
-              </div>
             </div>
 
             {/* 备注 */}
@@ -694,7 +924,7 @@ export default function OutboundPage() {
 
       {/* ==================== 销售订单选择弹窗 ==================== */}
       <Dialog open={soDialogOpen} onOpenChange={setSoDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>选择关联销售订单</DialogTitle>
           </DialogHeader>
@@ -940,7 +1170,6 @@ export default function OutboundPage() {
                       >
                         <Edit className="h-4 w-4 mr-1.5" />编辑出库单
                       </Button>
-                      {/* 发货确认：仅当关联了销售订单且订单尚未发货时显示 */}
                       {viewingRecord.relatedOrderId &&
                         relatedOrder &&
                         relatedOrder.status !== "shipped" &&
