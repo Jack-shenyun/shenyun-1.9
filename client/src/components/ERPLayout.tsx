@@ -539,7 +539,7 @@ function ERPLayoutContent({
     <div className="flex flex-col h-screen w-full overflow-hidden">
       {/* 全宽顶部导航栏 - 与首页完全一致 */}
       <header
-        className="flex-none w-full z-50 flex h-12 items-center justify-between px-4 md:px-6"
+        className="flex-none w-full z-50 flex h-14 items-center justify-between px-4 md:px-6"
         style={{
           background: "rgba(255,255,255,0.95)",
           backdropFilter: "blur(12px)",
@@ -551,9 +551,9 @@ function ERPLayoutContent({
             <SidebarTrigger className="h-9 w-9 rounded-lg bg-background mr-1" />
           )}
           <div className="flex items-center gap-3">
-            <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
-            <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
-            <span className="text-xs text-slate-400 hidden md:block">公司管理系统</span>
+            <img src={shenyunLogo} alt="SHENYUN" className="h-8 w-auto object-contain" />
+            <span className="text-base font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
+            <span className="text-sm text-slate-400 hidden md:block">公司管理系统</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -561,9 +561,9 @@ function ERPLayoutContent({
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
+                className="relative flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
               >
-                <Bell className="h-4 w-4 text-slate-600" />
+                <Bell className="h-5 w-5 text-slate-600" />
                 {todoCount > 0 && (
                   <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white leading-none">
                     {todoCount > 99 ? "99+" : todoCount}
@@ -636,14 +636,14 @@ function ERPLayoutContent({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex h-8 items-center gap-2 rounded-full px-2 transition-colors hover:bg-slate-100"
+                className="flex h-9 items-center gap-2 rounded-full px-2 transition-colors hover:bg-slate-100"
               >
-                <span className="hidden sm:block text-xs font-medium text-slate-700">{userName}</span>
-                <Avatar className="h-7 w-7 border-2 border-white/60 shadow-sm">
+                <span className="hidden sm:block text-sm font-medium text-slate-700">{userName}</span>
+                <Avatar className="h-8 w-8 border-2 border-white/60 shadow-sm">
                   {userAvatarUrl ? (
                     <img src={userAvatarUrl} alt={userName} className="w-full h-full object-cover" />
                   ) : null}
-                  <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white text-xs font-bold">
+                  <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white text-sm font-bold">
                     {userInitial}
                   </AvatarFallback>
                 </Avatar>
@@ -677,7 +677,7 @@ function ERPLayoutContent({
       <div className="relative flex-none" ref={sidebarRef}>
         <Sidebar
           collapsible="icon"
-          className="border-r-0 !h-[calc(100vh-3rem)] !top-12"
+          className="border-r-0 !h-[calc(100vh-3.5rem)] !top-14"
           disableTransition={isResizing}
         >
           <SidebarContent className="gap-0">
