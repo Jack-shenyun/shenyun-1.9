@@ -1014,7 +1014,7 @@ export default function OutboundPage() {
                   ))
                 )}
               </TableBody>
-              </div>
+            </Table>
           </div>
         </DialogContent>
       </Dialog>
