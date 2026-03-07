@@ -873,7 +873,14 @@ export default function ReceivablePage() {
     });
   }, [salesOrders, existingLinkedOrderIds]);
 
-  const displayReceivables = useMemo(() => [...receivables, ...fallbackReceivables], [receivables, fallbackReceivables]);
+  const displayReceivables = useMemo(() => {
+    const all = [...receivables, ...fallbackReceivables];
+    // 财务协同页面只显示非账期支付的应收（预付款/先款后货/货到付款）
+    if (isSalesCollaboration) {
+      return all.filter((r: any) => !isAccountPeriodPaymentCondition(normalizePaymentCondition(resolvePaymentTerms(r))));
+    }
+    return all;
+  }, [receivables, fallbackReceivables, isSalesCollaboration]);
 
   useEffect(() => {
     if (hasHandledFocusParam) return;
@@ -1179,18 +1186,11 @@ export default function ReceivablePage() {
             <div className="flex flex-wrap items-center gap-2 justify-between">
               <div className="flex items-center gap-2">
                 <Button
-                  variant={bizMode === "cash" ? "default" : "outline"}
-                  onClick={() => setBizMode("cash")}
+                  variant="default"
                   size="sm"
+                  disabled
                 >
                   现款应收（{cashRows.length}）
-                </Button>
-                <Button
-                  variant={bizMode === "account" ? "default" : "outline"}
-                  onClick={() => setBizMode("account")}
-                  size="sm"
-                >
-                  账期对账（{accountRows.length}）
                 </Button>
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>

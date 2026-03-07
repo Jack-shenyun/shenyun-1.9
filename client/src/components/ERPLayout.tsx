@@ -94,6 +94,10 @@ import {
   ArrowRightLeft,
   Flame,
   PackageOpen,
+  AlarmClock,
+  BedDouble,
+  Navigation,
+  Banknote,
   Clock,
   Calendar,
   MapPin,
@@ -127,10 +131,10 @@ const menuConfig = [
       { icon: Users, label: "人事管理", path: "/admin/personnel" },
       { icon: GraduationCap, label: "培训管理", path: "/admin/training" },
       { icon: FileSearch, label: "内审管理", path: "/admin/audit" },
-      { icon: Receipt, label: "费用报销", path: "/admin/expense" },
-      { icon: Clock, label: "加班申请", path: "/admin/overtime" },
-      { icon: Calendar, label: "请假申请", path: "/admin/leave" },
-      { icon: MapPin, label: "外出申请", path: "/admin/outing" },
+      { icon: Banknote, label: "费用报销", path: "/admin/expense" },
+      { icon: AlarmClock, label: "加班申请", path: "/admin/overtime" },
+      { icon: BedDouble, label: "请假申请", path: "/admin/leave" },
+      { icon: Navigation, label: "外出申请", path: "/admin/outing" },
     ],
   },
   {
@@ -517,15 +521,8 @@ function ERPLayoutContent({
           className="border-r-0"
           disableTransition={isResizing}
         >
-          <SidebarHeader className="h-16 justify-center border-b border-sidebar-border">
+          <SidebarHeader className="h-14 justify-center border-b border-sidebar-border">
             <div className="flex items-center gap-3 px-2 transition-all w-full">
-              <button
-                onClick={toggleSidebar}
-                className="h-9 w-9 flex items-center justify-center hover:bg-accent rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0"
-                aria-label="切换导航"
-              >
-                <PanelLeft className="h-4 w-4 text-muted-foreground" />
-              </button>
               {!isCollapsed && (
                 <div className="flex flex-col min-w-0 items-center w-full">
                   <button

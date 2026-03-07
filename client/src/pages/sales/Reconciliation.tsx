@@ -325,8 +325,8 @@ export default function SalesReconciliationPage() {
         <div className="grid gap-4 grid-cols-2 md:grid-cols-4 items-stretch">
           <Card className="flex">
             <CardContent className="p-4 flex flex-col justify-center">
-              <p className="text-sm text-muted-foreground">账期待收订单</p>
-              <p className="text-2xl font-bold">{filteredRows.length}</p>
+              <p className="text-sm text-muted-foreground">待对账客户</p>
+              <p className="text-2xl font-bold">{customersWithUnpaid.length}</p>
             </CardContent>
           </Card>
           <Card className="flex">

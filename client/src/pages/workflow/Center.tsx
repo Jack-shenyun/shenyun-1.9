@@ -113,51 +113,6 @@ export default function WorkflowCenterPage() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {TAB_CONFIG.map((tab) => {
-            const Icon = tab.icon;
-            const count = getCountByTab(counters, tab.value);
-            return (
-              <button
-                key={tab.value}
-                type="button"
-                onClick={() => handleTabChange(tab.value)}
-                className={cn(
-                  "rounded-3xl border p-4 text-left transition-all",
-                  activeTab === tab.value
-                    ? "border-slate-900 bg-slate-900 text-white shadow-[0_24px_50px_-30px_rgba(15,23,42,0.7)]"
-                    : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:shadow-sm",
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <div className={cn(
-                    "flex h-11 w-11 items-center justify-center rounded-2xl",
-                    activeTab === tab.value ? "bg-white/12 text-white" : "bg-slate-50",
-                  )}>
-                    <Icon className={cn("h-5 w-5", activeTab === tab.value ? "text-white" : tab.tone)} />
-                  </div>
-                  <Badge className={cn(
-                    "rounded-full px-2.5 py-1 text-xs font-semibold",
-                    activeTab === tab.value
-                      ? "border border-white/15 bg-white/10 text-white"
-                      : count > 0
-                        ? "bg-rose-500 text-white"
-                        : "border border-slate-200 bg-white text-slate-400",
-                  )}>
-                    {count}
-                  </Badge>
-                </div>
-                <div className="mt-4">
-                  <p className={cn("text-sm font-medium", activeTab === tab.value ? "text-white/80" : "text-slate-500")}>
-                    {tab.label}
-                  </p>
-                  <p className="mt-1 text-2xl font-bold">{count}</p>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
         <Card className="rounded-3xl border border-slate-200/80 bg-white/95 shadow-[0_18px_42px_-30px_rgba(15,23,42,0.2)]">
           <CardHeader className="gap-4 border-b border-slate-100 pb-4 md:flex-row md:items-center md:justify-between">
             <div>
