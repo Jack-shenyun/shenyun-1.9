@@ -675,14 +675,24 @@ function ERPLayoutContent({
       </div>
 
       <SidebarInset>
-        {/* 移动端顶部导航栏 */}
+        {/* 顶部导航栏 - 与首页一致的 Logo 样式 */}
         <div className="flex border-b h-14 items-center justify-between bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:backdrop-blur sticky top-0 z-40">
           <div className="flex items-center gap-3">
             {isMobile && (
               <SidebarTrigger className="h-9 w-9 rounded-lg bg-background" />
             )}
-            <div className="flex items-center gap-2">
-              <h1 className="font-semibold text-lg tracking-tight">
+            {/* Logo + 系统名 + 版本号 */}
+            <div className="flex flex-col justify-center">
+              <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
+              <span className="text-[11px] text-muted-foreground mt-0.5 tracking-[0.01em]">
+                公司管理系统
+                <span className="opacity-60 mx-1">·</span>
+                <span className="font-medium tabular-nums">V1.0</span>
+              </span>
+            </div>
+            {/* 当前页面标题 */}
+            <div className="hidden md:flex items-center gap-2 border-l pl-4 ml-1">
+              <h1 className="font-semibold text-base tracking-tight text-foreground">
                 {getCurrentPageTitle()}
               </h1>
             </div>
