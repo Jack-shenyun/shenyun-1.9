@@ -109,6 +109,14 @@ export default function UsersPage() {
       toast.success("头像上传成功");
       setViewingUser((prev: any) => ({ ...prev, avatarUrl: data.avatarUrl }));
       refetch();
+      const nextUser = {
+        ...(currentUser as any),
+        avatarUrl: data.avatarUrl,
+      };
+      utils.auth.me.setData(undefined, nextUser);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("manus-runtime-user-info", JSON.stringify(nextUser));
+      }
     },
     onError: (error) => toast.error(`上传失败：${error.message}`),
   });

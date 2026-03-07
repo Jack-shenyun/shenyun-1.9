@@ -359,6 +359,7 @@ export const appRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database not available");
       await ensureUsersVisibleAppsColumn(db);
+      await ensureUsersAvatarUrlColumn(db);
       const result = await db.select({
         id: users.id,
         openId: users.openId,
