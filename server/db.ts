@@ -2201,6 +2201,17 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
     console.error("自动更新库存失败:", e);
   }
 
+  // C2: 销售出库时自动将关联销售订单状态更新为「已发货」
+  if (data.type === "sales_out" && data.relatedOrderId) {
+    try {
+      await db.update(salesOrders)
+        .set({ status: "shipped" })
+        .where(eq(salesOrders.id, data.relatedOrderId));
+    } catch (e) {
+      console.error("自动更新销售订单状态失败:", e);
+    }
+  }
+
   return txId;
 }
 
