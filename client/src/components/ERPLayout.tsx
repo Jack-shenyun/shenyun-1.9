@@ -376,6 +376,7 @@ function ERPLayoutContent({
   const [openMenus, setOpenMenus] = useState<string[]>([]);
   const userName = String((user as any)?.name ?? "U");
   const userEmail = String((user as any)?.email ?? "");
+  const userAvatarUrl = String((user as any)?.avatarUrl ?? "");
   const userInitial = userName.charAt(0).toUpperCase();
   const { data: todoData } = trpc.workflowCenter.list.useQuery(
     { tab: "todo", limit: 5 },
@@ -639,6 +640,9 @@ function ERPLayoutContent({
               >
                 <span className="hidden sm:block text-xs font-medium text-slate-700">{userName}</span>
                 <Avatar className="h-7 w-7 border-2 border-white/60 shadow-sm">
+                  {userAvatarUrl ? (
+                    <img src={userAvatarUrl} alt={userName} className="w-full h-full object-cover" />
+                  ) : null}
                   <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white text-xs font-bold">
                     {userInitial}
                   </AvatarFallback>
@@ -676,9 +680,6 @@ function ERPLayoutContent({
           className="border-r-0 !h-[calc(100vh-3rem)] !top-12"
           disableTransition={isResizing}
         >
-          <SidebarHeader className="h-10 justify-center border-b border-sidebar-border">
-          </SidebarHeader>
-
           <SidebarContent className="gap-0">
             <ScrollArea className="h-[calc(100vh-8rem)]">
               <SidebarMenu className="px-2 py-2">

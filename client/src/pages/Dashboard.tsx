@@ -357,6 +357,7 @@ export default function Dashboard() {
 
   const userName = String((user as any)?.name ?? "U");
   const userEmail = String((user as any)?.email ?? "");
+  const userAvatarUrl = String((user as any)?.avatarUrl ?? "");
   const userInitial = userName.charAt(0).toUpperCase();
 
   return (
@@ -492,6 +493,9 @@ export default function Dashboard() {
               >
                 <span className="hidden sm:block text-xs font-medium text-slate-700">{userName}</span>
                 <Avatar className="h-7 w-7 border-2 border-white/60 shadow-sm">
+                  {userAvatarUrl ? (
+                    <img src={userAvatarUrl} alt={userName} className="w-full h-full object-cover" />
+                  ) : null}
                   <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white text-xs font-bold">
                     {userInitial}
                   </AvatarFallback>

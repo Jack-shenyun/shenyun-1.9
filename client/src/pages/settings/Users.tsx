@@ -104,6 +104,14 @@ export default function UsersPage() {
     },
     onError: (error) => toast.error(`修改失败：${error.message}`),
   });
+  const uploadAvatarMutation = trpc.users.uploadAvatar.useMutation({
+    onSuccess: (data) => {
+      toast.success("头像上传成功");
+      setViewingUser((prev: any) => ({ ...prev, avatarUrl: data.avatarUrl }));
+      refetch();
+    },
+    onError: (error) => toast.error(`上传失败：${error.message}`),
+  });
 
   const users = (usersData || []).map((u: any) => ({
     id: u.id,
@@ -114,6 +122,7 @@ export default function UsersPage() {
     department: u.department || "",
     role: u.role as "admin" | "user",
     visibleApps: parseVisibleAppIds(u.visibleApps),
+    avatarUrl: u.avatarUrl || null,
     status: "active" as const,
     lastLogin: u.lastSignedIn ? new Date(u.lastSignedIn).toLocaleString("zh-CN") : "-",
     createdAt: u.createdAt ? new Date(u.createdAt).toLocaleDateString("zh-CN") : "-",
@@ -128,6 +137,22 @@ export default function UsersPage() {
   const [passwordUser, setPasswordUser] = useState<any>(null);
   const { canDelete, isAdmin } = usePermission();
   const { logOperation } = useOperationLog();
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>, userId: number) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      uploadAvatarMutation.mutate({
+        id: userId,
+        name: file.name,
+        mimeType: file.type,
+        base64,
+      });
+    };
+    reader.readAsDataURL(file);
+  };
   const isMutating = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
   const [formData, setFormData] = useState({
@@ -678,16 +703,33 @@ export default function UsersPage() {
               )}
             </p>
           </div>
-          <Avatar className="h-16 w-16 shrink-0 border-2 border-white shadow-md">
-            <AvatarFallback
-              className="text-xl font-bold text-white"
-              style={{
-                background: `linear-gradient(135deg, hsl(${((viewingUser.name?.charCodeAt(0) ?? 65) * 137) % 360}, 65%, 50%), hsl(${((viewingUser.name?.charCodeAt(0) ?? 65) * 137 + 60) % 360}, 65%, 40%))`,
-              }}
-            >
-              {(viewingUser.name ?? viewingUser.username ?? "U").charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <div className="relative group">
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              id="avatar-upload"
+              onChange={(e) => handleAvatarUpload(e, viewingUser.id)}
+            />
+            <label htmlFor="avatar-upload" className="cursor-pointer">
+              <Avatar className="h-24 w-24 shrink-0 border-3 border-white shadow-lg group-hover:opacity-80 transition-opacity">
+                {viewingUser.avatarUrl ? (
+                  <img src={viewingUser.avatarUrl} alt={viewingUser.name} className="w-full h-full object-cover" />
+                ) : null}
+                <AvatarFallback
+                  className="text-2xl font-bold text-white"
+                  style={{
+                    background: `linear-gradient(135deg, hsl(${((viewingUser.name?.charCodeAt(0) ?? 65) * 137) % 360}, 65%, 50%), hsl(${((viewingUser.name?.charCodeAt(0) ?? 65) * 137 + 60) % 360}, 65%, 40%))`,
+                  }}
+                >
+                  {(viewingUser.name ?? viewingUser.username ?? "U").charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full bg-black/30">
+                <span className="text-white text-xs font-semibold">点击上传</span>
+              </div>
+            </label>
+          </div>
         </div>
 
         <div className="space-y-4">

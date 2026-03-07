@@ -62,6 +62,7 @@ import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let usersVisibleAppsColumnReady = false;
+let usersAvatarUrlColumnReady = false;
 let workflowFormCatalogTableReady = false;
 let workflowTemplatesTableReady = false;
 let companyInfoTableReady = false;
@@ -155,6 +156,20 @@ export async function ensureUsersVisibleAppsColumn(dbArg?: ReturnType<typeof dri
   }
 
   usersVisibleAppsColumnReady = true;
+}
+
+export async function ensureUsersAvatarUrlColumn(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? await getDb();
+  if (!db || usersAvatarUrlColumnReady) return;
+  try {
+    await db.execute(sql`ALTER TABLE users ADD COLUMN avatarUrl TEXT NULL`);
+  } catch (error) {
+    const message = String((error as any)?.message ?? "");
+    if (!/Duplicate column name|already exists|1060|avatarUrl/i.test(message)) {
+      throw error;
+    }
+  }
+  usersAvatarUrlColumnReady = true;
 }
 
 async function ensureWorkflowTemplatesTable(dbArg?: ReturnType<typeof drizzle> | null) {

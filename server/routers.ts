@@ -66,6 +66,7 @@ import {
   restoreRecycleBinEntry,
   getNextOrderNo,
   ensureUsersVisibleAppsColumn,
+  ensureUsersAvatarUrlColumn,
 } from "./db";
 import { getDb } from "./db";
 import { orderApprovals, salesOrders as salesOrdersTable, users, documents,
@@ -370,6 +371,7 @@ export const appRouter = router({
         visibleApps: users.visibleApps,
         createdAt: users.createdAt,
         lastSignedIn: users.lastSignedIn,
+        avatarUrl: users.avatarUrl,
       }).from(users);
       return result;
     }),
@@ -454,6 +456,36 @@ export const appRouter = router({
           updatedAt = CURRENT_TIMESTAMP
       `);
       return { success: true };
+    }),
+    uploadAvatar: protectedProcedure.input(z.object({
+      id: z.number(),
+      name: z.string(),
+      mimeType: z.string().optional(),
+      base64: z.string(),
+    })).mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      await ensureUsersAvatarUrlColumn(db);
+      const imageExtAllowList = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif"]);
+      const extFromName = `.${String(input.name.split(".").pop() || "").toLowerCase()}`;
+      const ext = imageExtAllowList.has(extFromName) ? extFromName : (
+        String(input.mimeType || "").includes("png") ? ".png" :
+        String(input.mimeType || "").includes("jpeg") ? ".jpg" :
+        String(input.mimeType || "").includes("jpg") ? ".jpg" :
+        String(input.mimeType || "").includes("webp") ? ".webp" : ".png"
+      );
+      const base64Body = String(input.base64 || "").replace(/^data:[^;]+;base64,/, "");
+      const fileBuffer = Buffer.from(base64Body, "base64");
+      const saved = await saveAttachmentFile({
+        department: "系统设置",
+        businessFolder: "用户头像",
+        originalName: input.name,
+        desiredBaseName: `avatar-user-${input.id}-${Date.now()}`,
+        mimeType: input.mimeType,
+        buffer: fileBuffer,
+      });
+      await db.update(users).set({ avatarUrl: saved.filePath }).where(eq(users.id, input.id));
+      return { avatarUrl: saved.filePath };
     }),
   }),
 
