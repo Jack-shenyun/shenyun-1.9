@@ -2171,7 +2171,7 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
       const existing = await db.select().from(inventory).where(and(...conditions)).limit(1);
       if (existing.length > 0) {
         const currentQty = parseFloat(String(existing[0].quantity)) || 0;
-        const newQty = isIn ? currentQty + qty : Math.max(0, currentQty - qty);
+        const newQty = isIn ? currentQty + qty : currentQty - qty; // 出库允许负库存或由业务逻辑控制，此处直接加减
         await db.update(inventory).set({ quantity: String(newQty) }).where(eq(inventory.id, existing[0].id));
         // 更新流水的 beforeQty 和 afterQty
         await db.update(inventoryTransactions).set({
@@ -2193,6 +2193,22 @@ export async function createInventoryTransaction(data: InsertInventoryTransactio
         await db.update(inventoryTransactions).set({
           beforeQty: "0",
           afterQty: String(qty),
+          inventoryId: newInvResult[0].insertId,
+        }).where(eq(inventoryTransactions.id, txId));
+      } else {
+        // 出库时如果没有库存记录（异常情况，但需处理），创建负库存记录
+        const newInvResult = await db.insert(inventory).values({
+          warehouseId: data.warehouseId,
+          productId: data.productId,
+          itemName: data.itemName,
+          batchNo: data.batchNo,
+          quantity: String(-qty),
+          unit: data.unit,
+          status: "qualified",
+        });
+        await db.update(inventoryTransactions).set({
+          beforeQty: "0",
+          afterQty: String(-qty),
           inventoryId: newInvResult[0].insertId,
         }).where(eq(inventoryTransactions.id, txId));
       }
@@ -2217,6 +2233,28 @@ export async function updateInventoryTransaction(id: number, data: Partial<Inser
 export async function deleteInventoryTransaction(id: number, deletedBy?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  // 1. 获取流水信息用于库存返还
+  const [tx] = await db.select().from(inventoryTransactions).where(eq(inventoryTransactions.id, id)).limit(1);
+  if (tx && tx.inventoryId) {
+    const qty = parseFloat(String(tx.quantity)) || 0;
+    const inTypes = ["purchase_in", "production_in", "return_in", "other_in"];
+    const outTypes = ["production_out", "sales_out", "return_out", "other_out"];
+    const isIn = inTypes.includes(tx.type);
+    const isOut = outTypes.includes(tx.type);
+
+    if (qty > 0 && (isIn || isOut)) {
+      const [inv] = await db.select().from(inventory).where(eq(inventory.id, tx.inventoryId)).limit(1);
+      if (inv) {
+        const currentQty = parseFloat(String(inv.quantity)) || 0;
+        // 如果是入库流水被删，库存减少；如果是出库流水被删，库存增加
+        const newQty = isIn ? currentQty - qty : currentQty + qty;
+        await db.update(inventory).set({ quantity: String(newQty) }).where(eq(inventory.id, inv.id));
+      }
+    }
+  }
+
+  // 2. 执行逻辑删除
   await deleteSingleWithRecycle(db, {
     table: inventoryTransactions,
     idColumn: inventoryTransactions.id,
