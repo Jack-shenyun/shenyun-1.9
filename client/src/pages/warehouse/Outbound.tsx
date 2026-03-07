@@ -693,7 +693,7 @@ export default function OutboundPage() {
                       setFormData((p) => ({
                         ...p,
                         logisticsSupplierId: v,
-                        logisticsSupplierName: supplier ? (supplier.shortName || supplier.name) : "",
+                        logisticsSupplierName: supplier ? supplier.name : "",
                       }));
                     }}
                   >
@@ -703,7 +703,7 @@ export default function OutboundPage() {
                     <SelectContent>
                       {logisticsSuppliers.map((s: any) => (
                         <SelectItem key={s.id} value={String(s.id)}>
-                          {s.shortName || s.name}
+                          {s.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
