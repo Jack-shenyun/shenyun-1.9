@@ -244,12 +244,14 @@ export const inventoryTransactions = mysqlTable("inventory_transactions", {
   beforeQty: decimal("beforeQty", { precision: 12, scale: 4 }), // 变动前数量
   afterQty: decimal("afterQty", { precision: 12, scale: 4 }), // 变动后数量
   relatedOrderId: int("relatedOrderId"), // 关联订单ID
+  shippingFee: decimal("shippingFee", { precision: 14, scale: 2 }), // 运费金额
+  logisticsSupplierId: int("logisticsSupplierId"), // 物流供应商ID
+  logisticsSupplierName: varchar("logisticsSupplierName", { length: 200 }), // 物流供应商名称
   remark: text("remark"),
   operatorId: int("operatorId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
-export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;
+export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;;
 export type InsertInventoryTransaction = typeof inventoryTransactions.$inferInsert;
 
 // ==================== 销售订单管理 ====================

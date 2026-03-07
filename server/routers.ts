@@ -1893,6 +1893,9 @@ export const appRouter = router({
         beforeQty: z.string().optional(),
         afterQty: z.string().optional(),
         relatedOrderId: z.number().optional(),
+        shippingFee: z.string().optional(),
+        logisticsSupplierId: z.number().optional(),
+        logisticsSupplierName: z.string().optional(),
         remark: z.string().optional(),
       }))
       .mutation(async ({ input, ctx }) => {

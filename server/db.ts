@@ -314,6 +314,33 @@ async function ensureInventoryTransactionColumns(dbArg?: ReturnType<typeof drizz
     }
   }
 
+  try {
+    await db.execute(sql`ALTER TABLE inventory_transactions ADD COLUMN shippingFee DECIMAL(14,2) NULL`);
+  } catch (error) {
+    const message = String((error as any)?.message ?? "");
+    if (!/Duplicate column name|already exists|1060|shippingFee/i.test(message)) {
+      throw error;
+    }
+  }
+
+  try {
+    await db.execute(sql`ALTER TABLE inventory_transactions ADD COLUMN logisticsSupplierId INT NULL`);
+  } catch (error) {
+    const message = String((error as any)?.message ?? "");
+    if (!/Duplicate column name|already exists|1060|logisticsSupplierId/i.test(message)) {
+      throw error;
+    }
+  }
+
+  try {
+    await db.execute(sql`ALTER TABLE inventory_transactions ADD COLUMN logisticsSupplierName VARCHAR(200) NULL`);
+  } catch (error) {
+    const message = String((error as any)?.message ?? "");
+    if (!/Duplicate column name|already exists|1060|logisticsSupplierName/i.test(message)) {
+      throw error;
+    }
+  }
+
   inventoryTransactionColumnsReady = true;
 }
 

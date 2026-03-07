@@ -119,6 +119,9 @@ type FormData = {
   type: string;
   relatedOrderId: string;
   warehouseId: string;
+  shippingFee: string;
+  logisticsSupplierId: string;
+  logisticsSupplierName: string;
   remark: string;
 };
 
@@ -144,6 +147,9 @@ export default function OutboundPage() {
     type: "sales_out",
     relatedOrderId: "",
     warehouseId: "",
+    shippingFee: "",
+    logisticsSupplierId: "",
+    logisticsSupplierName: "",
     remark: "",
   });
 
@@ -168,6 +174,10 @@ export default function OutboundPage() {
 
   // 库存列表（用于获取批号）
   const { data: inventoryList = [] } = trpc.inventory.list.useQuery({ limit: 2000 });
+
+  // 物流供应商列表（type=service 的供应商）
+  const { data: supplierList = [] } = trpc.suppliers.list.useQuery({ limit: 500 });
+  const logisticsSuppliers = (supplierList as any[]).filter((s: any) => s.type === 'service' && s.status === 'qualified');
 
   // 出库记录列表
   const { data: rawData = [], refetch } = trpc.inventoryTransactions.list.useQuery({ limit: 200 });
@@ -278,6 +288,9 @@ export default function OutboundPage() {
       type: "sales_out",
       relatedOrderId: "",
       warehouseId: "",
+      shippingFee: "",
+      logisticsSupplierId: "",
+      logisticsSupplierName: "",
       remark: "",
     });
     setDetailLines([]);
@@ -296,6 +309,9 @@ export default function OutboundPage() {
       type: record.type,
       relatedOrderId: record.relatedOrderId ? String(record.relatedOrderId) : "",
       warehouseId: record.warehouseId ? String(record.warehouseId) : "",
+      shippingFee: (record as any).shippingFee || "",
+      logisticsSupplierId: (record as any).logisticsSupplierId ? String((record as any).logisticsSupplierId) : "",
+      logisticsSupplierName: (record as any).logisticsSupplierName || "",
       remark: record.remark || "",
     });
     // 编辑时加载单条明细
@@ -402,6 +418,9 @@ export default function OutboundPage() {
           unit: line.unit || undefined,
           remark: formData.remark || undefined,
           relatedOrderId: formData.relatedOrderId ? Number(formData.relatedOrderId) : undefined,
+          shippingFee: formData.shippingFee || undefined,
+          logisticsSupplierId: formData.logisticsSupplierId ? Number(formData.logisticsSupplierId) : undefined,
+          logisticsSupplierName: formData.logisticsSupplierName || undefined,
         }, {
           onSuccess: () => {
             successCount++;
@@ -663,6 +682,45 @@ export default function OutboundPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+              {/* 第二行：物流供应商 + 运费 */}
+              <div className="grid grid-cols-3 gap-4 mt-4">
+                <div className="space-y-2 col-span-2">
+                  <Label>物流供应商</Label>
+                  <Select
+                    value={formData.logisticsSupplierId}
+                    onValueChange={(v) => {
+                      const supplier = logisticsSuppliers.find((s: any) => String(s.id) === v);
+                      setFormData((p) => ({
+                        ...p,
+                        logisticsSupplierId: v,
+                        logisticsSupplierName: supplier ? (supplier.shortName || supplier.name) : "",
+                      }));
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="请选择物流供应商" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {logisticsSuppliers.map((s: any) => (
+                        <SelectItem key={s.id} value={String(s.id)}>
+                          {s.shortName || s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>运费（元）</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="请输入运费金额"
+                    value={formData.shippingFee}
+                    onChange={(e) => setFormData((p) => ({ ...p, shippingFee: e.target.value }))}
+                  />
                 </div>
               </div>
             </div>
