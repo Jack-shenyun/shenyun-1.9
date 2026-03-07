@@ -656,26 +656,38 @@ export default function UsersPage() {
   <DraggableDialogContent>
     {viewingUser && (
       <div className="space-y-4">
-        <div className="border-b pb-3">
-          <h2 className="text-lg font-semibold">用户详情</h2>
-          <p className="text-sm text-muted-foreground">
-            {viewingUser.name} (@{viewingUser.username})
-            {viewingUser.status && (
-              <>
-                {" "}
-                ·
-                <Badge
-                  variant={statusMap[viewingUser.status]?.variant || "outline"}
-                  className={`ml-1 ${getStatusSemanticClass(
-                    viewingUser.status,
-                    statusMap[viewingUser.status]?.label
-                  )}`}
-                >
-                  {statusMap[viewingUser.status]?.label || String(viewingUser.status ?? "-")}
-                </Badge>
-              </>
-            )}
-          </p>
+        <div className="border-b pb-3 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold">用户详情</h2>
+            <p className="text-sm text-muted-foreground">
+              {viewingUser.name} (@{viewingUser.username})
+              {viewingUser.status && (
+                <>
+                  {" "}
+                  ·
+                  <Badge
+                    variant={statusMap[viewingUser.status]?.variant || "outline"}
+                    className={`ml-1 ${getStatusSemanticClass(
+                      viewingUser.status,
+                      statusMap[viewingUser.status]?.label
+                    )}`}
+                  >
+                    {statusMap[viewingUser.status]?.label || String(viewingUser.status ?? "-")}
+                  </Badge>
+                </>
+              )}
+            </p>
+          </div>
+          <Avatar className="h-16 w-16 shrink-0 border-2 border-white shadow-md">
+            <AvatarFallback
+              className="text-xl font-bold text-white"
+              style={{
+                background: `linear-gradient(135deg, hsl(${((viewingUser.name?.charCodeAt(0) ?? 65) * 137) % 360}, 65%, 50%), hsl(${((viewingUser.name?.charCodeAt(0) ?? 65) * 137 + 60) % 360}, 65%, 40%))`,
+              }}
+            >
+              {(viewingUser.name ?? viewingUser.username ?? "U").charAt(0).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
         </div>
 
         <div className="space-y-4">
