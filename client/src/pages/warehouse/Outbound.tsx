@@ -639,7 +639,8 @@ export default function OutboundPage() {
             {/* 基本信息 */}
             <div>
               <h3 className="text-sm font-medium mb-3">基本信息</h3>
-              <div className="grid grid-cols-3 gap-4">
+              {/* 第一行：出库单号、出库类型、出库仓库、物流供应商 */}
+              <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>出库单号</Label>
                   <Input
@@ -683,10 +684,7 @@ export default function OutboundPage() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-              {/* 第二行：物流供应商 + 运费 */}
-              <div className="grid grid-cols-3 gap-4 mt-4">
-                <div className="space-y-2 col-span-2">
+                <div className="space-y-2">
                   <Label>物流供应商</Label>
                   <Select
                     value={formData.logisticsSupplierId}
@@ -711,6 +709,9 @@ export default function OutboundPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              {/* 第二行：运费 */}
+              <div className="grid grid-cols-4 gap-4 mt-4">
                 <div className="space-y-2">
                   <Label>运费（元）</Label>
                   <Input
