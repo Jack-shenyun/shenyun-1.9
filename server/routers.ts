@@ -4952,6 +4952,91 @@ export const appRouter = router({
         const { getEmailContacts } = await import("./mailService");
         return await getEmailContacts(input ?? {});
       }),
+
+    // AI 辅助写作：根据指令生成/润色/翻译邮件正文
+    aiWrite: protectedProcedure
+      .input(z.object({
+        mode: z.enum(["polish", "translate", "generate"]),
+        subject: z.string().optional(),
+        body: z.string().optional(),
+        instruction: z.string().optional(),
+        targetLang: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { OpenAI } = await import("openai");
+        const arkKey = process.env.ARK_API_KEY || process.env.DOUBAO_API_KEY || "1843f480-20a6-48d2-a9a5-8a4a188a3f32";
+        const client = new OpenAI({
+          apiKey: arkKey,
+          baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+        });
+        const model = "doubao-1.5-pro-32k-250115";
+        let systemPrompt = "";
+        let userPrompt = "";
+        if (input.mode === "generate") {
+          systemPrompt = "你是一个专业的商务邮件写作助手。请根据用户的描述，生成一封格式规范、语气专业的商务邮件正文，包含称呼、正文、结尾敬语和签名占位符。只输出邮件正文。";
+          userPrompt = `邮件主题：${input.subject || ""}
+内容要求：${input.instruction || input.body || ""}`;
+        } else if (input.mode === "polish") {
+          systemPrompt = "你是一个专业的商务邮件润色助手。请对用户提供的邮件正文进行润色和优化，保持原文意思，使语言更加流畅、专业、礼貌。只输出润色后的正文。";
+          userPrompt = input.body || "";
+        } else {
+          const lang = input.targetLang || "中文";
+          systemPrompt = `你是一个专业的商务邮件翻译助手。请将以下邮件正文翻译成${lang}，保持原文格式和语气。只输出翻译结果。`;
+          userPrompt = input.body || "";
+        }
+        const completion = await client.chat.completions.create({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.7,
+        });
+        return { result: completion.choices[0]?.message?.content || "" };
+      }),
+
+    // 系统文件列表（从 uploads 目录扫描）
+    listSystemFiles: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        limit: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        const fs = await import("fs");
+        const path = await import("path");
+        const uploadsDir = path.join(process.cwd(), "uploads");
+        const files: Array<{ name: string; path: string; size: number; category: string; modifiedAt: string }> = [];
+        function scanDir(dir: string, category: string) {
+          try {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                const subCategory = category ? `${category}/${entry.name}` : entry.name;
+                scanDir(fullPath, subCategory);
+              } else if (entry.isFile()) {
+                const ext = path.extname(entry.name).toLowerCase();
+                if ([".pdf",".doc",".docx",".xls",".xlsx",".jpg",".jpeg",".png",".zip"].includes(ext)) {
+                  const stat = fs.statSync(fullPath);
+                  const relativePath = fullPath.replace(process.cwd() + "/", "");
+                  files.push({
+                    name: entry.name,
+                    path: relativePath,
+                    size: stat.size,
+                    category,
+                    modifiedAt: stat.mtime.toISOString(),
+                  });
+                }
+              }
+            }
+          } catch {}
+        }
+        if (fs.existsSync(uploadsDir)) scanDir(uploadsDir, "");
+        const search = input?.search?.toLowerCase();
+        const filtered = search ? files.filter(f => f.name.toLowerCase().includes(search) || f.category.toLowerCase().includes(search)) : files;
+        filtered.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+        return filtered.slice(0, input?.limit ?? 100);
+      }),
   }),
 
   // 发票 AI 识别（豆包→通义千问→智谱 三家轮询，支持图片和PDF）
