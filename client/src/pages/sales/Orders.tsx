@@ -54,7 +54,6 @@ import {
   normalizePaymentCondition,
 } from "@shared/paymentTerms";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import { formatDate, formatDateTime } from "@/lib/formatters";
 
 // ==================== 类型定义 ====================
 
@@ -125,12 +124,6 @@ const ORDER_STATUS_OPTIONS = [
 
 // ==================== 工具函数 ====================
 
-function formatDate(d: Date | string | null | undefined): string {
-  if (!d) return "-";
-  const date = typeof d === "string" ? new Date(d) : d;
-  if (isNaN(date.getTime())) return "-";
-  return date.toISOString().split("T")[0];
-}
 
 function toInputDate(d: Date | string | null | undefined): string {
   const s = formatDate(d);

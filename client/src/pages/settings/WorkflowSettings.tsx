@@ -137,16 +137,6 @@ function normalizeUserToken(value: string) {
   return String(value || "").replace(/[（(].*?[）)]/g, "").trim();
 }
 
-function formatDate(raw: unknown) {
-  const date = new Date(String(raw ?? ""));
-  if (Number.isNaN(date.getTime())) return "-";
-  const y = date.getFullYear();
-  const mo = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const h = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  return `${y}-${mo}-${day} ${h}:${min}`;
-}
 
 function parseStoredUserIds(raw: unknown, userIdMap: Map<string, UserOption>, userNameMap: Map<string, UserOption>) {
   return uniqueStrings(parseJsonList(raw)).flatMap((item) => {
@@ -892,7 +882,7 @@ export default function WorkflowSettingsPage() {
 
       <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
         <div className="flex gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground">更新于: {formatDate(viewingRecord.updatedAt)}</span>
+          <span className="text-xs text-muted-foreground">更新于: {formatDateTime(viewingRecord.updatedAt)}</span>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>

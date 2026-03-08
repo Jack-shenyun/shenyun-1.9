@@ -21,18 +21,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
-import { formatDate, formatDateTime } from "@/lib/formatters";
 
 // ────────────────────────────────────────────────────────────
 // 工具函数
 // ────────────────────────────────────────────────────────────
-const formatDate = (val: unknown) => {
-  if (!val) return "-";
-  const d = new Date(String(val));
-  if (isNaN(d.getTime())) return "-";
-  d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
-  return d.toISOString().split("T")[0];
-};
 
 const planStatusMap: Record<string, { label: string; variant: "outline" | "default" | "secondary" | "destructive" }> = {
   pending:     { label: "待排产", variant: "outline" },

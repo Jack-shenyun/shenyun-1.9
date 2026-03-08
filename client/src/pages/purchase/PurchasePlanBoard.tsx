@@ -65,13 +65,6 @@ const planTypeMap: Record<string, string> = {
 };
 
 // 时区安全的日期格式化
-const formatDate = (val: unknown) => {
-  if (!val) return "-";
-  const d = new Date(String(val));
-  if (isNaN(d.getTime())) return "-";
-  d.setMinutes(d.getMinutes() + d.getTimezoneOffset());
-  return d.toISOString().split("T")[0];
-};
 
 export default function PurchasePlanBoardPage() {
   const { canDelete } = usePermission();

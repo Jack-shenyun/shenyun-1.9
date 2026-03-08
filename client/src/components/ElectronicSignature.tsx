@@ -55,17 +55,6 @@ interface SignaturePanelProps {
 }
 
 // 签名含义映射
-// 格式化日期时间为 YYYY-MM-DD HH:mm
-function formatDateTime(date?: string | Date): string {
-  const d = date ? (date instanceof Date ? date : new Date(date)) : new Date();
-  if (isNaN(d.getTime())) return "-";
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${y}-${mo}-${day} ${h}:${min}`;
-}
 
 const signatureMeaningMap = {
   inspector: {
@@ -145,7 +134,7 @@ export function SignaturePanel({
       };
 
       toast.success("电子签名成功", {
-        description: `${typeConfig.label}签名已完成，签名时间: ${formatDateTime()}`,
+        description: `${typeConfig.label}签名已完成，签名时间: ${formatDateTime(new Date())}`,
       });
 
       onSignComplete?.(newSignature);
@@ -195,7 +184,7 @@ export function SignaturePanel({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">签名时间</span>
-              <span className="text-sm">{formatDateTime()}</span>
+              <span className="text-sm">{formatDateTime(new Date())}</span>
             </div>
           </div>
 
