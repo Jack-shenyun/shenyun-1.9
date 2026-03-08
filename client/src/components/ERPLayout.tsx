@@ -271,6 +271,12 @@ const menuConfig = [
     ],
   },
   {
+    id: "mail",
+    icon: Mail,
+    label: "邮件协同",
+    path: "/mail",
+  },
+  {
     id: "settings",
     icon: Settings,
     label: "系统设置",

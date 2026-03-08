@@ -1656,3 +1656,62 @@ export const goodsReceiptItems = mysqlTable("goods_receipt_items", {
 });
 export type GoodsReceiptItem = typeof goodsReceiptItems.$inferSelect;
 export type InsertGoodsReceiptItem = typeof goodsReceiptItems.$inferInsert;
+
+// ==================== 邮件协同模块 ====================
+/**
+ * 邮件缓存表（从 IMAP 同步的邮件 + 本地草稿/已发送）
+ */
+export const emails = mysqlTable("emails", {
+  id: int("id").autoincrement().primaryKey(),
+  messageId: varchar("messageId", { length: 512 }),
+  folder: mysqlEnum("folder", ["inbox", "sent", "draft", "trash"]).default("inbox").notNull(),
+  subject: varchar("subject", { length: 500 }),
+  fromAddress: varchar("fromAddress", { length: 320 }),
+  fromName: varchar("fromName", { length: 200 }),
+  toAddress: text("toAddress"),
+  ccAddress: text("ccAddress"),
+  bodyHtml: text("bodyHtml"),
+  bodyText: text("bodyText"),
+  isRead: boolean("isRead").default(false).notNull(),
+  isStarred: boolean("isStarred").default(false).notNull(),
+  hasAttachment: boolean("hasAttachment").default(false).notNull(),
+  sentAt: timestamp("sentAt"),
+  receivedAt: timestamp("receivedAt"),
+  uid: int("uid"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Email = typeof emails.$inferSelect;
+export type InsertEmail = typeof emails.$inferInsert;
+
+/**
+ * 邮件附件备案表
+ */
+export const emailAttachments = mysqlTable("email_attachments", {
+  id: int("id").autoincrement().primaryKey(),
+  emailId: int("emailId").notNull(),
+  filename: varchar("filename", { length: 500 }).notNull(),
+  mimeType: varchar("mimeType", { length: 200 }),
+  size: int("size"),
+  storagePath: varchar("storagePath", { length: 1000 }),
+  downloadedAt: timestamp("downloadedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type EmailAttachment = typeof emailAttachments.$inferSelect;
+export type InsertEmailAttachment = typeof emailAttachments.$inferInsert;
+
+/**
+ * 发件人归档表
+ */
+export const emailContacts = mysqlTable("email_contacts", {
+  id: int("id").autoincrement().primaryKey(),
+  emailAddress: varchar("emailAddress", { length: 320 }).notNull().unique(),
+  displayName: varchar("displayName", { length: 200 }),
+  emailCount: int("emailCount").default(0).notNull(),
+  lastEmailAt: timestamp("lastEmailAt"),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmailContact = typeof emailContacts.$inferSelect;
+export type InsertEmailContact = typeof emailContacts.$inferInsert;

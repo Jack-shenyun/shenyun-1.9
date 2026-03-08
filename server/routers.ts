@@ -4841,4 +4841,114 @@ export const appRouter = router({
         return { success: true, signatures: updated };
       }),
   }),
+
+  // ==================== 邮件协同 ====================
+  mail: router({
+    syncInbox: protectedProcedure
+      .input(z.object({ limit: z.number().optional() }).optional())
+      .mutation(async ({ input }) => {
+        const { syncInbox } = await import("./mailService");
+        return await syncInbox(input?.limit ?? 50);
+      }),
+
+    list: protectedProcedure
+      .input(z.object({
+        folder: z.enum(["inbox", "sent", "draft", "trash"]).optional(),
+        search: z.string().optional(),
+        contactAddress: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        const { getEmails } = await import("./mailService");
+        return await getEmails(input ?? {});
+      }),
+
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const { getEmailById } = await import("./mailService");
+        return await getEmailById(input.id);
+      }),
+
+    markRead: protectedProcedure
+      .input(z.object({ id: z.number(), isRead: z.boolean() }))
+      .mutation(async ({ input }) => {
+        const { markEmailRead } = await import("./mailService");
+        await markEmailRead(input.id, input.isRead);
+        return { success: true };
+      }),
+
+    markStarred: protectedProcedure
+      .input(z.object({ id: z.number(), isStarred: z.boolean() }))
+      .mutation(async ({ input }) => {
+        const { markEmailStarred } = await import("./mailService");
+        await markEmailStarred(input.id, input.isStarred);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const { deleteEmail } = await import("./mailService");
+        await deleteEmail(input.id);
+        return { success: true };
+      }),
+
+    saveDraft: protectedProcedure
+      .input(z.object({
+        id: z.number().optional(),
+        subject: z.string().optional(),
+        toAddress: z.string().optional(),
+        ccAddress: z.string().optional(),
+        bodyHtml: z.string().optional(),
+        bodyText: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { saveDraft } = await import("./mailService");
+        const id = await saveDraft(input);
+        return { id };
+      }),
+
+    send: protectedProcedure
+      .input(z.object({
+        to: z.string(),
+        cc: z.string().optional(),
+        subject: z.string(),
+        bodyHtml: z.string(),
+        bodyText: z.string().optional(),
+        draftId: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { sendMail } = await import("./mailService");
+        return await sendMail(input);
+      }),
+
+    translate: protectedProcedure
+      .input(z.object({ id: z.number(), targetLang: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        const { translateEmail } = await import("./mailService");
+        const result = await translateEmail(input.id, input.targetLang);
+        return { result };
+      }),
+
+    generateReply: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const { generateReply } = await import("./mailService");
+        const result = await generateReply(input.id);
+        return { result };
+      }),
+
+    contacts: protectedProcedure
+      .input(z.object({
+        search: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        const { getEmailContacts } = await import("./mailService");
+        return await getEmailContacts(input ?? {});
+      }),
+  }),
 });

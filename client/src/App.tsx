@@ -86,6 +86,9 @@ import FinanceAccountsPage from "./pages/finance/Accounts";
 import CostPage from "./pages/finance/Cost";
 import ReportsPage from "./pages/finance/Reports";
 
+// 邮件协同模块
+import MailPage from "./pages/mail/MailPage";
+
 // 系统设置模块
 import DepartmentsPage from "./pages/settings/Departments";
 import CompanyInfoPage from "./pages/settings/Company";
@@ -184,6 +187,9 @@ function Router() {
       <Route path="/finance/accounts" component={FinanceAccountsPage} />
       <Route path="/finance/cost" component={CostPage} />
       <Route path="/finance/reports" component={ReportsPage} />
+
+      {/* 邮件协同 */}
+      <Route path="/mail" component={MailPage} />
 
       {/* 系统设置 */}
       <Route path="/settings/company" component={CompanyInfoPage} />
