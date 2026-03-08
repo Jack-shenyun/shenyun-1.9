@@ -1378,14 +1378,58 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    delete: protectedProcedure
+     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input }) => {
         await deletePurchaseOrder(input.id);
         return { success: true };
       }),
+    // 同步采购订单收货状态（根据入库记录汇总 receivedQty，更新订单明细和状态）
+    syncReceiptStatus: protectedProcedure
+      .input(z.object({ orderId: z.number() }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        const { purchaseOrders: poTable, purchaseOrderItems: poItemsTable } = await import("../drizzle/schema");
+        const orderItems = await db.select().from(poItemsTable).where(eq(poItemsTable.orderId, input.orderId));
+        if (orderItems.length === 0) return { status: "ordered", message: "订单无明细" };
+        // 汇总已入库数量（purchase_in 类型，关联该采购订单）
+        const txRows = await db.select().from(inventoryTransactions).where(
+          and(
+            eq(inventoryTransactions.relatedOrderId, input.orderId),
+            eq(inventoryTransactions.type, "purchase_in")
+          )
+        );
+        const receivedMap = new Map<number, number>();
+        for (const tx of txRows) {
+          if (tx.productId) {
+            receivedMap.set(tx.productId, (receivedMap.get(tx.productId) || 0) + (parseFloat(String(tx.quantity)) || 0));
+          }
+        }
+        // 更新每条明细的 receivedQty
+        for (const item of orderItems) {
+          if (!item.productId) continue;
+          const received = receivedMap.get(item.productId) || 0;
+          await db.update(poItemsTable).set({ receivedQty: String(received) }).where(eq(poItemsTable.id, item.id));
+        }
+        // 判断订单整体收货状态
+        const totalOrdered = orderItems.reduce((s, i) => s + (parseFloat(String(i.quantity)) || 0), 0);
+        const totalReceived = orderItems.reduce((s, i) => {
+          const pid = i.productId;
+          return s + (pid ? (receivedMap.get(pid) || 0) : 0);
+        }, 0);
+        let newStatus: string;
+        if (totalReceived <= 0) {
+          newStatus = "ordered";
+        } else if (totalReceived >= totalOrdered) {
+          newStatus = "received";
+        } else {
+          newStatus = "partial_received";
+        }
+        await db.update(poTable).set({ status: newStatus as any }).where(eq(poTable.id, input.orderId));
+        return { status: newStatus, totalOrdered, totalReceived };
+      }),
   }),
-
   // ==================== 生产订单 ====================
   productionOrders: router({
     list: protectedProcedure

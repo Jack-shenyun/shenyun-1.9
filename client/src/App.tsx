@@ -69,6 +69,7 @@ import PurchaseOrdersPage from "./pages/purchase/Orders";
 import PurchaseFinancePage from "./pages/purchase/Finance";
 import PurchasePlanBoardPage from "./pages/purchase/PurchasePlanBoard";
 import MaterialRequestsPage from "./pages/purchase/MaterialRequests";
+import GoodsReceiptPage from "./pages/purchase/GoodsReceipt";
 
 // 仓库管理模块
 import InboundPage from "./pages/warehouse/Inbound";
@@ -167,6 +168,7 @@ function Router() {
       <Route path="/purchase/finance" component={PurchaseFinancePage} />
       <Route path="/purchase/plan" component={PurchasePlanBoardPage} />
       <Route path="/purchase/requests" component={MaterialRequestsPage} />
+      <Route path="/purchase/goods-receipt" component={GoodsReceiptPage} />
 
       {/* 仓库管理 */}
       <Route path="/warehouse/warehouses" component={WarehousesPage} />

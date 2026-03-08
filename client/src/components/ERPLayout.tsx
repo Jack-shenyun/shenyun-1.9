@@ -113,6 +113,7 @@ import {
   CheckCircle2,
   Mail,
   ScrollText,
+  PackageCheck,
 } from "lucide-react";
 import {
   Popover,
@@ -225,6 +226,7 @@ const menuConfig = [
       { icon: UserCheck, label: "供应商管理", path: "/purchase/suppliers" },
       { icon: FileInput, label: "采购执行", path: "/purchase/orders" },
       { icon: ClipboardList, label: "采购申请", path: "/purchase/requests" },
+      { icon: PackageCheck, label: "采购到货", path: "/purchase/goods-receipt" },
       { icon: CreditCard, label: "财务协同", path: "/purchase/finance" },
     ],
   },
