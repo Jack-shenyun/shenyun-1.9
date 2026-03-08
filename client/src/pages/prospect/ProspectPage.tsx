@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import {
   Search, Globe, Users, Mail, Phone, Linkedin, ArrowLeft,
   Plus, CheckCircle, ExternalLink, Loader2, Target, Zap,
@@ -48,9 +48,6 @@ function EmailStatusBadge({ status }: { status: string }) {
 // ─── 主组件 ────────────────────────────────────────────────────────────────────
 export default function ProspectPage() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
-
-  // 搜索状态
   const [keyword, setKeyword] = useState("");
   const [region, setRegion] = useState("");
   const [industry, setIndustry] = useState("");
@@ -91,21 +88,21 @@ export default function ProspectPage() {
   // ─── Mutations ───────────────────────────────────────────────────────────────
   const saveLeadMut = trpc.prospect.saveLead.useMutation({
     onSuccess: () => {
-      toast({ title: "✅ 线索已保存", description: "已成功导入线索库" });
+      toast.success("线索已保存", { description: "已成功导入线索库" });
       setSaveDialog({ open: false });
       refetchLeads();
     },
-    onError: (e) => toast({ title: "保存失败", description: e.message, variant: "destructive" }),
+    onError: (e) => toast.error("保存失败", { description: e.message }),
   });
 
   const updateStatusMut = trpc.prospect.updateLeadStatus.useMutation({
-    onSuccess: () => { toast({ title: "状态已更新" }); refetchLeads(); },
+    onSuccess: () => { toast.success("状态已更新"); refetchLeads(); },
   });
 
   const pushHubSpotMut = trpc.prospect.pushToHubSpot.useMutation({
     onSuccess: (r) => {
-      if (r.success) toast({ title: "✅ 已同步到 HubSpot", description: `HubSpot ID: ${r.hubspotId}` });
-      else toast({ title: "HubSpot 同步失败", description: r.error, variant: "destructive" });
+      if (r.success) toast.success("已同步到 HubSpot", { description: `HubSpot ID: ${r.hubspotId}` });
+      else toast.error("HubSpot 同步失败", { description: r.error });
     },
   });
 
