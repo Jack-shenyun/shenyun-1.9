@@ -115,6 +115,7 @@ import {
   ScrollText,
   PackageCheck,
   FileCheck,
+  DollarSign,
 } from "lucide-react";
 import {
   Popover,
@@ -250,6 +251,9 @@ const menuConfig = [
       { icon: CreditCard, label: "应付管理", path: "/finance/payable" },
       { icon: Wallet, label: "账户管理", path: "/finance/accounts" },
       { icon: TrendingUp, label: "成本核算", path: "/finance/cost" },
+      { icon: FileText, label: "发票管理", path: "/finance/invoice" },
+      { icon: Receipt, label: "报销管理", path: "/finance/reimbursement" },
+      { icon: DollarSign, label: "费用管理", path: "/finance/expense-management" },
       { icon: FileSpreadsheet, label: "报表中心", path: "/finance/reports" },
     ],
   },

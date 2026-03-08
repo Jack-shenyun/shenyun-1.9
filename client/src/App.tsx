@@ -81,6 +81,9 @@ import WarehousesPage from "./pages/warehouse/Warehouses";
 
 // 财务部模块
 import LedgerPage from "./pages/finance/Ledger";
+import InvoicePage from "./pages/finance/Invoice";
+import ReimbursementPage from "./pages/finance/Reimbursement";
+import ExpenseManagementPage from "./pages/finance/ExpenseManagement";
 import ReceivablePage from "./pages/finance/Receivable";
 import PayablePage from "./pages/finance/Payable";
 import FinanceAccountsPage from "./pages/finance/Accounts";
@@ -190,6 +193,9 @@ function Router() {
       <Route path="/finance/accounts" component={FinanceAccountsPage} />
       <Route path="/finance/cost" component={CostPage} />
       <Route path="/finance/reports" component={ReportsPage} />
+      <Route path="/finance/invoice" component={InvoicePage} />
+      <Route path="/finance/reimbursement" component={ReimbursementPage} />
+      <Route path="/finance/expense-management" component={ExpenseManagementPage} />
 
       {/* 邮件协同 */}
       <Route path="/mail" component={MailPage} />
