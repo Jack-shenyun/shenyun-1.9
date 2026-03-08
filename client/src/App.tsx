@@ -100,6 +100,7 @@ import LanguagePage from "./pages/settings/Language";
 import OperationLogsPage from "./pages/settings/OperationLogs";
 import RecycleBinPage from "./pages/settings/RecycleBin";
 import EmailSettingsPage from "./pages/settings/EmailSettings";
+import PrintTemplatesPage from "./pages/settings/PrintTemplates";
 import LoginPage from "./pages/Login";
 
 function Router() {
@@ -203,6 +204,7 @@ function Router() {
       <Route path="/settings/logs" component={OperationLogsPage} />
       <Route path="/settings/recycle-bin" component={RecycleBinPage} />
       <Route path="/settings/email" component={EmailSettingsPage} />
+      <Route path="/settings/print-templates" component={PrintTemplatesPage} />
 
       {/* 404 */}
       <Route path="/404" component={NotFound} />

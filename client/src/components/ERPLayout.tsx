@@ -284,6 +284,7 @@ const menuConfig = [
       { icon: GitBranch, label: "审批流程", path: "/settings/workflows" },
       { icon: Languages, label: "语言设置", path: "/settings/language" },
       { icon: History, label: "操作日志", path: "/settings/logs" },
+      { icon: Printer, label: "打印模板", path: "/settings/print-templates" },
       { icon: Mail, label: "邮件通知", path: "/settings/email", adminOnly: true },
       { icon: Trash2, label: "回收箱", path: "/settings/recycle-bin", adminOnly: true },
     ],
