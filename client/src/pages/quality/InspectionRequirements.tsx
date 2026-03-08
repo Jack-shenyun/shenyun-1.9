@@ -81,6 +81,7 @@ export default function InspectionRequirementsPage() {
 
   // 产品选择弹窗
   const [showProductPicker, setShowProductPicker] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
 
   // 产品列表
   const { data: rawProducts = [] } = trpc.products.list.useQuery({});
@@ -135,6 +136,7 @@ export default function InspectionRequirementsPage() {
       version: "1.0", status: "active", remark: "",
     });
     setItems([emptyItem()]);
+    setSelectedProduct(null);
     setShowForm(true);
   }
 
@@ -149,6 +151,9 @@ export default function InspectionRequirementsPage() {
       status: req.status ?? "active",
       remark: req.remark ?? "",
     });
+    // 编辑时从产品列表中找到匹配的产品对象
+    const matched = (rawProducts as any[]).find((p) => p.code === req.productCode || p.name === req.productName);
+    setSelectedProduct(matched ?? null);
     // 加载明细
     setItems([]); // 等详情加载
     setExpandedId(req.id);
@@ -421,7 +426,7 @@ export default function InspectionRequirementsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="col-span-2 space-y-1">
+              <div className="col-span-2 space-y-2">
                 <Label>产品 <span className="text-destructive">*</span></Label>
                 <Button
                   type="button"
@@ -441,6 +446,53 @@ export default function InspectionRequirementsPage() {
                   )}
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </Button>
+                {/* 产品信息卡片 */}
+                {selectedProduct && (
+                  <div className="rounded-lg border bg-muted/30 p-3 grid grid-cols-3 gap-x-6 gap-y-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">产品编码</span>
+                      <div className="font-mono font-medium mt-0.5">{selectedProduct.code}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">产品名称</span>
+                      <div className="font-medium mt-0.5">{selectedProduct.name}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">规格型号</span>
+                      <div className="mt-0.5">{selectedProduct.specification || "-"}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">计量单位</span>
+                      <div className="mt-0.5">{selectedProduct.unit || "-"}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">产品分类</span>
+                      <div className="mt-0.5">{{
+                        finished: "成品",
+                        semi_finished: "半成品",
+                        raw_material: "原材料",
+                        auxiliary: "辅料",
+                        other: "其他",
+                      }[selectedProduct.productCategory as string] || "-"}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">风险等级</span>
+                      <div className="mt-0.5">{selectedProduct.riskLevel ? `第${selectedProduct.riskLevel}类` : "-"}</div>
+                    </div>
+                    {selectedProduct.registrationNo && (
+                      <div className="col-span-2">
+                        <span className="text-muted-foreground">注册证号</span>
+                        <div className="font-mono text-xs mt-0.5">{selectedProduct.registrationNo}</div>
+                      </div>
+                    )}
+                    {selectedProduct.isMedicalDevice && (
+                      <div>
+                        <span className="text-muted-foreground">产品类型</span>
+                        <div className="mt-0.5">医疗器械{selectedProduct.isSterilized ? "（无菌）" : ""}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="space-y-1">
                 <Label>版本号</Label>
@@ -653,6 +705,7 @@ export default function InspectionRequirementsPage() {
             productCode: p.code ?? "",
             productName: p.name ?? "",
           }));
+          setSelectedProduct(p);
           setShowProductPicker(false);
         }}
       />
