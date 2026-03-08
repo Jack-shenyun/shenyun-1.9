@@ -329,13 +329,19 @@ export default function FormDialog({
               {field.label}
               {field.required && <span className="text-destructive ml-1">*</span>}
             </Label>
-            <Select value={value} onValueChange={(v) => handleChange(field.name, v)}>
+            <Select
+              value={value || undefined}
+              onValueChange={(v) => handleChange(field.name, v === "__NONE__" ? "" : v)}
+            >
               <SelectTrigger className={cn(error && "border-destructive")}>
                 <SelectValue placeholder={field.placeholder || `请选择${field.label}`} />
               </SelectTrigger>
               <SelectContent>
                 {field.options?.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
+                  <SelectItem
+                    key={option.value || "__NONE__"}
+                    value={option.value || "__NONE__"}
+                  >
                     {option.label}
                   </SelectItem>
                 ))}
