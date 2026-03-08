@@ -93,6 +93,9 @@ import ReportsPage from "./pages/finance/Reports";
 // 邮件协同模块
 import MailPage from "./pages/mail/MailPage";
 
+// 获客情报模块
+import ProspectPage from "./pages/prospect/ProspectPage";
+
 // 系统设置模块
 import DepartmentsPage from "./pages/settings/Departments";
 import CompanyInfoPage from "./pages/settings/Company";
@@ -199,6 +202,9 @@ function Router() {
 
       {/* 邮件协同 */}
       <Route path="/mail" component={MailPage} />
+
+      {/* 获客情报 */}
+      <Route path="/prospect" component={ProspectPage} />
 
       {/* 系统设置 */}
       <Route path="/settings/company" component={CompanyInfoPage} />

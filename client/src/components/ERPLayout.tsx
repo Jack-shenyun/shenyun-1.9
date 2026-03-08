@@ -112,6 +112,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Mail,
+  Target,
   ScrollText,
   PackageCheck,
   FileCheck,
@@ -586,6 +587,15 @@ function ERPLayoutContent({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* 获客情报独立入口 */}
+          <button
+            type="button"
+            onClick={() => setLocation("/prospect")}
+            title="获客情报"
+            className="relative flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
+          >
+            <Target className="h-5 w-5 text-slate-600" />
+          </button>
           {/* 邮件协同独立入口 */}
           <button
             type="button"

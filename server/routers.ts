@@ -5039,6 +5039,172 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── 获客情报模块 ───────────────────────────────────────────────────────────
+  prospect: router({
+    // Google 关键词搜索目标公司
+    searchCompanies: protectedProcedure
+      .input(z.object({
+        keyword: z.string(),
+        region: z.string().optional(),
+        industry: z.string().optional(),
+        maxResults: z.number().optional(),
+      }))
+      .query(async ({ input }) => {
+        const { searchCompaniesByGoogle } = await import("./prospectService");
+        return await searchCompaniesByGoogle(
+          input.keyword,
+          input.region,
+          input.industry,
+          input.maxResults ?? 10
+        );
+      }),
+
+    // 富化公司联系人（Apollo + Hunter 合并）
+    enrichContacts: protectedProcedure
+      .input(z.object({
+        domain: z.string(),
+        titles: z.array(z.string()).optional(),
+      }))
+      .query(async ({ input }) => {
+        const { enrichCompany } = await import("./prospectService");
+        return await enrichCompany(input.domain);
+      }),
+
+    // 从 HubSpot 同步线索
+    syncFromHubSpot: protectedProcedure
+      .input(z.object({ limit: z.number().optional() }))
+      .query(async ({ input }) => {
+        const { syncLeadsFromHubSpot } = await import("./prospectService");
+        return await syncLeadsFromHubSpot(input.limit ?? 50);
+      }),
+
+    // 将联系人推送到 HubSpot
+    pushToHubSpot: protectedProcedure
+      .input(z.object({
+        firstName: z.string(),
+        lastName: z.string(),
+        email: z.string(),
+        phone: z.string().optional(),
+        company: z.string().optional(),
+        title: z.string().optional(),
+        source: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { pushLeadToHubSpot } = await import("./prospectService");
+        return await pushLeadToHubSpot(input);
+      }),
+
+    // 将线索保存到 ERP 线索库
+    saveLead: protectedProcedure
+      .input(z.object({
+        companyName: z.string(),
+        companyDomain: z.string().optional(),
+        companyWebsite: z.string().optional(),
+        country: z.string().optional(),
+        industry: z.string().optional(),
+        contactName: z.string().optional(),
+        contactTitle: z.string().optional(),
+        contactEmail: z.string().optional(),
+        contactPhone: z.string().optional(),
+        contactLinkedin: z.string().optional(),
+        source: z.string().optional(),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        await db.execute(`
+          INSERT INTO marketing_leads
+            (companyName, companyDomain, companyWebsite, country, industry,
+             contactName, contactTitle, contactEmail, contactPhone, contactLinkedin,
+             source, status, notes, createdBy, createdAt, updatedAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, NOW(), NOW())
+        `, [
+          input.companyName, input.companyDomain || "", input.companyWebsite || "",
+          input.country || "", input.industry || "",
+          input.contactName || "", input.contactTitle || "",
+          input.contactEmail || "", input.contactPhone || "",
+          input.contactLinkedin || "", input.source || "获客情报",
+          input.notes || "", (ctx as any).user?.name || "系统",
+        ]);
+        return { success: true };
+      }),
+
+    // 获取已保存的线索列表
+    getLeads: protectedProcedure
+      .input(z.object({
+        status: z.string().optional(),
+        search: z.string().optional(),
+        page: z.number().optional(),
+        pageSize: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        const db = await getDb();
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS marketing_leads (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            companyName VARCHAR(300) NOT NULL,
+            companyDomain VARCHAR(300),
+            companyWebsite VARCHAR(500),
+            country VARCHAR(100),
+            industry VARCHAR(200),
+            contactName VARCHAR(200),
+            contactTitle VARCHAR(200),
+            contactEmail VARCHAR(320),
+            contactPhone VARCHAR(100),
+            contactLinkedin VARCHAR(500),
+            source VARCHAR(100),
+            status ENUM('new','contacted','qualified','converted','lost') NOT NULL DEFAULT 'new',
+            notes TEXT,
+            createdBy VARCHAR(100),
+            followUpAt DATETIME,
+            createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          )
+        `);
+        const page = input?.page ?? 1;
+        const pageSize = input?.pageSize ?? 20;
+        const offset = (page - 1) * pageSize;
+        let where = "WHERE 1=1";
+        const params: any[] = [];
+        if (input?.status) { where += " AND status = ?"; params.push(input.status); }
+        if (input?.search) {
+          where += " AND (companyName LIKE ? OR contactName LIKE ? OR contactEmail LIKE ?)";
+          params.push(`%${input.search}%`, `%${input.search}%`, `%${input.search}%`);
+        }
+        const [rows] = await db.execute(`SELECT * FROM marketing_leads ${where} ORDER BY createdAt DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]) as any;
+        const [countRows] = await db.execute(`SELECT COUNT(*) as total FROM marketing_leads ${where}`, params) as any;
+        return { leads: rows, total: countRows[0]?.total ?? 0, page, pageSize };
+      }),
+
+    // 更新线索状态
+    updateLeadStatus: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        status: z.enum(['new', 'contacted', 'qualified', 'converted', 'lost']),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        await db.execute(
+          "UPDATE marketing_leads SET status = ?, notes = COALESCE(?, notes), updatedAt = NOW() WHERE id = ?",
+          [input.status, input.notes, input.id]
+        );
+        return { success: true };
+      }),
+
+    // 获取 API 配置状态（检查哪些渠道已配置）
+    getApiStatus: protectedProcedure
+      .query(async () => {
+        return {
+          google: !!(process.env.GOOGLE_CSE_API_KEY && process.env.GOOGLE_CSE_ID),
+          apollo: !!process.env.APOLLO_API_KEY,
+          hunter: !!process.env.HUNTER_API_KEY,
+          hubspot: !!process.env.HUBSPOT_ACCESS_TOKEN,
+          linkedin: !!process.env.LINKEDIN_ACCESS_TOKEN,
+        };
+      }),
+  }),
+
   // 发票 AI 识别（豆包→通义千问→智谱 三家轮询，支持图片和PDF）
   invoiceOcr: router({
     recognize: protectedProcedure
