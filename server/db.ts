@@ -57,6 +57,7 @@ import {
   productSupplierPrices, InsertProductSupplierPrice, ProductSupplierPrice,
   electronicSignatures,
   signatureAuditLog,
+  goodsReceipts, goodsReceiptItems,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -5387,4 +5388,153 @@ export async function recalculateAllInventory(): Promise<{ updated: number; erro
   }
 
   return { updated, errors };
+}
+
+// ==================== 采购到货单 ====================
+
+let goodsReceiptsTableReady = false;
+
+export async function ensureGoodsReceiptsTable(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? await getDb();
+  if (!db || goodsReceiptsTableReady) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS goods_receipts (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      receiptNo VARCHAR(50) NOT NULL UNIQUE,
+      purchaseOrderId INT NOT NULL,
+      purchaseOrderNo VARCHAR(50) NOT NULL,
+      supplierId INT,
+      supplierName VARCHAR(200),
+      warehouseId INT NOT NULL,
+      receiptDate DATE NOT NULL,
+      status ENUM('pending_inspection','inspecting','passed','failed','warehoused') NOT NULL DEFAULT 'pending_inspection',
+      inspectorId INT,
+      inspectorName VARCHAR(64),
+      inspectionDate DATE,
+      inspectionResult ENUM('pass','fail','conditional_pass'),
+      inspectionRemark TEXT,
+      inboundDocumentNo VARCHAR(50),
+      inboundAt TIMESTAMP NULL,
+      remark TEXT,
+      createdBy INT,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS goods_receipt_items (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      receiptId INT NOT NULL,
+      purchaseOrderItemId INT,
+      productId INT,
+      materialCode VARCHAR(50),
+      materialName VARCHAR(200) NOT NULL,
+      specification VARCHAR(200),
+      unit VARCHAR(20),
+      orderedQty DECIMAL(12,4) NOT NULL,
+      receivedQty DECIMAL(12,4) NOT NULL,
+      batchNo VARCHAR(50),
+      sterilizationBatchNo VARCHAR(50),
+      inspectionQty DECIMAL(12,4),
+      qualifiedQty DECIMAL(12,4),
+      unqualifiedQty DECIMAL(12,4),
+      remark TEXT,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  goodsReceiptsTableReady = true;
+}
+
+export async function getGoodsReceipts(params?: { status?: string; search?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureGoodsReceiptsTable(db);
+  const { status, search, limit = 100, offset = 0 } = params ?? {};
+  const conditions: any[] = [];
+  if (status && status !== "all") conditions.push(eq(goodsReceipts.status, status as any));
+  if (search) conditions.push(or(
+    like(goodsReceipts.receiptNo, `%${search}%`),
+    like(goodsReceipts.purchaseOrderNo, `%${search}%`),
+    like(goodsReceipts.supplierName, `%${search}%`),
+  ));
+  const rows = await db.select().from(goodsReceipts)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(goodsReceipts.createdAt))
+    .limit(limit).offset(offset);
+  return rows;
+}
+
+export async function getGoodsReceiptById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  await ensureGoodsReceiptsTable(db);
+  const [receipt] = await db.select().from(goodsReceipts).where(eq(goodsReceipts.id, id));
+  if (!receipt) return null;
+  const items = await db.select().from(goodsReceiptItems).where(eq(goodsReceiptItems.receiptId, id));
+  return { ...receipt, items };
+}
+
+export async function createGoodsReceipt(data: {
+  receiptNo: string; purchaseOrderId: number; purchaseOrderNo: string;
+  supplierId?: number; supplierName?: string; warehouseId: number;
+  receiptDate: string; remark?: string; createdBy?: number;
+  items: Array<{
+    purchaseOrderItemId?: number; productId?: number; materialCode?: string;
+    materialName: string; specification?: string; unit?: string;
+    orderedQty: string; receivedQty: string; batchNo?: string;
+    sterilizationBatchNo?: string; remark?: string;
+  }>;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await ensureGoodsReceiptsTable(db);
+  const { items, ...receiptData } = data;
+  const [result] = await db.insert(goodsReceipts).values({
+    ...receiptData,
+    status: "pending_inspection",
+  } as any);
+  const receiptId = (result as any).insertId;
+  if (items && items.length > 0) {
+    await db.insert(goodsReceiptItems).values(
+      items.map((item) => ({ ...item, receiptId } as any))
+    );
+  }
+  return receiptId;
+}
+
+export async function updateGoodsReceipt(id: number, data: Partial<{
+  status: string; inspectorId: number; inspectorName: string;
+  inspectionDate: string; inspectionResult: string; inspectionRemark: string;
+  inboundDocumentNo: string; inboundAt: Date; remark: string;
+  items: Array<{
+    id?: number; purchaseOrderItemId?: number; productId?: number;
+    materialCode?: string; materialName: string; specification?: string;
+    unit?: string; orderedQty: string; receivedQty: string;
+    batchNo?: string; sterilizationBatchNo?: string;
+    inspectionQty?: string; qualifiedQty?: string; unqualifiedQty?: string; remark?: string;
+  }>;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await ensureGoodsReceiptsTable(db);
+  const { items, ...receiptData } = data;
+  if (Object.keys(receiptData).length > 0) {
+    await db.update(goodsReceipts).set(receiptData as any).where(eq(goodsReceipts.id, id));
+  }
+  if (items) {
+    await db.delete(goodsReceiptItems).where(eq(goodsReceiptItems.receiptId, id));
+    if (items.length > 0) {
+      await db.insert(goodsReceiptItems).values(
+        items.map((item) => ({ ...item, receiptId: id } as any))
+      );
+    }
+  }
+}
+
+export async function deleteGoodsReceipt(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await ensureGoodsReceiptsTable(db);
+  await db.delete(goodsReceiptItems).where(eq(goodsReceiptItems.receiptId, id));
+  await db.delete(goodsReceipts).where(eq(goodsReceipts.id, id));
 }
