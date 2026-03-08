@@ -279,7 +279,7 @@ export default function IQCPage() {
         qualifiedQty: d.qualifiedQty ?? "",
         unit: d.unit ?? "",
         inspectionRequirementId: d.inspectionRequirementId ?? null,
-        inspectionDate: d.inspectionDate ? d.inspectionDate.slice(0, 10) : today(),
+        inspectionDate: d.inspectionDate ? (typeof d.inspectionDate === 'string' ? d.inspectionDate.slice(0, 10) : new Date(d.inspectionDate).toISOString().slice(0, 10)) : today(),
         inspectorId: d.inspectorId ?? null,
         inspectorName: d.inspectorName ?? "",
         result: d.result ?? "pending",
