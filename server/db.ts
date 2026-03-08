@@ -2250,7 +2250,7 @@ export async function deleteWarehouse(id: number, deletedBy?: number) {
 
 // ==================== 库存出入库记录 CRUD ====================
 
-export async function getInventoryTransactions(params?: { search?: string; type?: string; warehouseId?: number; limit?: number; offset?: number }) {
+export async function getInventoryTransactions(params?: { search?: string; type?: string; warehouseId?: number; inventoryId?: number; productId?: number; batchNo?: string; limit?: number; offset?: number }) {
   const db = await getDb();
   if (!db) return [];
   await ensureInventoryTransactionColumns(db);
@@ -2270,10 +2270,19 @@ export async function getInventoryTransactions(params?: { search?: string; type?
   if (params?.warehouseId) {
     conditions.push(eq(inventoryTransactions.warehouseId, params.warehouseId));
   }
+  if (params?.inventoryId) {
+    conditions.push(eq(inventoryTransactions.inventoryId, params.inventoryId));
+  }
+  if (params?.productId) {
+    conditions.push(eq(inventoryTransactions.productId, params.productId));
+  }
+  if (params?.batchNo) {
+    conditions.push(eq(inventoryTransactions.batchNo, params.batchNo));
+  }
   if (conditions.length > 0) {
     query = query.where(and(...conditions)) as typeof query;
   }
-  return await query.orderBy(desc(inventoryTransactions.createdAt)).limit(params?.limit || 100).offset(params?.offset || 0);
+  return await query.orderBy(desc(inventoryTransactions.createdAt)).limit(params?.limit || 200).offset(params?.offset || 0);
 }
 
 export async function createInventoryTransaction(data: InsertInventoryTransaction) {

@@ -771,73 +771,225 @@ export default function InventoryPage() {
         </DraggableDialog>
 
         {/* 查看详情对话框 */}
-        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        {/* InventoryDetailContent 组件在文件末尾定义 */}
+        <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen} defaultWidth={860} defaultHeight={680}>
           <DraggableDialogContent>
             {viewingItem && (
-              <div className="space-y-6">
-                <div className="border-b pb-3">
-                  <h2 className="text-lg font-semibold">库存详情</h2>
-                  <p className="text-sm text-muted-foreground">
-                    {viewingItem.displayCode || viewingItem.materialCode}
-                    {viewingItem.status && (
-                      <> · <Badge variant={statusMap[viewingItem.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingItem.status, statusMap[viewingItem.status]?.label)}`}>
-                        {statusMap[viewingItem.status]?.label || String(viewingItem.status ?? "-")}
-                      </Badge></>
-                    )}
-                  </p>
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-                    <div>
-                      <FieldRow label="物料名称">{viewingItem.itemName}</FieldRow>
-                      <FieldRow label="物料编码">{viewingItem.displayCode || viewingItem.materialCode || "-"}</FieldRow>
-                      <FieldRow label="型号规格">{viewingItem.specification || "-"}</FieldRow>
-                      <FieldRow label="批次号">{viewingItem.batchNo || "-"}</FieldRow>
-                    </div>
-                    <div>
-                      <FieldRow label="产品分类">{viewingItem.productCategory ? (productCategoryMap[viewingItem.productCategory] || viewingItem.productCategory) : "-"}</FieldRow>
-                      <FieldRow label="产品属性">{viewingItem.sourceType ? (sourceTypeMap[viewingItem.sourceType] || viewingItem.sourceType) : "-"}</FieldRow>
-                      <FieldRow label="仓库">{getWarehouseName(viewingItem.warehouseId)}</FieldRow>
-                      <FieldRow label="单位">{viewingItem.unit || "-"}</FieldRow>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">库存水平</h3>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">当前库存</span>
-                      <span className="font-medium">
-                        {parseFloat(String(viewingItem.quantity || 0))?.toLocaleString?.() ?? "0"} {viewingItem.unit}
-                      </span>
-                    </div>
-                    {viewingItem.safetyStock && parseFloat(String(viewingItem.safetyStock)) > 0 && (
-                      <>
-                        <Progress value={Math.min((parseFloat(String(viewingItem.quantity)) / parseFloat(String(viewingItem.safetyStock))) * 100, 100)} className="h-2" />
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>安全库存: {parseFloat(String(viewingItem.safetyStock))?.toLocaleString?.() ?? "0"}</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
-                  <div className="flex gap-2 flex-wrap"></div>
-                  <div className="flex gap-2 flex-wrap justify-end">
-                    <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-                    <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(viewingItem); }}>编辑</Button>
-                    <Button size="sm" onClick={() => { setViewDialogOpen(false); handleAdjust(viewingItem); }}>库存调整</Button>
-                  </div>
-                </div>
-              </div>
+              <InventoryDetailContent
+                item={viewingItem}
+                statusMap={statusMap}
+                productCategoryMap={productCategoryMap}
+                sourceTypeMap={sourceTypeMap}
+                getWarehouseName={getWarehouseName}
+                onClose={() => setViewDialogOpen(false)}
+                onEdit={() => { setViewDialogOpen(false); handleEdit(viewingItem); }}
+                onAdjust={() => { setViewDialogOpen(false); handleAdjust(viewingItem); }}
+              />
             )}
           </DraggableDialogContent>
         </DraggableDialog>
       </div>
     </ERPLayout>
+  );
+}
+
+// ==================== 库存详情内容组件（含出入库明细表）====================
+const txTypeMap: Record<string, { label: string; color: string }> = {
+  purchase_in:    { label: "采购入库", color: "text-green-600" },
+  production_in:  { label: "生产入库", color: "text-blue-600" },
+  return_in:      { label: "退货入库", color: "text-teal-600" },
+  other_in:       { label: "其他入库", color: "text-cyan-600" },
+  production_out: { label: "生产领料", color: "text-orange-600" },
+  sales_out:      { label: "销售出库", color: "text-red-600" },
+  return_out:     { label: "采购退货", color: "text-rose-600" },
+  other_out:      { label: "其他出库", color: "text-pink-600" },
+  transfer:       { label: "调拨",     color: "text-purple-600" },
+  adjust:         { label: "库存调整", color: "text-amber-600" },
+};
+
+function InventoryDetailContent({
+  item,
+  statusMap,
+  productCategoryMap,
+  sourceTypeMap,
+  getWarehouseName,
+  onClose,
+  onEdit,
+  onAdjust,
+}: {
+  item: any;
+  statusMap: Record<string, any>;
+  productCategoryMap: Record<string, string>;
+  sourceTypeMap: Record<string, string>;
+  getWarehouseName: (id: number) => string;
+  onClose: () => void;
+  onEdit: () => void;
+  onAdjust: () => void;
+}) {
+  const { data: txList = [], isLoading: txLoading } = trpc.inventoryTransactions.list.useQuery(
+    item?.id
+      ? {
+          inventoryId: item.id,
+          limit: 100,
+        }
+      : undefined,
+    { enabled: !!item?.id }
+  );
+
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+      <span className="flex-1 text-sm text-right break-all">{children}</span>
+    </div>
+  );
+
+  const inTypes = ["purchase_in", "production_in", "return_in", "other_in"];
+  const totalIn = (txList as any[]).filter((t: any) => inTypes.includes(t.type)).reduce((s: number, t: any) => s + (parseFloat(String(t.quantity)) || 0), 0);
+  const totalOut = (txList as any[]).filter((t: any) => !inTypes.includes(t.type) && t.type !== "adjust" && t.type !== "transfer").reduce((s: number, t: any) => s + (parseFloat(String(t.quantity)) || 0), 0);
+
+  return (
+    <div className="flex flex-col h-full space-y-4 overflow-hidden">
+      {/* 标题 */}
+      <div className="border-b pb-3 shrink-0">
+        <h2 className="text-lg font-semibold">库存详情</h2>
+        <p className="text-sm text-muted-foreground">
+          {item.displayCode || item.materialCode}
+          {item.status && (
+            <> · <Badge
+              variant={statusMap[item.status]?.variant || "outline"}
+              className={`ml-1 ${getStatusSemanticClass(item.status, statusMap[item.status]?.label)}`}
+            >
+              {statusMap[item.status]?.label || String(item.status ?? "-")}
+            </Badge></>
+          )}
+        </p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto space-y-5 pr-1">
+        {/* 基本信息 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <FieldRow label="物料名称">{item.itemName}</FieldRow>
+              <FieldRow label="物料编码">{item.displayCode || item.materialCode || "-"}</FieldRow>
+              <FieldRow label="型号规格">{item.specification || "-"}</FieldRow>
+              <FieldRow label="批次号">{item.batchNo || "-"}</FieldRow>
+            </div>
+            <div>
+              <FieldRow label="产品分类">{item.productCategory ? (productCategoryMap[item.productCategory] || item.productCategory) : "-"}</FieldRow>
+              <FieldRow label="产品属性">{item.sourceType ? (sourceTypeMap[item.sourceType] || item.sourceType) : "-"}</FieldRow>
+              <FieldRow label="仓库">{getWarehouseName(item.warehouseId)}</FieldRow>
+              <FieldRow label="单位">{item.unit || "-"}</FieldRow>
+            </div>
+          </div>
+        </div>
+
+        {/* 库存水平 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">库存水平</h3>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg bg-green-50 border border-green-100 p-3 text-center">
+              <p className="text-xs text-muted-foreground mb-1">累计入库</p>
+              <p className="text-base font-bold text-green-600">{totalIn.toLocaleString()} {item.unit || ""}</p>
+            </div>
+            <div className="rounded-lg bg-red-50 border border-red-100 p-3 text-center">
+              <p className="text-xs text-muted-foreground mb-1">累计出库</p>
+              <p className="text-base font-bold text-red-600">{totalOut.toLocaleString()} {item.unit || ""}</p>
+            </div>
+            <div className="rounded-lg bg-primary/5 border border-primary/10 p-3 text-center">
+              <p className="text-xs text-muted-foreground mb-1">当前库存</p>
+              <p className="text-base font-bold text-primary">{(parseFloat(String(item.quantity || 0))).toLocaleString()} {item.unit || ""}</p>
+            </div>
+          </div>
+          {item.safetyStock && parseFloat(String(item.safetyStock)) > 0 && (
+            <div className="mt-2 space-y-1">
+              <Progress value={Math.min((parseFloat(String(item.quantity)) / parseFloat(String(item.safetyStock))) * 100, 100)} className="h-2" />
+              <p className="text-xs text-muted-foreground text-right">安全库存: {parseFloat(String(item.safetyStock)).toLocaleString()} {item.unit || ""}</p>
+            </div>
+          )}
+        </div>
+
+        {/* 出入库明细表 */}
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+            出入库明细
+            <span className="ml-2 text-xs font-normal text-muted-foreground normal-case">
+              共 {(txList as any[]).length} 条记录
+            </span>
+          </h3>
+          <div className="rounded-lg border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="text-center text-xs">时间</TableHead>
+                  <TableHead className="text-center text-xs">类型</TableHead>
+                  <TableHead className="text-center text-xs">单据号</TableHead>
+                  <TableHead className="text-right text-xs">数量</TableHead>
+                  <TableHead className="text-right text-xs">变动前</TableHead>
+                  <TableHead className="text-right text-xs">变动后</TableHead>
+                  <TableHead className="text-center text-xs">备注</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {txLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-6 text-muted-foreground text-sm">
+                      加载中...
+                    </TableCell>
+                  </TableRow>
+                ) : (txList as any[]).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-6 text-muted-foreground text-sm">
+                      暂无出入库记录
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  (txList as any[]).map((tx: any) => {
+                    const txInfo = txTypeMap[tx.type] || { label: tx.type, color: "text-foreground" };
+                    const isIn = inTypes.includes(tx.type);
+                    const qty = parseFloat(String(tx.quantity)) || 0;
+                    return (
+                      <TableRow key={tx.id} className="hover:bg-muted/30">
+                        <TableCell className="text-center text-xs text-muted-foreground">
+                          {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit", year: "2-digit" }) : "-"}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className={`text-xs ${txInfo.color}`}>
+                            {txInfo.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center text-xs font-mono text-muted-foreground">
+                          {tx.documentNo || "-"}
+                        </TableCell>
+                        <TableCell className={`text-right text-sm font-medium ${isIn ? "text-green-600" : "text-red-600"}`}>
+                          {isIn ? "+" : "-"}{qty.toLocaleString()} {item.unit || ""}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {tx.beforeQty != null ? parseFloat(String(tx.beforeQty)).toLocaleString() : "-"}
+                        </TableCell>
+                        <TableCell className="text-right text-xs text-muted-foreground">
+                          {tx.afterQty != null ? parseFloat(String(tx.afterQty)).toLocaleString() : "-"}
+                        </TableCell>
+                        <TableCell className="text-center text-xs text-muted-foreground max-w-[120px] truncate">
+                          {tx.remark || "-"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </div>
+
+      {/* 底部按钮 */}
+      <div className="flex justify-end gap-2 pt-3 border-t shrink-0">
+        <Button variant="outline" size="sm" onClick={onClose}>关闭</Button>
+        <Button variant="outline" size="sm" onClick={onEdit}>编辑</Button>
+        <Button size="sm" onClick={onAdjust}>库存调整</Button>
+      </div>
+    </div>
   );
 }

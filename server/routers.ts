@@ -2038,6 +2038,9 @@ export const appRouter = router({
         search: z.string().optional(),
         type: z.string().optional(),
         warehouseId: z.number().optional(),
+        inventoryId: z.number().optional(),
+        productId: z.number().optional(),
+        batchNo: z.string().optional(),
         limit: z.number().optional(),
         offset: z.number().optional(),
       }).optional())
