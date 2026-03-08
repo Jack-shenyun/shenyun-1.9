@@ -1,7 +1,8 @@
 import { useState } from "react";
 import ERPLayout from "@/components/ERPLayout";
+import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import {
-  ClipboardList, Plus, Search, Trash2, Edit2, MoreHorizontal, ChevronDown, ChevronUp,
+  ClipboardList, Plus, Search, Trash2, Edit2, MoreHorizontal, ChevronDown, ChevronUp, ChevronRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,13 @@ export default function InspectionRequirementsPage() {
   });
   const [items, setItems] = useState<RequirementItem[]>([emptyItem()]);
   const [submitting, setSubmitting] = useState(false);
+
+  // 产品选择弹窗
+  const [showProductPicker, setShowProductPicker] = useState(false);
+
+  // 产品列表
+  const { data: rawProducts = [] } = trpc.products.list.useQuery({});
+  const products = rawProducts as any[];
 
   // 详情展开
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -413,21 +421,26 @@ export default function InspectionRequirementsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label>产品编号</Label>
-                <Input
-                  value={formData.productCode}
-                  onChange={(e) => setFormData((p) => ({ ...p, productCode: e.target.value }))}
-                  placeholder="产品编号（可选）"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>产品名称 <span className="text-destructive">*</span></Label>
-                <Input
-                  value={formData.productName}
-                  onChange={(e) => setFormData((p) => ({ ...p, productName: e.target.value }))}
-                  placeholder="输入产品名称"
-                />
+              <div className="col-span-2 space-y-1">
+                <Label>产品 <span className="text-destructive">*</span></Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-between font-normal"
+                  onClick={() => setShowProductPicker(true)}
+                >
+                  {formData.productName ? (
+                    <span className="flex items-center gap-2">
+                      {formData.productCode && (
+                        <span className="font-mono text-xs text-muted-foreground">{formData.productCode}</span>
+                      )}
+                      <span>{formData.productName}</span>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">点击选择产品...</span>
+                  )}
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </Button>
               </div>
               <div className="space-y-1">
                 <Label>版本号</Label>
@@ -610,6 +623,39 @@ export default function InspectionRequirementsPage() {
           </div>
         </DraggableDialogContent>
       </DraggableDialog>
+
+      {/* 产品选择弹窗 */}
+      <EntityPickerDialog
+        open={showProductPicker}
+        onOpenChange={setShowProductPicker}
+        title="选择产品"
+        searchPlaceholder="搜索产品编码、名称、规格..."
+        columns={[
+          { key: "code", title: "产品编码", className: "w-[140px]", render: (p) => <span className="font-mono font-medium text-sm">{p.code}</span> },
+          { key: "name", title: "产品名称", render: (p) => <span className="font-medium">{p.name}</span> },
+          { key: "specification", title: "规格型号", render: (p) => <span className="text-muted-foreground text-sm">{p.specification || "-"}</span> },
+          { key: "unit", title: "单位", className: "w-[80px]" },
+        ]}
+        rows={products}
+        selectedId={formData.productCode || null}
+        getRowId={(p) => p.code ?? p.id}
+        filterFn={(p, q) => {
+          const lower = q.toLowerCase();
+          return (
+            p.code?.toLowerCase().includes(lower) ||
+            p.name?.toLowerCase().includes(lower) ||
+            p.specification?.toLowerCase().includes(lower)
+          );
+        }}
+        onSelect={(p) => {
+          setFormData((prev) => ({
+            ...prev,
+            productCode: p.code ?? "",
+            productName: p.name ?? "",
+          }));
+          setShowProductPicker(false);
+        }}
+      />
     </ERPLayout>
   );
 }
