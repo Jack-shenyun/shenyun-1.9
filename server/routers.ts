@@ -4951,4 +4951,50 @@ export const appRouter = router({
         return await getEmailContacts(input ?? {});
       }),
   }),
+
+  // 发票 AI 识别
+  invoiceOcr: router({
+    recognize: protectedProcedure
+      .input(z.object({
+        images: z.array(z.object({
+          name: z.string(),
+          base64: z.string(),
+        })),
+      }))
+      .mutation(async ({ input }) => {
+        const { OpenAI } = await import("openai");
+        const client = new OpenAI();
+        const results: any[] = [];
+        for (const img of input.images) {
+          try {
+            const response = await client.chat.completions.create({
+              model: "gpt-4.1-mini",
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text: `请识别这张发票图片，提取以下信息，以 JSON 格式返回：\n{\n  "invoiceNo": "发票号码",\n  "invoiceDate": "YYYY-MM-DD",\n  "sellerName": "销售方名称",\n  "totalAmount": 含税总金额(数字),\n  "taxAmount": 税额(数字),\n  "amountExTax": 不含税金额(数字),\n  "taxRate": 税率百分比(数字，如 13),\n  "description": "货物或服务名称简述",\n  "invoiceType": "vat_special | vat_normal | electronic | receipt"\n}\n如果某个字段无法识别，返回 null。只返回 JSON，不要其他文字。`,
+                    },
+                    {
+                      type: "image_url",
+                      image_url: { url: img.base64 },
+                    },
+                  ],
+                },
+              ],
+              max_tokens: 500,
+            });
+            const content = response.choices[0]?.message?.content || "{}";
+            const jsonMatch = content.match(/\{[\s\S]*\}/);
+            const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+            results.push({ name: img.name, success: true, data: parsed });
+          } catch (err: any) {
+            results.push({ name: img.name, success: false, error: err.message, data: {} });
+          }
+        }
+        return results;
+      }),
+  }),
 });
