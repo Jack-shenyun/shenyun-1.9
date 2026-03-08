@@ -1821,3 +1821,53 @@ export const iqcInspectionItems = mysqlTable("iqc_inspection_items", {
 });
 export type IqcInspectionItem = typeof iqcInspectionItems.$inferSelect;
 export type InsertIqcInspectionItem = typeof iqcInspectionItems.$inferInsert;
+
+// ==================== 获客营销模块 ====================
+/**
+ * 营销线索表：统一存储国内和海外线索
+ */
+export const marketingLeads = mysqlTable("marketing_leads", {
+  id: int("id").autoincrement().primaryKey(),
+  leadNo: varchar("leadNo", { length: 50 }).unique(),
+  market: mysqlEnum("market", ["domestic", "overseas"]).notNull().default("overseas"),
+  company: varchar("company", { length: 200 }).notNull(),
+  contact: varchar("contact", { length: 100 }).notNull(),
+  title: varchar("title", { length: 100 }),
+  email: varchar("email", { length: 320 }),
+  phone: varchar("phone", { length: 50 }),
+  whatsapp: varchar("whatsapp", { length: 50 }),
+  wechat: varchar("wechat", { length: 100 }),
+  country: varchar("country", { length: 50 }),
+  province: varchar("province", { length: 50 }),
+  region: varchar("region", { length: 50 }),
+  customerType: varchar("customerType", { length: 50 }),
+  status: mysqlEnum("status", ["new", "contacted", "interested", "quoted", "won", "lost"]).default("new").notNull(),
+  grade: mysqlEnum("grade", ["A", "B", "C"]).default("B").notNull(),
+  source: varchar("source", { length: 100 }),
+  notes: text("notes"),
+  nextFollowUp: date("nextFollowUp"),
+  assignedToName: varchar("assignedToName", { length: 64 }),
+  createdBy: int("createdBy"),
+  createdByName: varchar("createdByName", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type MarketingLead = typeof marketingLeads.$inferSelect;
+export type InsertMarketingLead = typeof marketingLeads.$inferInsert;
+
+/**
+ * 跟进记录表
+ */
+export const leadFollowUps = mysqlTable("lead_follow_ups", {
+  id: int("id").autoincrement().primaryKey(),
+  leadId: int("leadId").notNull(),
+  type: mysqlEnum("type", ["call", "wechat", "whatsapp", "email", "meeting", "other"]).notNull().default("call"),
+  content: text("content").notNull(),
+  result: varchar("result", { length: 200 }),
+  nextAction: varchar("nextAction", { length: 200 }),
+  nextFollowUpDate: date("nextFollowUpDate"),
+  createdByName: varchar("createdByName", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type LeadFollowUp = typeof leadFollowUps.$inferSelect;
+export type InsertLeadFollowUp = typeof leadFollowUps.$inferInsert;

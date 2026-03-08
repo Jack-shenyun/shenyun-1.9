@@ -96,6 +96,13 @@ import MailPage from "./pages/mail/MailPage";
 // 获客情报模块
 import ProspectPage from "./pages/prospect/ProspectPage";
 
+// WhatsApp 工作台
+import WhatsAppPage from "./pages/whatsapp/WhatsAppPage";
+
+// 获客营销模块
+import DomesticLeadsPage from "./pages/leads/DomesticLeadsPage";
+import OverseasLeadsPage from "./pages/leads/OverseasLeadsPage";
+
 // 系统设置模块
 import DepartmentsPage from "./pages/settings/Departments";
 import CompanyInfoPage from "./pages/settings/Company";
@@ -205,6 +212,13 @@ function Router() {
 
       {/* 获客情报 */}
       <Route path="/prospect" component={ProspectPage} />
+
+      {/* WhatsApp 工作台 */}
+      <Route path="/whatsapp" component={WhatsAppPage} />
+
+      {/* 获客营销 */}
+      <Route path="/leads/domestic" component={DomesticLeadsPage} />
+      <Route path="/leads/overseas" component={OverseasLeadsPage} />
 
       {/* 系统设置 */}
       <Route path="/settings/company" component={CompanyInfoPage} />

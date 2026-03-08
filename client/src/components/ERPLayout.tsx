@@ -117,6 +117,7 @@ import {
   PackageCheck,
   FileCheck,
   DollarSign,
+  MessageCircle,
 } from "lucide-react";
 import {
   Popover,
@@ -587,6 +588,35 @@ function ERPLayoutContent({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* 国内获客独立入口 */}
+          <button
+            type="button"
+            onClick={() => setLocation("/leads/domestic")}
+            title="国内获客"
+            className="relative flex h-9 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors hover:bg-green-50 text-slate-600 hover:text-green-700"
+          >
+            <MapPin className="h-4 w-4" />
+            <span className="text-xs font-medium hidden lg:block">国内获客</span>
+          </button>
+          {/* 海外获客独立入口 */}
+          <button
+            type="button"
+            onClick={() => setLocation("/leads/overseas")}
+            title="海外获客"
+            className="relative flex h-9 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors hover:bg-blue-50 text-slate-600 hover:text-blue-700"
+          >
+            <Globe className="h-4 w-4" />
+            <span className="text-xs font-medium hidden lg:block">海外获客</span>
+          </button>
+          {/* WhatsApp 工作台独立入口 */}
+          <button
+            type="button"
+            onClick={() => setLocation("/whatsapp")}
+            title="WhatsApp 工作台"
+            className="relative flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-[#e8fdf0] text-slate-600 hover:text-[#25D366]"
+          >
+            <MessageCircle className="h-5 w-5" />
+          </button>
           {/* 获客情报独立入口 */}
           <button
             type="button"
