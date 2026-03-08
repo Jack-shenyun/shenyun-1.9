@@ -68,6 +68,7 @@ import {
   getNextOrderNo,
   ensureUsersVisibleAppsColumn,
   ensureUsersAvatarUrlColumn,
+  ensureUsersWechatColumns,
   syncOqcResultToWarehouseEntry,
   getBatchRecord,
   getBatchRecordList,
@@ -391,6 +392,9 @@ export const appRouter = router({
         createdAt: users.createdAt,
         lastSignedIn: users.lastSignedIn,
         avatarUrl: users.avatarUrl,
+        wxAccount: users.wxAccount,
+        wxOpenid: users.wxOpenid,
+        wxNickname: users.wxNickname,
       }).from(users);
       return result;
     }),
@@ -402,10 +406,14 @@ export const appRouter = router({
       department: z.string().optional(),
       role: z.enum(["user", "admin"]).default("user"),
       visibleApps: z.array(z.string()).optional(),
+      wxAccount: z.string().optional(),
+      wxOpenid: z.string().optional(),
+      wxNickname: z.string().optional(),
     })).mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("数据库连接不可用");
       await ensureUsersVisibleAppsColumn(db);
+      await ensureUsersWechatColumns(db);
       const openId = `user-${input.username}`;
       await db.insert(users).values({
         openId,
@@ -416,6 +424,9 @@ export const appRouter = router({
         role: input.role,
         visibleApps: input.visibleApps?.length ? input.visibleApps.join(",") : null,
         loginMethod: "password",
+        wxAccount: input.wxAccount || null,
+        wxOpenid: input.wxOpenid || null,
+        wxNickname: input.wxNickname || null,
       });
       return { success: true };
     }),
@@ -429,14 +440,21 @@ export const appRouter = router({
       position: z.string().optional(),
       role: z.enum(["user", "admin"]).optional(),
       visibleApps: z.array(z.string()).optional(),
+      wxAccount: z.string().optional(),
+      wxOpenid: z.string().optional(),
+      wxNickname: z.string().optional(),
     })).mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("数据库连接不可用");
       await ensureUsersVisibleAppsColumn(db);
+      await ensureUsersWechatColumns(db);
       const { id, username, ...data } = input;
       await db.update(users).set({
         ...data,
         visibleApps: data.visibleApps?.length ? data.visibleApps.join(",") : null,
+        wxAccount: data.wxAccount ?? null,
+        wxOpenid: data.wxOpenid ?? null,
+        wxNickname: data.wxNickname ?? null,
       }).where(eq(users.id, id));
       if (username) {
         await db.update(users).set({ openId: `user-${username}` }).where(eq(users.id, id));

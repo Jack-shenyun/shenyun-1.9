@@ -14,6 +14,10 @@ export const users = mysqlTable("users", {
   position: varchar("position", { length: 64 }), // 职位
   phone: varchar("phone", { length: 20 }),
   visibleApps: text("visibleApps"), // 首页显示应用，逗号分隔的应用 ID
+  // 微信相关字段
+  wxAccount: varchar("wxAccount", { length: 64 }),   // 微信号（展示用）
+  wxOpenid: varchar("wxOpenid", { length: 64 }),     // 微信公众号 OpenID（发消息用）
+  wxNickname: varchar("wxNickname", { length: 100 }), // 微信昵称
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -1871,3 +1875,41 @@ export const leadFollowUps = mysqlTable("lead_follow_ups", {
 });
 export type LeadFollowUp = typeof leadFollowUps.$inferSelect;
 export type InsertLeadFollowUp = typeof leadFollowUps.$inferInsert;
+
+// ==================== 微信公众号绑定 ====================
+/**
+ * 用户微信绑定表：存储 ERP 用户与微信公众号 openid 的绑定关系
+ * 用于待办事项推送微信模板消息
+ */
+export const wechatBindings = mysqlTable("wechat_bindings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),          // ERP 用户 ID（唯一，一人一绑）
+  wxOpenid: varchar("wxOpenid", { length: 64 }).notNull().unique(), // 微信公众号 openid
+  wxNickname: varchar("wxNickname", { length: 100 }), // 微信昵称（可选，用于展示）
+  wxAvatarUrl: text("wxAvatarUrl"),                  // 微信头像 URL（可选）
+  bindCode: varchar("bindCode", { length: 32 }),     // 绑定验证码（扫码时生成）
+  bindCodeExpiredAt: timestamp("bindCodeExpiredAt"), // 验证码过期时间
+  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type WechatBinding = typeof wechatBindings.$inferSelect;
+export type InsertWechatBinding = typeof wechatBindings.$inferInsert;
+
+/**
+ * 微信消息推送日志表：记录每次推送结果
+ */
+export const wechatNotifyLogs = mysqlTable("wechat_notify_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  wxOpenid: varchar("wxOpenid", { length: 64 }).notNull(),
+  templateId: varchar("templateId", { length: 64 }).notNull(),
+  title: varchar("title", { length: 200 }),
+  content: text("content"),
+  bizType: varchar("bizType", { length: 50 }),       // 业务类型：workflow_todo / approval_result 等
+  bizId: varchar("bizId", { length: 50 }),           // 业务单号
+  status: mysqlEnum("status", ["success", "failed", "skipped"]).notNull(),
+  errMsg: text("errMsg"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type WechatNotifyLog = typeof wechatNotifyLogs.$inferSelect;

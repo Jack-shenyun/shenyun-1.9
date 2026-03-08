@@ -66,6 +66,7 @@ import { ENV } from './_core/env';
 let _db: ReturnType<typeof drizzle> | null = null;
 let usersVisibleAppsColumnReady = false;
 let usersAvatarUrlColumnReady = false;
+let usersWechatColumnsReady = false;
 let workflowFormCatalogTableReady = false;
 let workflowTemplatesTableReady = false;
 let companyInfoTableReady = false;
@@ -176,6 +177,28 @@ export async function ensureUsersAvatarUrlColumn(dbArg?: ReturnType<typeof drizz
     }
   }
   usersAvatarUrlColumnReady = true;
+}
+
+export async function ensureUsersWechatColumns(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? await getDb();
+  if (!db || usersWechatColumnsReady) return;
+  const columns = [
+    { name: "wxAccount", def: "VARCHAR(64) NULL" },
+    { name: "wxOpenid",  def: "VARCHAR(64) NULL" },
+    { name: "wxNickname", def: "VARCHAR(100) NULL" },
+  ];
+  for (const col of columns) {
+    try {
+      await db.execute(sql.raw(`ALTER TABLE users ADD COLUMN ${col.name} ${col.def}`));
+    } catch (error) {
+      const message = String((error as any)?.message ?? "");
+      if (!/Duplicate column name|already exists|1060/i.test(message)) {
+        // 忽略列已存在的错误，其他错误不抛出（避免影响启动）
+        console.warn(`[ensureUsersWechatColumns] ${col.name}:`, message);
+      }
+    }
+  }
+  usersWechatColumnsReady = true;
 }
 
 async function ensureWorkflowTemplatesTable(dbArg?: ReturnType<typeof drizzle> | null) {

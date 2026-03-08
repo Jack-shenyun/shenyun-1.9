@@ -35,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import {
   Users,
   Plus,
@@ -47,6 +48,9 @@ import {
   ShieldCheck,
   UserCog,
   Key,
+  MessageCircle,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
@@ -116,7 +120,6 @@ export default function UsersPage() {
       utils.auth.me.setData(undefined, nextUser);
       if (typeof window !== "undefined") {
         localStorage.setItem("manus-runtime-user-info", JSON.stringify(nextUser));
-        // 同步更新本地登录用户信息，确保刷新后头像持久化
         const localAuthRaw = localStorage.getItem(LOCAL_AUTH_USER_KEY);
         if (localAuthRaw) {
           try {
@@ -139,6 +142,10 @@ export default function UsersPage() {
     role: u.role as "admin" | "user",
     visibleApps: parseVisibleAppIds(u.visibleApps),
     avatarUrl: u.avatarUrl || null,
+    // 微信字段
+    wxAccount: u.wxAccount || "",
+    wxOpenid: u.wxOpenid || "",
+    wxNickname: u.wxNickname || "",
     status: "active" as const,
     lastLogin: u.lastSignedIn ? formatDateTime(u.lastSignedIn) : "-",
     createdAt: u.createdAt ? formatDate(u.createdAt) : "-",
@@ -180,6 +187,9 @@ export default function UsersPage() {
     role: "user",
     visibleApps: [] as string[],
     status: "active",
+    wxAccount: "",
+    wxOpenid: "",
+    wxNickname: "",
   });
   const [passwordForm, setPasswordForm] = useState({
     newPassword: DEFAULT_UNIFIED_PASSWORD,
@@ -193,7 +203,9 @@ export default function UsersPage() {
       String(user.name ?? "").toLowerCase().includes(normalizedSearchTerm) ||
       String(user.username ?? "").toLowerCase().includes(normalizedSearchTerm) ||
       String(user.email ?? "").toLowerCase().includes(normalizedSearchTerm) ||
-      String(user.department ?? "").toLowerCase().includes(normalizedSearchTerm)
+      String(user.department ?? "").toLowerCase().includes(normalizedSearchTerm) ||
+      String(user.wxAccount ?? "").toLowerCase().includes(normalizedSearchTerm) ||
+      String(user.wxNickname ?? "").toLowerCase().includes(normalizedSearchTerm)
   );
 
   const handleAdd = () => {
@@ -211,6 +223,9 @@ export default function UsersPage() {
       role: "user",
       visibleApps: [],
       status: "active",
+      wxAccount: "",
+      wxOpenid: "",
+      wxNickname: "",
     });
     setDialogOpen(true);
   };
@@ -230,6 +245,9 @@ export default function UsersPage() {
       role: user.role,
       visibleApps: user.visibleApps ?? [],
       status: user.status,
+      wxAccount: user.wxAccount || "",
+      wxOpenid: user.wxOpenid || "",
+      wxNickname: user.wxNickname || "",
     });
     setDialogOpen(true);
   };
@@ -276,15 +294,13 @@ export default function UsersPage() {
       toast.error("仅管理员可修改密码");
       return;
     }
-    const newPassword = passwordForm.newPassword;
-    const confirmPassword = passwordForm.confirmPassword;
-    if (newPassword !== confirmPassword) {
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       toast.error("两次输入的密码不一致");
       return;
     }
     await setPasswordMutation.mutateAsync({
       id: passwordUser.id,
-      newPassword,
+      newPassword: passwordForm.newPassword,
     });
     logOperation({
       module: "user",
@@ -318,6 +334,12 @@ export default function UsersPage() {
       return;
     }
 
+    const wxPayload = {
+      wxAccount: formData.wxAccount.trim() || undefined,
+      wxOpenid: formData.wxOpenid.trim() || undefined,
+      wxNickname: formData.wxNickname.trim() || undefined,
+    };
+
     if (editingUser) {
       await updateMutation.mutateAsync({
         id: editingUser.id,
@@ -328,6 +350,7 @@ export default function UsersPage() {
         department: formData.department || undefined,
         role: formData.role as "admin" | "user",
         visibleApps: formData.visibleApps,
+        ...wxPayload,
       });
       if (currentUser && Number((currentUser as any).id) === Number(editingUser.id)) {
         const nextUser = {
@@ -365,6 +388,7 @@ export default function UsersPage() {
         department: formData.department || undefined,
         role: formData.role as "admin" | "user",
         visibleApps: formData.visibleApps,
+        ...wxPayload,
       });
       logOperation({
         module: "user",
@@ -398,6 +422,9 @@ export default function UsersPage() {
   const activeUsers = users.filter((u: any) => u.status === "active").length;
   const adminUsers = users.filter((u: any) => u.role === "admin").length;
   const lockedUsers = users.filter((u: any) => u.status === "locked").length;
+  // 已绑定微信的用户数
+  const wxBoundUsers = users.filter((u: any) => u.wxOpenid).length;
+
   const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
       <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
@@ -416,7 +443,7 @@ export default function UsersPage() {
             </div>
             <div>
               <h2 className="text-xl font-bold tracking-tight">用户设置</h2>
-              <p className="text-sm text-muted-foreground">管理系统用户账号和权限</p>
+              <p className="text-sm text-muted-foreground">管理系统用户账号、权限和微信绑定</p>
             </div>
           </div>
           <Button onClick={handleAdd} disabled={!isAdmin}>
@@ -446,9 +473,12 @@ export default function UsersPage() {
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">锁定用户</p>
-              <p className="text-2xl font-bold text-red-600">{lockedUsers}</p>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div>
+                <p className="text-sm text-muted-foreground">微信已绑定</p>
+                <p className="text-2xl font-bold text-green-600">{wxBoundUsers}</p>
+              </div>
+              <MessageCircle className="h-8 w-8 text-green-400 ml-auto" />
             </CardContent>
           </Card>
         </div>
@@ -459,7 +489,7 @@ export default function UsersPage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="搜索用户名、姓名、邮箱、部门..."
+                placeholder="搜索用户名、姓名、邮箱、部门、微信号..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-9"
@@ -479,7 +509,7 @@ export default function UsersPage() {
                     <TableHead className="text-center font-bold">用户名</TableHead>
                     <TableHead className="text-center font-bold">部门</TableHead>
                     <TableHead className="text-center font-bold">角色</TableHead>
-                    <TableHead className="text-center font-bold">状态</TableHead>
+                    <TableHead className="text-center font-bold">微信</TableHead>
                     <TableHead className="text-center font-bold">最后登录</TableHead>
                     <TableHead className="w-[100px] text-center font-bold">操作</TableHead>
                   </TableRow>
@@ -494,35 +524,54 @@ export default function UsersPage() {
                   ) : (
                     filteredUsers.map((user: any) => (
                       <TableRow key={user.id}>
-                        <TableCell className="text-center">
+                        <TableCell>
                           <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
+                            <Avatar className="h-8 w-8 shrink-0">
+                              {user.avatarUrl ? (
+                                <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                              ) : null}
                               <AvatarFallback className="bg-primary/10 text-primary text-xs">
                                 {user.name.slice(0, 2)}
                               </AvatarFallback>
                             </Avatar>
                             <div>
                               <p className="font-medium">{user.name}</p>
-                              <p className="text-xs text-muted-foreground">{user.email}</p>
+                              <p className="text-xs text-muted-foreground">{user.email || "-"}</p>
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-center font-mono">{user.username}</TableCell>
-                        <TableCell className="text-center">{user.department}</TableCell>
+                        <TableCell className="text-center font-mono text-sm">{user.username}</TableCell>
+                        <TableCell className="text-center text-sm">{user.department || "-"}</TableCell>
                         <TableCell className="text-center">
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center justify-center gap-1">
                             {user.role === "admin" ? (
                               <ShieldCheck className="h-4 w-4 text-primary" />
                             ) : (
                               <Shield className="h-4 w-4 text-muted-foreground" />
                             )}
-                            <span>{user.role === "admin" ? "管理员" : "普通用户"}</span>
+                            <span className="text-sm">{user.role === "admin" ? "管理员" : "普通用户"}</span>
                           </div>
                         </TableCell>
+                        {/* 微信绑定状态列 */}
                         <TableCell className="text-center">
-                          <Badge variant={statusMap[user.status]?.variant || "outline"} className={getStatusSemanticClass(user.status, statusMap[user.status]?.label)}>
-                            {statusMap[user.status]?.label || "正常"}
-                          </Badge>
+                          {user.wxOpenid ? (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <div className="flex items-center gap-1 text-green-600">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                <span className="text-xs font-medium">已绑定</span>
+                              </div>
+                              {(user.wxNickname || user.wxAccount) && (
+                                <span className="text-xs text-muted-foreground truncate max-w-[80px]">
+                                  {user.wxNickname || user.wxAccount}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-1 text-slate-400">
+                              <XCircle className="h-3.5 w-3.5" />
+                              <span className="text-xs">未绑定</span>
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-center text-sm text-muted-foreground">
                           {user.lastLogin}
@@ -577,7 +626,8 @@ export default function UsersPage() {
               {editingUser ? "修改用户信息" : "创建新的系统用户"}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-1">
+            {/* 基本信息 */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>用户名 *</Label>
@@ -640,9 +690,6 @@ export default function UsersPage() {
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <p className="text-xs text-muted-foreground">
-                  可选择多个部门
-                </p>
               </div>
               <div className="space-y-2">
                 <Label>用户角色</Label>
@@ -661,13 +708,62 @@ export default function UsersPage() {
                 </Select>
               </div>
             </div>
+
+            {/* 微信账户信息 */}
+            <Separator />
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-green-500" />
+                <span className="text-sm font-semibold text-slate-700">微信账户信息</span>
+              </div>
+              <p className="text-xs text-muted-foreground">填写后可向该用户发送微信消息提醒</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>微信号</Label>
+                <Input
+                  value={formData.wxAccount}
+                  onChange={(e) => setFormData({ ...formData, wxAccount: e.target.value })}
+                  placeholder="微信号（展示用）"
+                  disabled={!isAdmin}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>微信昵称</Label>
+                <Input
+                  value={formData.wxNickname}
+                  onChange={(e) => setFormData({ ...formData, wxNickname: e.target.value })}
+                  placeholder="微信昵称"
+                  disabled={!isAdmin}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                微信 OpenID
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal">发消息必填</Badge>
+              </Label>
+              <Input
+                value={formData.wxOpenid}
+                onChange={(e) => setFormData({ ...formData, wxOpenid: e.target.value })}
+                placeholder="公众号 OpenID（用于发送模板消息）"
+                disabled={!isAdmin}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                OpenID 可通过微信公众号后台「用户管理」查看，或由用户扫码绑定后自动填入
+              </p>
+            </div>
+
+            {/* 首页应用权限 */}
+            <Separator />
             <div className="space-y-3">
               <Label>首页显示应用</Label>
               <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-3">
                 {WORKBENCH_APP_OPTIONS.map((app) => (
                   <label
                     key={app.id}
-                    className="flex items-center gap-3 rounded-lg border border-transparent bg-white px-3 py-2 shadow-sm"
+                    className="flex items-center gap-3 rounded-lg border border-transparent bg-white px-3 py-2 shadow-sm cursor-pointer"
                   >
                     <Checkbox
                       checked={formData.visibleApps.includes(app.id)}
@@ -693,115 +789,140 @@ export default function UsersPage() {
       </DraggableDialog>
 
       {/* 查看详情对话框 */}
-<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-  <DraggableDialogContent>
-    {viewingUser && (
-      <div className="space-y-4">
-        <div className="border-b pb-3 flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold">用户详情</h2>
-            <p className="text-sm text-muted-foreground">
-              {viewingUser.name} (@{viewingUser.username})
-              {viewingUser.status && (
-                <>
-                  {" "}
-                  ·
-                  <Badge
-                    variant={statusMap[viewingUser.status]?.variant || "outline"}
-                    className={`ml-1 ${getStatusSemanticClass(
-                      viewingUser.status,
-                      statusMap[viewingUser.status]?.label
-                    )}`}
-                  >
-                    {statusMap[viewingUser.status]?.label || String(viewingUser.status ?? "-")}
-                  </Badge>
-                </>
-              )}
-            </p>
-          </div>
-          <div className="relative group">
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              id="avatar-upload"
-              onChange={(e) => handleAvatarUpload(e, viewingUser.id)}
-            />
-            <label htmlFor="avatar-upload" className="cursor-pointer">
-              <Avatar className="h-24 w-24 shrink-0 border-3 border-white shadow-lg group-hover:opacity-80 transition-opacity">
-                {viewingUser.avatarUrl ? (
-                  <img src={viewingUser.avatarUrl} alt={viewingUser.name} className="w-full h-full object-cover" />
-                ) : null}
-                <AvatarFallback
-                  className="text-2xl font-bold text-white"
-                  style={{
-                    background: `linear-gradient(135deg, hsl(${((viewingUser.name?.charCodeAt(0) ?? 65) * 137) % 360}, 65%, 50%), hsl(${((viewingUser.name?.charCodeAt(0) ?? 65) * 137 + 60) % 360}, 65%, 40%))`,
-                  }}
-                >
-                  {(viewingUser.name ?? viewingUser.username ?? "U").charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full bg-black/30">
-                <span className="text-white text-xs font-semibold">点击上传</span>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-              <div>
-                <FieldRow label="姓名">{viewingUser.name}</FieldRow>
-                <FieldRow label="邮箱">{viewingUser.email || "-"}</FieldRow>
-                <FieldRow label="手机号">{viewingUser.phone || "-"}</FieldRow>
-                <FieldRow label="所属部门">{viewingUser.department || "-"}</FieldRow>
-              </div>
-              <div>
-                <FieldRow label="用户名">@{viewingUser.username}</FieldRow>
-                <FieldRow label="用户角色">
-                  <div className="flex items-center gap-1 justify-end">
-                    {viewingUser.role === "admin" ? (
-                      <ShieldCheck className="h-4 w-4 text-primary" />
-                    ) : (
-                      <Shield className="h-4 w-4 text-muted-foreground" />
+      <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DraggableDialogContent>
+          {viewingUser && (
+            <div className="space-y-4">
+              <div className="border-b pb-3 flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold">用户详情</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {viewingUser.name} (@{viewingUser.username})
+                    {viewingUser.status && (
+                      <>
+                        {" "}·
+                        <Badge
+                          variant={statusMap[viewingUser.status]?.variant || "outline"}
+                          className={`ml-1 ${getStatusSemanticClass(viewingUser.status, statusMap[viewingUser.status]?.label)}`}
+                        >
+                          {statusMap[viewingUser.status]?.label || String(viewingUser.status ?? "-")}
+                        </Badge>
+                      </>
                     )}
-                    <span>{viewingUser.role === "admin" ? "管理员" : "普通用户"}</span>
+                  </p>
+                </div>
+                <div className="relative group">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    id="avatar-upload"
+                    onChange={(e) => handleAvatarUpload(e, viewingUser.id)}
+                  />
+                  <label htmlFor="avatar-upload" className="cursor-pointer">
+                    <Avatar className="h-20 w-20 shrink-0 border-2 border-white shadow-lg group-hover:opacity-80 transition-opacity">
+                      {viewingUser.avatarUrl ? (
+                        <img src={viewingUser.avatarUrl} alt={viewingUser.name} className="w-full h-full object-cover" />
+                      ) : null}
+                      <AvatarFallback
+                        className="text-xl font-bold text-white"
+                        style={{
+                          background: `linear-gradient(135deg, hsl(${((viewingUser.name?.charCodeAt(0) ?? 65) * 137) % 360}, 65%, 50%), hsl(${((viewingUser.name?.charCodeAt(0) ?? 65) * 137 + 60) % 360}, 65%, 40%))`,
+                        }}
+                      >
+                        {(viewingUser.name ?? viewingUser.username ?? "U").charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full bg-black/30">
+                      <span className="text-white text-xs font-semibold">点击上传</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+                {/* 基本信息 */}
+                <div>
+                  <h3 className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                    <div>
+                      <FieldRow label="姓名">{viewingUser.name}</FieldRow>
+                      <FieldRow label="邮箱">{viewingUser.email || "-"}</FieldRow>
+                      <FieldRow label="手机号">{viewingUser.phone || "-"}</FieldRow>
+                      <FieldRow label="所属部门">{viewingUser.department || "-"}</FieldRow>
+                    </div>
+                    <div>
+                      <FieldRow label="用户名">@{viewingUser.username}</FieldRow>
+                      <FieldRow label="用户角色">
+                        <div className="flex items-center gap-1 justify-end">
+                          {viewingUser.role === "admin" ? (
+                            <ShieldCheck className="h-4 w-4 text-primary" />
+                          ) : (
+                            <Shield className="h-4 w-4 text-muted-foreground" />
+                          )}
+                          <span>{viewingUser.role === "admin" ? "管理员" : "普通用户"}</span>
+                        </div>
+                      </FieldRow>
+                      <FieldRow label="创建时间">{formatDateValue(viewingUser.createdAt)}</FieldRow>
+                      <FieldRow label="最后登录">{viewingUser.lastLogin}</FieldRow>
+                    </div>
                   </div>
-                </FieldRow>
-                <FieldRow label="创建时间">{formatDateValue(viewingUser.createdAt)}</FieldRow>
-                <FieldRow label="最后登录">{viewingUser.lastLogin}</FieldRow>
+                </div>
+
+                {/* 微信信息 */}
+                <div>
+                  <h3 className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <MessageCircle className="h-3.5 w-3.5 text-green-500" />
+                    微信账户
+                  </h3>
+                  <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 space-y-1">
+                    <FieldRow label="微信号">
+                      {viewingUser.wxAccount || <span className="text-muted-foreground">未填写</span>}
+                    </FieldRow>
+                    <FieldRow label="微信昵称">
+                      {viewingUser.wxNickname || <span className="text-muted-foreground">未填写</span>}
+                    </FieldRow>
+                    <FieldRow label="OpenID">
+                      {viewingUser.wxOpenid ? (
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                          <span className="font-mono text-xs truncate max-w-[140px]">{viewingUser.wxOpenid}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 justify-end text-muted-foreground">
+                          <XCircle className="h-3.5 w-3.5" />
+                          <span>未绑定</span>
+                        </div>
+                      )}
+                    </FieldRow>
+                  </div>
+                </div>
+
+                {/* 应用权限 */}
+                <div>
+                  <h3 className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide">应用权限</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {getVisibleAppLabels(viewingUser.visibleApps ?? []).length > 0 ? (
+                      getVisibleAppLabels(viewingUser.visibleApps ?? []).map((label) => (
+                        <Badge key={label} variant="secondary">{label}</Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">未单独配置，按部门默认显示</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+                <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(viewingUser); }} disabled={!isAdmin}>编辑</Button>
               </div>
             </div>
-          </div>
+          )}
+        </DraggableDialogContent>
+      </DraggableDialog>
 
-          <div>
-            <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">应用权限</h3>
-            <div className="flex flex-wrap gap-2">
-              {getVisibleAppLabels(viewingUser.visibleApps ?? []).length > 0 ? (
-                getVisibleAppLabels(viewingUser.visibleApps ?? []).map((label) => (
-                  <Badge key={label} variant="secondary">{label}</Badge>
-                ))
-              ) : (
-                <span className="text-sm text-muted-foreground">未单独配置，按部门默认显示</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
-          <div className="flex gap-2 flex-wrap"></div>
-          <div className="flex gap-2 flex-wrap justify-end">
-            <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-            <Button variant="outline" size="sm" onClick={() => handleEdit(viewingUser)} disabled={!isAdmin}>编辑</Button>
-          </div>
-        </div>
-      </div>
-    )}
-  </DraggableDialogContent>
-</DraggableDialog>
-
+      {/* 修改密码对话框 */}
       <DraggableDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
         <DraggableDialogContent>
           <DialogHeader>
