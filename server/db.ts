@@ -58,6 +58,8 @@ import {
   electronicSignatures,
   signatureAuditLog,
   goodsReceipts, goodsReceiptItems,
+  inspectionRequirements, inspectionRequirementItems,
+  iqcInspections, iqcInspectionItems,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -5461,7 +5463,10 @@ export async function getGoodsReceipts(params?: { status?: string; search?: stri
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(goodsReceipts.createdAt))
     .limit(limit).offset(offset);
-  return rows;
+  if (rows.length === 0) return [];
+  const receiptIds = rows.map((r) => r.id);
+  const allItems = await db.select().from(goodsReceiptItems).where(inArray(goodsReceiptItems.receiptId, receiptIds));
+  return rows.map((r) => ({ ...r, items: allItems.filter((it) => it.receiptId === r.id) }));
 }
 
 export async function getGoodsReceiptById(id: number) {
@@ -5537,4 +5542,314 @@ export async function deleteGoodsReceipt(id: number) {
   await ensureGoodsReceiptsTable(db);
   await db.delete(goodsReceiptItems).where(eq(goodsReceiptItems.receiptId, id));
   await db.delete(goodsReceipts).where(eq(goodsReceipts.id, id));
+}
+
+// ==================== 检验要求 ====================
+
+let inspectionRequirementsTableReady = false;
+
+export async function ensureInspectionRequirementsTable(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? await getDb();
+  if (!db || inspectionRequirementsTableReady) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS inspection_requirements (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      requirementNo VARCHAR(50) NOT NULL UNIQUE,
+      type ENUM('IQC','IPQC','OQC') NOT NULL,
+      productCode VARCHAR(50),
+      productName VARCHAR(200) NOT NULL,
+      version VARCHAR(20) DEFAULT '1.0',
+      status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+      remark TEXT,
+      createdBy INT,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS inspection_requirement_items (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      requirementId INT NOT NULL,
+      itemName VARCHAR(200) NOT NULL,
+      itemType ENUM('qualitative','quantitative') NOT NULL,
+      standard VARCHAR(500),
+      minVal DECIMAL(12,4),
+      maxVal DECIMAL(12,4),
+      unit VARCHAR(20),
+      acceptedValues VARCHAR(500),
+      sortOrder INT DEFAULT 0,
+      remark TEXT,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  inspectionRequirementsTableReady = true;
+}
+
+export async function getInspectionRequirements(params?: { type?: string; search?: string; status?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureInspectionRequirementsTable(db);
+  const { type, search, status, limit = 200, offset = 0 } = params ?? {};
+  const conditions: any[] = [];
+  if (type) conditions.push(eq(inspectionRequirements.type, type as any));
+  if (status) conditions.push(eq(inspectionRequirements.status, status as any));
+  if (search) conditions.push(or(
+    like(inspectionRequirements.requirementNo, `%${search}%`),
+    like(inspectionRequirements.productName, `%${search}%`),
+    like(inspectionRequirements.productCode, `%${search}%`),
+  ));
+  const rows = await db.select().from(inspectionRequirements)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(inspectionRequirements.createdAt))
+    .limit(limit).offset(offset);
+  return rows;
+}
+
+export async function getInspectionRequirementById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  await ensureInspectionRequirementsTable(db);
+  const [req] = await db.select().from(inspectionRequirements).where(eq(inspectionRequirements.id, id));
+  if (!req) return null;
+  const items = await db.select().from(inspectionRequirementItems).where(eq(inspectionRequirementItems.requirementId, id)).orderBy(inspectionRequirementItems.sortOrder);
+  return { ...req, items };
+}
+
+export async function createInspectionRequirement(data: {
+  requirementNo: string; type: string; productCode?: string; productName: string;
+  version?: string; status?: string; remark?: string; createdBy?: number;
+  items: Array<{ itemName: string; itemType: string; standard?: string; minValue?: string; maxValue?: string; unit?: string; acceptedValues?: string; sortOrder?: number; remark?: string }>;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("数据库连接不可用");
+  await ensureInspectionRequirementsTable(db);
+  const { items, ...reqData } = data;
+  const [result] = await db.insert(inspectionRequirements).values(reqData as any);
+  const reqId = (result as any).insertId;
+  if (items && items.length > 0) {
+    await db.insert(inspectionRequirementItems).values(
+      items.map((item, idx) => {
+        const { minValue, maxValue, ...rest } = item as any;
+        return { ...rest, minVal: minValue ?? null, maxVal: maxValue ?? null, requirementId: reqId, sortOrder: item.sortOrder ?? idx };
+      }) as any
+    );
+  }
+  return reqId;
+}
+
+export async function updateInspectionRequirement(id: number, data: {
+  requirementNo?: string; type?: string; productCode?: string; productName?: string;
+  version?: string; status?: string; remark?: string;
+  items?: Array<{ itemName: string; itemType: string; standard?: string; minValue?: string; maxValue?: string; unit?: string; acceptedValues?: string; sortOrder?: number; remark?: string }>;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("数据库连接不可用");
+  await ensureInspectionRequirementsTable(db);
+  const { items, ...reqData } = data;
+  if (Object.keys(reqData).length > 0) {
+    await db.update(inspectionRequirements).set(reqData as any).where(eq(inspectionRequirements.id, id));
+  }
+  if (items !== undefined) {
+    await db.delete(inspectionRequirementItems).where(eq(inspectionRequirementItems.requirementId, id));
+    if (items.length > 0) {
+      await db.insert(inspectionRequirementItems).values(
+        items.map((item, idx) => {
+          const { minValue, maxValue, ...rest } = item as any;
+          return { ...rest, minVal: minValue ?? null, maxVal: maxValue ?? null, requirementId: id, sortOrder: item.sortOrder ?? idx };
+        }) as any
+      );
+    }
+  }
+}
+
+export async function deleteInspectionRequirement(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("数据库连接不可用");
+  await ensureInspectionRequirementsTable(db);
+  await db.delete(inspectionRequirementItems).where(eq(inspectionRequirementItems.requirementId, id));
+  await db.delete(inspectionRequirements).where(eq(inspectionRequirements.id, id));
+}
+
+// ==================== 来料检验单（IQC） ====================
+
+let iqcInspectionsTableReady = false;
+
+export async function ensureIqcInspectionsTable(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? await getDb();
+  if (!db || iqcInspectionsTableReady) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS iqc_inspections (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      inspectionNo VARCHAR(50) NOT NULL UNIQUE,
+      goodsReceiptId INT,
+      goodsReceiptNo VARCHAR(50),
+      goodsReceiptItemId INT,
+      productId INT,
+      productCode VARCHAR(50),
+      productName VARCHAR(200) NOT NULL,
+      specification VARCHAR(200),
+      supplierId INT,
+      supplierName VARCHAR(200),
+      batchNo VARCHAR(50),
+      sterilizationBatchNo VARCHAR(50),
+      receivedQty DECIMAL(12,4),
+      sampleQty DECIMAL(12,4),
+      unit VARCHAR(20),
+      inspectionRequirementId INT,
+      inspectionDate DATE,
+      inspectorId INT,
+      inspectorName VARCHAR(64),
+      result ENUM('pending','passed','failed','conditional_pass') NOT NULL DEFAULT 'pending',
+      remark TEXT,
+      createdBy INT,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS iqc_inspection_items (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      iqcId INT NOT NULL,
+      requirementItemId INT,
+      itemName VARCHAR(200) NOT NULL,
+      itemType ENUM('qualitative','quantitative') NOT NULL,
+      standard VARCHAR(500),
+      minVal DECIMAL(12,4),
+      maxVal DECIMAL(12,4),
+      unit VARCHAR(20),
+      measuredValue VARCHAR(100),
+      acceptedValues VARCHAR(500),
+      actualValue VARCHAR(200),
+      conclusion ENUM('pass','fail','pending') NOT NULL DEFAULT 'pending',
+      sortOrder INT DEFAULT 0,
+      remark TEXT,
+      createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  // 动态添加新字段（已存在的表不会重建，需要 ALTER TABLE）
+  const iqcNewCols = [
+    { name: "attachments", ddl: "TEXT NULL" },
+    { name: "signatures", ddl: "TEXT NULL" },
+    { name: "qualifiedQty", ddl: "DECIMAL(12,4) NULL" },
+    { name: "reportMode", ddl: "VARCHAR(20) NULL" },
+    { name: "supplierCode", ddl: "VARCHAR(50) NULL" },
+  ];
+  for (const col of iqcNewCols) {
+    try {
+      await db.execute(sql.raw(`ALTER TABLE iqc_inspections ADD COLUMN ${col.name} ${col.ddl}`));
+    } catch (err) {
+      const msg = String((err as any)?.message ?? "");
+      if (!/Duplicate column name|already exists|1060/i.test(msg)) {
+        console.warn(`[DB] Could not add column ${col.name} to iqc_inspections:`, msg);
+      }
+    }
+  }
+  iqcInspectionsTableReady = true;
+}
+
+export async function getIqcInspections(params?: { result?: string; search?: string; goodsReceiptId?: number; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureIqcInspectionsTable(db);
+  const { result, search, goodsReceiptId, limit = 200, offset = 0 } = params ?? {};
+  const conditions: any[] = [];
+  if (result && result !== "all") conditions.push(eq(iqcInspections.result, result as any));
+  if (goodsReceiptId) conditions.push(eq(iqcInspections.goodsReceiptId, goodsReceiptId));
+  if (search) conditions.push(or(
+    like(iqcInspections.inspectionNo, `%${search}%`),
+    like(iqcInspections.productName, `%${search}%`),
+    like(iqcInspections.supplierName, `%${search}%`),
+    like(iqcInspections.goodsReceiptNo, `%${search}%`),
+  ));
+  const rows = await db.select().from(iqcInspections)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(iqcInspections.createdAt))
+    .limit(limit).offset(offset);
+  return rows;
+}
+
+export async function getIqcInspectionById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  await ensureIqcInspectionsTable(db);
+  const [record] = await db.select().from(iqcInspections).where(eq(iqcInspections.id, id));
+  if (!record) return null;
+  const items = await db.select().from(iqcInspectionItems).where(eq(iqcInspectionItems.iqcId, id)).orderBy(iqcInspectionItems.sortOrder);
+  return { ...record, items };
+}
+
+export async function createIqcInspection(data: {
+  inspectionNo: string; reportMode?: string; goodsReceiptId?: number; goodsReceiptNo?: string; goodsReceiptItemId?: number;
+  productId?: number; productCode?: string; productName: string; specification?: string;
+  supplierId?: number; supplierName?: string; supplierCode?: string; batchNo?: string; sterilizationBatchNo?: string;
+  receivedQty?: string; sampleQty?: string; qualifiedQty?: string; unit?: string;
+  inspectionRequirementId?: number; inspectionDate?: string;
+  inspectorId?: number; inspectorName?: string; result?: string; remark?: string; attachments?: string; createdBy?: number;
+  items: Array<{
+    requirementItemId?: number; itemName: string; itemType: string; standard?: string;
+    minValue?: string; maxValue?: string; unit?: string; measuredValue?: string; sampleValues?: string;
+    acceptedValues?: string; actualValue?: string; conclusion?: string; sortOrder?: number; remark?: string;
+  }>;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("数据库连接不可用");
+  await ensureIqcInspectionsTable(db);
+  const { items, ...iqcData } = data;
+  const [result] = await db.insert(iqcInspections).values(iqcData as any);
+  const iqcId = (result as any).insertId;
+  if (items && items.length > 0) {
+    await db.insert(iqcInspectionItems).values(
+      items.map((item, idx) => {
+        const { minValue, maxValue, ...rest } = item as any;
+        return { ...rest, minVal: minValue ?? null, maxVal: maxValue ?? null, iqcId, sortOrder: item.sortOrder ?? idx };
+      }) as any
+    );
+  }
+  return iqcId;
+}
+
+export async function updateIqcInspection(id: number, data: {
+  reportMode?: string; inspectionDate?: string; inspectorId?: number; inspectorName?: string;
+  result?: string; sampleQty?: string; qualifiedQty?: string; remark?: string; attachments?: string; signatures?: string;
+  inspectionRequirementId?: number; supplierCode?: string;
+  items?: Array<{
+    requirementItemId?: number; itemName: string; itemType: string; standard?: string;
+    minValue?: string; maxValue?: string; unit?: string; measuredValue?: string; sampleValues?: string;
+    acceptedValues?: string; actualValue?: string; conclusion?: string; sortOrder?: number; remark?: string;
+  }>;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("数据库连接不可用");
+  await ensureIqcInspectionsTable(db);
+  const { items, ...iqcData } = data;
+  if (Object.keys(iqcData).length > 0) {
+    await db.update(iqcInspections).set(iqcData as any).where(eq(iqcInspections.id, id));
+  }
+  if (items !== undefined) {
+    await db.delete(iqcInspectionItems).where(eq(iqcInspectionItems.iqcId, id));
+    if (items.length > 0) {
+      await db.insert(iqcInspectionItems).values(
+        items.map((item, idx) => {
+          const { minValue, maxValue, ...rest } = item as any;
+          return { ...rest, minVal: minValue ?? null, maxVal: maxValue ?? null, iqcId: id, sortOrder: item.sortOrder ?? idx };
+        }) as any
+      );
+    }
+  }
+  // 检验完成后同步到货单状态
+  if (data.result && data.result !== "pending") {
+    const [iqc] = await db.select().from(iqcInspections).where(eq(iqcInspections.id, id));
+    if (iqc?.goodsReceiptId) {
+      const newStatus = data.result === "passed" ? "passed" : data.result === "conditional_pass" ? "passed" : "failed";
+      await db.update(goodsReceipts).set({ status: newStatus as any }).where(eq(goodsReceipts.id, iqc.goodsReceiptId));
+    }
+  }
+}
+
+export async function deleteIqcInspection(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("数据库连接不可用");
+  await ensureIqcInspectionsTable(db);
+  await db.delete(iqcInspectionItems).where(eq(iqcInspectionItems.iqcId, id));
+  await db.delete(iqcInspections).where(eq(iqcInspections.id, id));
 }

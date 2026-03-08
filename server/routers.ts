@@ -74,6 +74,8 @@ import {
   getUserEmailsByDepartment,
   getGoodsReceipts, getGoodsReceiptById, createGoodsReceipt, updateGoodsReceipt, deleteGoodsReceipt,
   ensureGoodsReceiptsTable,
+  getInspectionRequirements, getInspectionRequirementById, createInspectionRequirement, updateInspectionRequirement, deleteInspectionRequirement,
+  getIqcInspections, getIqcInspectionById, createIqcInspection, updateIqcInspection, deleteIqcInspection,
 } from "./db";
 import {
   notifySterilizationArrived,
@@ -4582,6 +4584,261 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await deleteGoodsReceipt(input.id);
         return { success: true };
+      }),
+  }),
+
+  // ==================== 检验要求 ====================
+  inspectionRequirements: router({
+    list: protectedProcedure
+      .input(z.object({
+        type: z.string().optional(),
+        search: z.string().optional(),
+        status: z.string().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await getInspectionRequirements(input ?? {});
+      }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getInspectionRequirementById(input.id);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        requirementNo: z.string(),
+        type: z.enum(["IQC", "IPQC", "OQC"]),
+        productCode: z.string().optional(),
+        productName: z.string(),
+        version: z.string().optional(),
+        status: z.string().optional(),
+        remark: z.string().optional(),
+        items: z.array(z.object({
+          itemName: z.string(),
+          itemType: z.enum(["qualitative", "quantitative"]),
+          standard: z.string().optional(),
+          minValue: z.string().optional(),
+          maxValue: z.string().optional(),
+          unit: z.string().optional(),
+          acceptedValues: z.string().optional(),
+          sortOrder: z.number().optional(),
+          remark: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await createInspectionRequirement({ ...input, createdBy: ctx.user?.id });
+        return { id };
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        requirementNo: z.string().optional(),
+        type: z.enum(["IQC", "IPQC", "OQC"]).optional(),
+        productCode: z.string().optional(),
+        productName: z.string().optional(),
+        version: z.string().optional(),
+        status: z.string().optional(),
+        remark: z.string().optional(),
+        items: z.array(z.object({
+          itemName: z.string(),
+          itemType: z.enum(["qualitative", "quantitative"]),
+          standard: z.string().optional(),
+          minValue: z.string().optional(),
+          maxValue: z.string().optional(),
+          unit: z.string().optional(),
+          acceptedValues: z.string().optional(),
+          sortOrder: z.number().optional(),
+          remark: z.string().optional(),
+        })).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateInspectionRequirement(id, data);
+        return { success: true };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteInspectionRequirement(input.id);
+        return { success: true };
+      }),
+  }),
+
+  // ==================== 来料检验单（IQC） ====================
+  iqcInspections: router({
+    list: protectedProcedure
+      .input(z.object({
+        result: z.string().optional(),
+        search: z.string().optional(),
+        goodsReceiptId: z.number().optional(),
+        limit: z.number().optional(),
+        offset: z.number().optional(),
+      }).optional())
+      .query(async ({ input }) => {
+        return await getIqcInspections(input ?? {});
+      }),
+    getById: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        return await getIqcInspectionById(input.id);
+      }),
+    create: protectedProcedure
+      .input(z.object({
+        inspectionNo: z.string(),
+        reportMode: z.enum(["online", "offline"]).optional(),
+        goodsReceiptId: z.number().optional(),
+        goodsReceiptNo: z.string().optional(),
+        goodsReceiptItemId: z.number().optional(),
+        productId: z.number().optional(),
+        productCode: z.string().optional(),
+        productName: z.string(),
+        specification: z.string().optional(),
+        supplierId: z.number().optional(),
+        supplierName: z.string().optional(),
+        supplierCode: z.string().optional(),
+        batchNo: z.string().optional(),
+        sterilizationBatchNo: z.string().optional(),
+        receivedQty: z.string().optional(),
+        sampleQty: z.string().optional(),
+        qualifiedQty: z.string().optional(),
+        unit: z.string().optional(),
+        inspectionRequirementId: z.number().optional(),
+        inspectionDate: z.string().optional(),
+        inspectorId: z.number().optional(),
+        inspectorName: z.string().optional(),
+        result: z.string().optional(),
+        remark: z.string().optional(),
+        attachments: z.string().optional(),
+        items: z.array(z.object({
+          requirementItemId: z.number().optional(),
+          itemName: z.string(),
+          itemType: z.enum(["qualitative", "quantitative"]),
+          standard: z.string().optional(),
+          minValue: z.string().optional(),
+          maxValue: z.string().optional(),
+          unit: z.string().optional(),
+          measuredValue: z.string().optional(),
+          sampleValues: z.string().optional(),
+          acceptedValues: z.string().optional(),
+          actualValue: z.string().optional(),
+          conclusion: z.enum(["pass", "fail", "pending"]).optional(),
+          sortOrder: z.number().optional(),
+          remark: z.string().optional(),
+        })),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const id = await createIqcInspection({ ...input, createdBy: ctx.user?.id });
+        return { id };
+      }),
+    update: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        reportMode: z.enum(["online", "offline"]).optional(),
+        inspectionDate: z.string().optional(),
+        inspectorId: z.number().optional(),
+        inspectorName: z.string().optional(),
+        result: z.string().optional(),
+        sampleQty: z.string().optional(),
+        qualifiedQty: z.string().optional(),
+        remark: z.string().optional(),
+        attachments: z.string().optional(),
+        signatures: z.string().optional(),
+        inspectionRequirementId: z.number().optional(),
+        supplierCode: z.string().optional(),
+        items: z.array(z.object({
+          requirementItemId: z.number().optional(),
+          itemName: z.string(),
+          itemType: z.enum(["qualitative", "quantitative"]),
+          standard: z.string().optional(),
+          minValue: z.string().optional(),
+          maxValue: z.string().optional(),
+          unit: z.string().optional(),
+          measuredValue: z.string().optional(),
+          sampleValues: z.string().optional(),
+          acceptedValues: z.string().optional(),
+          actualValue: z.string().optional(),
+          conclusion: z.enum(["pass", "fail", "pending"]).optional(),
+          sortOrder: z.number().optional(),
+          remark: z.string().optional(),
+        })).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateIqcInspection(id, data);
+        return { success: true };
+      }),
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await deleteIqcInspection(input.id);
+        return { success: true };
+      }),
+    uploadAttachments: protectedProcedure
+      .input(z.object({
+        inspectionNo: z.string(),
+        files: z.array(z.object({
+          name: z.string(),
+          mimeType: z.string().optional(),
+          base64: z.string(),
+        })).min(1),
+      }))
+      .mutation(async ({ input }) => {
+        const [department, folderName] = buildUploadFolderName("质量部", "来料检验").map(safeFileSegment);
+        const inspectionNo = safeFileSegment(input.inspectionNo || "IQC");
+        const saved: Array<{ fileName: string; filePath: string; mimeType: string }> = [];
+        for (let index = 0; index < input.files.length; index++) {
+          const file = input.files[index];
+          const extFromName = `.${String(file.name.split(".").pop() || "").toLowerCase()}`;
+          const ext = extFromName || (String(file.mimeType || "").includes("pdf") ? ".pdf" : String(file.mimeType || "").includes("image/") ? ".jpg" : "");
+          if (!ATTACHMENT_EXTENSIONS.includes(ext as any)) {
+            throw new Error(`不支持的文件格式: ${file.name}`);
+          }
+          const base64Body = String(file.base64 || "").replace(/^data:[^;]+;base64,/, "");
+          const fileBuffer = Buffer.from(base64Body, "base64");
+          const result = await saveAttachmentFile({
+            department,
+            businessFolder: folderName,
+            originalName: file.name,
+            desiredBaseName: `${inspectionNo}-${String(index + 1).padStart(2, "0")}`,
+            mimeType: file.mimeType,
+            buffer: fileBuffer,
+          });
+          saved.push({
+            fileName: file.name,
+            filePath: result.filePath,
+            mimeType: file.mimeType || "",
+          });
+        }
+        return saved;
+      }),
+    saveSignature: protectedProcedure
+      .input(z.object({
+        id: z.number(),
+        signature: z.object({
+          id: z.number(),
+          signatureType: z.enum(["inspector", "reviewer", "approver"]),
+          signatureAction: z.string(),
+          signerName: z.string(),
+          signerTitle: z.string().optional(),
+          signerDepartment: z.string().optional(),
+          signedAt: z.string(),
+          signatureMeaning: z.string(),
+          status: z.enum(["valid", "revoked"]),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) throw new Error("数据库连接不可用");
+        await ensureIqcInspectionsTable(db);
+        // 读取当前已有的签名列表
+        const [row] = await db.execute(sql`SELECT signatures FROM iqc_inspections WHERE id = ${input.id}`) as any;
+        const existing: any[] = (() => {
+          try { return JSON.parse(String((row as any)?.[0]?.signatures || "[]")) || []; } catch { return []; }
+        })();
+        const updated = [...existing, input.signature];
+        await db.execute(sql`UPDATE iqc_inspections SET signatures = ${JSON.stringify(updated)} WHERE id = ${input.id}`);
+        return { success: true, signatures: updated };
       }),
   }),
 });
