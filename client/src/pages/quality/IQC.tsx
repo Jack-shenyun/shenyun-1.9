@@ -220,6 +220,20 @@ export default function IQCPage() {
   // 当前 Tab
   const [activeTab, setActiveTab] = useState("items");
 
+  // 已检验的到货单明细ID集合（用于禁用已检验行）
+  const inspectedItemIds = useMemo(() => {
+    const ids = new Set<number>();
+    (iqcList as any[]).forEach((r: any) => {
+      if (r.goodsReceiptItemId && r.result !== 'pending') {
+        // 编辑时排除当前记录自身
+        if (!editId || r.id !== editId) {
+          ids.add(r.goodsReceiptItemId);
+        }
+      }
+    });
+    return ids;
+  }, [iqcList, editId]);
+
   const [lastAppliedReqId, setLastAppliedReqId] = useState<number | null>(null);
 
   // ==================== 查询 ====================
@@ -316,6 +330,20 @@ export default function IQCPage() {
       } catch { setSignatures([]); }
     }
   }, [editId, editData]);
+
+  // items变化时自动计算合格数量
+  useEffect(() => {
+    if (items.length === 0) return;
+    const allDone = items.every((it) => it.conclusion !== 'pending');
+    if (!allDone) return; // 还有未判定的项目，不自动计算
+    const allPass = items.every((it) => it.conclusion === 'pass');
+    const sampleQty = parseFloat(String(formData.sampleQty)) || 0;
+    const qualifiedQty = allPass ? sampleQty : 0;
+    setFormData((p) => ({
+      ...p,
+      qualifiedQty: qualifiedQty > 0 ? String(qualifiedQty) : '0',
+    }));
+  }, [items]);
 
   // 产品编码变化时自动匹配检验要求
   useEffect(() => {
@@ -516,6 +544,12 @@ export default function IQCPage() {
 
   async function handleSubmit(overrideResult?: string) {
     if (!formData.productName) { toast.error("请填写产品名称"); return; }
+    const receivedQtyNum = parseFloat(String(formData.receivedQty)) || 0;
+    const sampleQtyNum = parseFloat(String(formData.sampleQty)) || 0;
+    if (sampleQtyNum > 0 && receivedQtyNum > 0 && sampleQtyNum > receivedQtyNum) {
+      toast.error(`抄样数量（${sampleQtyNum}）不能超过到货数量（${receivedQtyNum}）`);
+      return;
+    }
     setSubmitting(true);
     try {
       let savedFilePaths: any[] = [];
@@ -1077,11 +1111,15 @@ export default function IQCPage() {
                 />
               </EditFieldRow>
               <EditFieldRow label="合格数量">
-                <Input
-                  value={formData.qualifiedQty}
-                  onChange={(e) => setFormData((p) => ({ ...p, qualifiedQty: e.target.value }))}
-                  placeholder="合格数量"
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={formData.qualifiedQty}
+                    readOnly
+                    className="bg-muted/50 cursor-not-allowed"
+                    placeholder="检验完成后自动计算"
+                  />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">自动计算</span>
+                </div>
               </EditFieldRow>
             </div>
 
@@ -1387,17 +1425,24 @@ export default function IQCPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(receipt.items ?? []).map((item: any) => (
-                        <TableRow key={item.id}>
-                          <TableCell>{item.materialName}</TableCell>
-                          <TableCell className="text-muted-foreground">{item.specification ?? "-"}</TableCell>
-                          <TableCell>{item.receivedQty} {item.unit}</TableCell>
-                          <TableCell>{item.batchNo ?? "-"}</TableCell>
-                          <TableCell>
-                            <Button size="sm" variant="outline" onClick={() => selectReceiptItem(receipt, item)}>选择</Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {(receipt.items ?? []).map((item: any) => {
+                        const alreadyInspected = inspectedItemIds.has(item.id);
+                        return (
+                          <TableRow key={item.id} className={alreadyInspected ? 'opacity-50' : ''}>
+                            <TableCell>{item.materialName}</TableCell>
+                            <TableCell className="text-muted-foreground">{item.specification ?? "-"}</TableCell>
+                            <TableCell>{item.receivedQty} {item.unit}</TableCell>
+                            <TableCell>{item.batchNo ?? "-"}</TableCell>
+                            <TableCell>
+                              {alreadyInspected ? (
+                                <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">已检验</span>
+                              ) : (
+                                <Button size="sm" variant="outline" onClick={() => selectReceiptItem(receipt, item)}>选择</Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
