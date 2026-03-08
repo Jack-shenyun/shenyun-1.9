@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/formatters";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import ERPLayout from "@/components/ERPLayout";
@@ -501,7 +502,7 @@ export default function UDIArchivePage() {
                   <FieldRow label="标签类型">{TEMPLATE_MAP[selectedItem.labelTemplate] ?? selectedItem.labelTemplate}</FieldRow>
                   <FieldRow label="打印数量">{selectedItem.printQty}</FieldRow>
                   <FieldRow label="已打印数量">{selectedItem.printedQty ?? 0}</FieldRow>
-                  <FieldRow label="打印时间">{selectedItem.printDate ? new Date(selectedItem.printDate).toLocaleString("zh-CN") : "-"}</FieldRow>
+                  <FieldRow label="打印时间">{selectedItem.printDate ? formatDateTime(selectedItem.printDate) : "-"}</FieldRow>
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold text-muted-foreground mb-2">NMPA上报</h3>
@@ -510,7 +511,7 @@ export default function UDIArchivePage() {
                       {selectedItem.nmpaSubmitted ? "已上报" : "未上报"}
                     </Badge>
                   </FieldRow>
-                  <FieldRow label="上报时间">{selectedItem.nmpaSubmitDate ? new Date(selectedItem.nmpaSubmitDate).toLocaleString("zh-CN") : "-"}</FieldRow>
+                  <FieldRow label="上报时间">{selectedItem.nmpaSubmitDate ? formatDateTime(selectedItem.nmpaSubmitDate) : "-"}</FieldRow>
                 </div>
                 {selectedItem.remark && (
                   <div>

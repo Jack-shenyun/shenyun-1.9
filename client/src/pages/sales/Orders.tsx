@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useState, useEffect, useMemo } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import ProductMultiSelect, { SelectedProduct } from "@/components/ProductMultiSelect";
@@ -1596,7 +1597,7 @@ export default function SalesOrdersPage() {
                             {item.action === "approve" ? "审批通过" : item.action === "reject" ? "驳回" : "提交审批"}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {item.createdAt ? new Date(item.createdAt).toLocaleString("zh-CN") : ""}
+                            {item.createdAt ? formatDateTime(item.createdAt) : ""}
                           </span>
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">审批人：{item.approver}</div>

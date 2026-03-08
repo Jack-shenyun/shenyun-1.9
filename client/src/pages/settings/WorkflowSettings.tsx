@@ -139,7 +139,12 @@ function normalizeUserToken(value: string) {
 function formatDate(raw: unknown) {
   const date = new Date(String(raw ?? ""));
   if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString("zh-CN");
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const h = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${day} ${h}:${min}`;
 }
 
 function parseStoredUserIds(raw: unknown, userIdMap: Map<string, UserOption>, userNameMap: Map<string, UserOption>) {

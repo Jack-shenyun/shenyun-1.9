@@ -476,7 +476,7 @@ export default function MaterialRequestsPage() {
                       <FieldRow label="预估总额">
                         {selected.totalAmount ? `¥${parseFloat(selected.totalAmount).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}` : "-"}
                       </FieldRow>
-                      <FieldRow label="创建时间">{new Date(selected.createdAt).toLocaleString("zh-CN")}</FieldRow>
+                      <FieldRow label="创建时间">{formatDateTime(selected.createdAt)}</FieldRow>
                     </div>
                   </div>
                 </div>

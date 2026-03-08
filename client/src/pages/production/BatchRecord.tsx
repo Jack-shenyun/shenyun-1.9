@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/formatters";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import ERPLayout from "@/components/ERPLayout";
@@ -427,7 +428,7 @@ function BatchRecordDetail({ batchNo, open, onClose }: { batchNo: string; open: 
                               <TableCell className="text-right text-muted-foreground text-xs">{tx.beforeQty ?? "-"}</TableCell>
                               <TableCell className="text-right text-xs">{tx.afterQty ?? "-"}</TableCell>
                               <TableCell className="text-xs text-muted-foreground">
-                                {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('zh-CN') : "-"}
+                                {tx.createdAt ? formatDate(tx.createdAt) : "-"}
                               </TableCell>
                             </TableRow>
                           );

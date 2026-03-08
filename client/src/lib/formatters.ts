@@ -7,29 +7,67 @@ export function toSafeNumber(value: unknown): number {
   return 0;
 }
 
-export function formatNumber(value: unknown, locale = "zh-CN"): string {
-  return toSafeNumber(value).toLocaleString(locale);
+export function formatNumber(value: unknown): string {
+  return toSafeNumber(value).toLocaleString("zh-CN");
 }
 
 export function safeLower(value: unknown): string {
   return String(value ?? "").toLowerCase();
 }
 
+/** 格式化为 YYYY-MM-DD */
+export function formatDate(date: Date | string | number | null | undefined): string {
+  if (date == null) return "-";
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "-";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** 格式化为 YYYY-MM-DD HH:mm */
+export function formatDateTime(date: Date | string | number | null | undefined): string {
+  if (date == null) return "-";
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "-";
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${day} ${h}:${min}`;
+}
+
+/** 格式化为 YYYY-MM-DD HH:mm:ss */
+export function formatDateTimeFull(date: Date | string | number | null | undefined): string {
+  if (date == null) return "-";
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return "-";
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  const sec = String(d.getSeconds()).padStart(2, "0");
+  return `${y}-${mo}-${day} ${h}:${min}:${sec}`;
+}
+
+/**
+ * 将日期值格式化为 YYYY-MM-DD 或 YYYY-MM-DD HH:mm 格式
+ * @param value  日期值（Date | string | number | null | undefined）
+ * @param includeTime  是否包含时间，默认 false
+ */
 export function formatDateValue(value: unknown, includeTime = false): string {
   if (value == null || value === "") return "-";
-
+  let date: Date;
   if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return "-";
-    return includeTime ? value.toLocaleString("zh-CN") : value.toLocaleDateString("zh-CN");
-  }
-
-  if (typeof value === "string" || typeof value === "number") {
-    const date = new Date(value);
-    if (!Number.isNaN(date.getTime())) {
-      return includeTime ? date.toLocaleString("zh-CN") : date.toLocaleDateString("zh-CN");
-    }
+    date = value;
+  } else if (typeof value === "string" || typeof value === "number") {
+    date = new Date(value);
+  } else {
     return String(value);
   }
-
-  return String(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return includeTime ? formatDateTime(date) : formatDate(date);
 }

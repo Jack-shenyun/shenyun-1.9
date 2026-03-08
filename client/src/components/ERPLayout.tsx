@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/formatters";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -632,7 +633,7 @@ function ERPLayoutContent({
                           </p>
                           <p className="mt-0.5 text-xs text-slate-400 truncate">
                             {item.applicantName ?? item.createdByName ?? ""}
-                            {item.createdAt ? ` · ${new Date(item.createdAt).toLocaleDateString("zh-CN")}` : ""}
+                            {item.createdAt ? ` · ${formatDate(item.createdAt)}` : ""}
                           </p>
                         </div>
                         <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-300" />

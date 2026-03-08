@@ -54,6 +54,18 @@ interface SignaturePanelProps {
 }
 
 // 签名含义映射
+// 格式化日期时间为 YYYY-MM-DD HH:mm
+function formatDateTime(date?: string | Date): string {
+  const d = date ? (date instanceof Date ? date : new Date(date)) : new Date();
+  if (isNaN(d.getTime())) return "-";
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${day} ${h}:${min}`;
+}
+
 const signatureMeaningMap = {
   inspector: {
     IQC: "本人确认已按照检验规程对来料进行检验，检验结果真实、准确、完整。",
@@ -132,7 +144,7 @@ export function SignaturePanel({
       };
 
       toast.success("电子签名成功", {
-        description: `${typeConfig.label}签名已完成，签名时间: ${new Date().toLocaleString()}`,
+        description: `${typeConfig.label}签名已完成，签名时间: ${formatDateTime()}`,
       });
 
       onSignComplete?.(newSignature);
@@ -182,7 +194,7 @@ export function SignaturePanel({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">签名时间</span>
-              <span className="text-sm">{new Date().toLocaleString()}</span>
+              <span className="text-sm">{formatDateTime()}</span>
             </div>
           </div>
 
@@ -315,7 +327,7 @@ export function SignatureHistory({
                 )}
                 <p className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  {new Date(sig.signedAt).toLocaleString()}
+                  {formatDateTime(sig.signedAt)}
                 </p>
               </div>
               <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2 italic">

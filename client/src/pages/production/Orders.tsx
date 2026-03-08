@@ -333,7 +333,7 @@ export default function ProductionOrdersPage() {
     <div style="text-align:right;">
       <div class="doc-title">生产指令</div>
       <div class="doc-no">指令单号：${record.orderNo}</div>
-      <div class="doc-no">打印时间：${new Date().toLocaleString('zh-CN')}</div>
+      <div class="doc-no">打印时间：${(() => { const d = new Date(); const y = d.getFullYear(); const mo = String(d.getMonth()+1).padStart(2,'0'); const day = String(d.getDate()).padStart(2,'0'); const h = String(d.getHours()).padStart(2,'0'); const min = String(d.getMinutes()).padStart(2,'0'); return `${y}-${mo}-${day} ${h}:${min}`; })()}</div>
     </div>
   </div>
 

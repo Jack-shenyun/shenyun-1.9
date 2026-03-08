@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import ERPLayout from "@/components/ERPLayout";
@@ -463,7 +464,7 @@ function MrpDetailDialog({ result, onClose }: { result: MrpResult; onClose: () =
             <div>
               <p className="text-muted-foreground text-xs">运算时间</p>
               <p className="font-medium text-xs">
-                {new Date(result.calculatedAt).toLocaleString("zh-CN")}
+                {formatDateTime(result.calculatedAt)}
               </p>
             </div>
           </div>

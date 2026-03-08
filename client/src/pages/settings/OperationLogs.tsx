@@ -120,14 +120,14 @@ const getResultBadge = (result: string) => {
 // 格式化日期时间
 const formatDateTime = (date: string | Date): string => {
   const d = typeof date === "string" ? new Date(date) : date;
-  return d.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  if (isNaN(d.getTime())) return "-";
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  const sec = String(d.getSeconds()).padStart(2, "0");
+  return `${y}-${mo}-${day} ${h}:${min}:${sec}`;
 };
 
 export default function OperationLogsPage() {

@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -453,7 +454,7 @@ export default function Dashboard() {
                           </p>
                           <p className="mt-0.5 text-xs text-slate-400 truncate">
                             {item.applicantName ?? item.createdByName ?? ""}
-                            {item.createdAt ? ` · ${new Date(item.createdAt).toLocaleDateString("zh-CN")}` : ""}
+                            {item.createdAt ? ` · ${formatDate(item.createdAt)}` : ""}
                           </p>
                         </div>
                         <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-300" />
@@ -605,7 +606,7 @@ export default function Dashboard() {
                     {item.parentLabel ? `${item.parentLabel} · ${item.label}` : item.label}
                   </p>
                   <p className="mt-1 text-xs text-slate-400">
-                    {new Date(item.visitedAt).toLocaleString("zh-CN")}
+                    {formatDateTime(item.visitedAt)}
                   </p>
                 </button>
               ))}

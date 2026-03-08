@@ -1,6 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { LOCAL_AUTH_USER_KEY } from "@/const";
-import { formatDateValue } from "@/lib/formatters";
+import { formatDateValue, formatDateTime } from "@/lib/formatters";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useMemo, useState } from "react";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -140,8 +140,8 @@ export default function UsersPage() {
     visibleApps: parseVisibleAppIds(u.visibleApps),
     avatarUrl: u.avatarUrl || null,
     status: "active" as const,
-    lastLogin: u.lastSignedIn ? new Date(u.lastSignedIn).toLocaleString("zh-CN") : "-",
-    createdAt: u.createdAt ? new Date(u.createdAt).toLocaleDateString("zh-CN") : "-",
+    lastLogin: u.lastSignedIn ? formatDateTime(u.lastSignedIn) : "-",
+    createdAt: u.createdAt ? formatDate(u.createdAt) : "-",
   }));
 
   const [searchTerm, setSearchTerm] = useState("");

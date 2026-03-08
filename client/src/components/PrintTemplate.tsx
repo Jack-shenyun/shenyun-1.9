@@ -211,6 +211,17 @@ export function PrintTable({
   );
 }
 
+// 格式化当前时间为 YYYY-MM-DD HH:mm
+function formatDateTime(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${day} ${h}:${min}`;
+}
+
 export function PrintFooter({
   signatures = ['制单人', '审核人', '批准人'],
   notes,
@@ -235,7 +246,7 @@ export function PrintFooter({
         ))}
       </div>
       <div className="text-center text-xs text-gray-500 mt-8">
-        打印时间：{new Date().toLocaleString('zh-CN')}
+        打印时间：{formatDateTime()}
       </div>
     </div>
   );

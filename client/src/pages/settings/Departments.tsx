@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/formatters";
 import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
@@ -565,7 +566,7 @@ export default function DepartmentsPage() {
             <div>
               <FieldRow label="部门名称">{viewingDept.name}</FieldRow>
               <FieldRow label="负责人">{viewingDept.managerName}</FieldRow>
-              <FieldRow label="创建时间">{new Date(viewingDept.createdAt).toLocaleDateString("zh-CN")}</FieldRow>
+              <FieldRow label="创建时间">{formatDate(viewingDept.createdAt)}</FieldRow>
             </div>
             <div>
               <FieldRow label="部门编码">{viewingDept.code}</FieldRow>

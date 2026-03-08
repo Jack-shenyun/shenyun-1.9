@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/formatters";
 import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog } from "./DraggableDialog";
@@ -99,7 +100,7 @@ export function CustomerDetailDialog({ open, onOpenChange, customer, onEdit }: C
   if (!customer) return null;
 
   const formatDate = (date: Date | string) =>
-    new Date(date).toLocaleDateString("zh-CN");
+    formatDate(date);
 
   const getCurrencySymbol = (currency?: string) => {
     switch (String(currency || "CNY").toUpperCase()) {

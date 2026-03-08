@@ -1,4 +1,4 @@
-import { formatDateValue } from "@/lib/formatters";
+import { formatDateValue, formatDate } from "@/lib/formatters";
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -218,7 +218,7 @@ export default function CustomsPage() {
 
   // Issue 9: 生成报关单据（委托书、装箱单、商业发票）
   const handleGenerateDocument = (record: CustomsRecord, docType: "委托书" | "装箱单" | "商业发票") => {
-    const formatDate = (d: string) => d ? new Date(d).toLocaleDateString("zh-CN") : new Date().toLocaleDateString("zh-CN");
+    const fmtDate = (d: string) => formatDate(d || new Date());
     let content = "";
     const symbols: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥" };
     const currSymbol = symbols[record.currency] || record.currency;
@@ -228,7 +228,7 @@ export default function CustomsPage() {
         "报关委托书",
         "=".repeat(40),
         `委托编号: ${record.declarationNo}`,
-        `委托日期: ${formatDate(record.declarationDate)}`,
+        `委托日期: ${fmtDate(record.declarationDate)}`,
         "",
         "一、委托方信息",
         `公司名称: 神韵医疗科技有限公司`,
@@ -256,7 +256,7 @@ export default function CustomsPage() {
         "PACKING LIST (装箱单)",
         "=".repeat(40),
         `单据编号: PL-${record.declarationNo}`,
-        `日    期: ${formatDate(record.declarationDate)}`,
+        `日    期: ${fmtDate(record.declarationDate)}`,
         "",
         `发货人: 神韵医疗科技有限公司`,
         `收货人: ${record.customerName}`,
@@ -277,7 +277,7 @@ export default function CustomsPage() {
         "COMMERCIAL INVOICE (商业发票)",
         "=".repeat(40),
         `发票编号: INV-${record.declarationNo}`,
-        `日    期: ${formatDate(record.declarationDate)}`,
+        `日    期: ${fmtDate(record.declarationDate)}`,
         "",
         `卖方: 神韵医疗科技有限公司`,
         `买方: ${record.customerName}`,

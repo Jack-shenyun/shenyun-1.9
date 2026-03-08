@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/formatters";
 import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
@@ -574,7 +575,7 @@ export default function PurchaseOrdersPage() {
                 <FieldRow label="下单日期">{selectedRecord.orderDate ? String(selectedRecord.orderDate).split("T")[0] : "-"}</FieldRow>
                 <FieldRow label="交货日期">{selectedRecord.expectedDate ? String(selectedRecord.expectedDate).split("T")[0] : "-"}</FieldRow>
                 <FieldRow label="货币">{selectedRecord.currency || "CNY"}</FieldRow>
-                <FieldRow label="创建时间">{new Date(selectedRecord.createdAt).toLocaleString()}</FieldRow>
+                <FieldRow label="创建时间">{formatDateTime(selectedRecord.createdAt)}</FieldRow>
               </div>
             </div>
           </div>

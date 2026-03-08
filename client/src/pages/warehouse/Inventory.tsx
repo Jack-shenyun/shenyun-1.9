@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/formatters";
 import { useState, useMemo } from "react";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -931,7 +932,7 @@ function InventoryDetailContent({
                     return (
                       <TableRow key={tx.id} className="hover:bg-muted/30">
                         <TableCell className="text-center text-xs text-muted-foreground">
-                          {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit", year: "2-digit" }) : "-"}
+                          {tx.createdAt ? formatDate(new Date(tx.createdAt)) : "-"}
                         </TableCell>
                         <TableCell className="text-center">
                           <Badge variant="outline" className={`text-xs ${txInfo.color}`}>

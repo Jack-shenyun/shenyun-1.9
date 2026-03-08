@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useState } from "react";
 import ModulePage, { Column } from "@/components/ModulePage";
 import FormDialog, { FormField, DetailDialog, DetailField } from "@/components/FormDialog";
@@ -177,7 +178,7 @@ export default function InboundPage() {
       key: "createdAt",
       title: "入库时间",
       width: "130px",
-      render: (v: string) => v ? new Date(v).toLocaleDateString("zh-CN") : "-",
+      render: (v: string) => v ? formatDate(v) : "-",
     },
   ];
 
@@ -262,7 +263,7 @@ export default function InboundPage() {
     { label: "目标仓库", value: getWarehouseName(record.warehouseId) },
     {
       label: "入库时间",
-      value: record.createdAt ? new Date(record.createdAt).toLocaleString("zh-CN") : "-",
+      value: record.createdAt ? formatDateTime(record.createdAt) : "-",
     },
     { label: "备注", value: record.remark || "-", span: 2 },
   ];

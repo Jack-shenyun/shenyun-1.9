@@ -20,6 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { formatDate } from "@/lib/formatters";
 
 export interface DraftItem {
   id: number | string;
@@ -61,7 +62,7 @@ function formatTime(date?: string | Date): string {
   if (minutes < 60) return `${minutes}分钟前`;
   if (hours < 24) return `${hours}小时前`;
   if (days < 7) return `${days}天前`;
-  return d.toLocaleDateString("zh-CN");
+  return formatDate(d);
 }
 
 export default function DraftDrawer({

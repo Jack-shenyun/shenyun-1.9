@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/formatters";
 import { useState, useEffect } from "react";
 import ModulePage, { Column, StatusBadge } from "@/components/ModulePage";
 import FormDialog, { FormField, DetailDialog, DetailField } from "@/components/FormDialog";
@@ -111,7 +112,7 @@ const columns: Column<Document>[] = [
     key: "effectiveDate", 
     title: "生效日期", 
     width: "120px",
-    render: (value) => value ? new Date(value as string).toLocaleDateString() : "-"
+    render: (value) => value ? formatDate(value as string) : "-"
   },
 ];
 
@@ -176,7 +177,7 @@ export default function DocumentsPage() {
     { label: "版本号", value: record.version || "-" },
     { label: "归属部门", value: record.department || "-" },
     { label: "状态", value: <StatusBadge status={record.status} statusMap={statusMap} /> },
-    { label: "生效日期", value: record.effectiveDate ? new Date(record.effectiveDate).toLocaleDateString() : "-" },
+    { label: "生效日期", value: record.effectiveDate ? formatDate(record.effectiveDate) : "-" },
     { label: "文件描述", value: record.description || "-", span: 2 },
   ];
 
