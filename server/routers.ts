@@ -4964,12 +4964,12 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const { OpenAI } = await import("openai");
-        const arkKey = process.env.ARK_API_KEY || process.env.DOUBAO_API_KEY || "1843f480-20a6-48d2-a9a5-8a4a188a3f32";
+        const zhipuKey = process.env.ZHIPU_API_KEY || "b2427e1eaec24e1dbfc6b08c82e6d693.zc0XAEJ1g7iStgYY";
         const client = new OpenAI({
-          apiKey: arkKey,
-          baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+          apiKey: zhipuKey,
+          baseURL: "https://open.bigmodel.cn/api/paas/v4",
         });
-        const model = "doubao-1.5-pro-32k-250115";
+        const model = "glm-4-flash";
         let systemPrompt = "";
         let userPrompt = "";
         if (input.mode === "generate") {

@@ -436,20 +436,10 @@ export async function sendMail(params: {
 // ==================== AI 客户端工厂 ====================
 
 /**
- * 优先使用豆包（ARK），其次智谱（ZHIPU）
- * 两者均兼容 OpenAI SDK，只需切换 baseURL 和 apiKey
+ * 使用智谱 GLM-4-Flash（免费且已激活）
+ * 兼容 OpenAI SDK
  */
 function getAiClient(): { client: OpenAI; model: string } {
-  const arkKey = process.env.ARK_API_KEY || process.env.DOUBAO_API_KEY || "1843f480-20a6-48d2-a9a5-8a4a188a3f32";
-  if (arkKey) {
-    return {
-      client: new OpenAI({
-        apiKey: arkKey,
-        baseURL: "https://ark.cn-beijing.volces.com/api/v3",
-      }),
-      model: "doubao-1.5-pro-32k-250115",
-    };
-  }
   const zhipuKey = process.env.ZHIPU_API_KEY || "b2427e1eaec24e1dbfc6b08c82e6d693.zc0XAEJ1g7iStgYY";
   return {
     client: new OpenAI({
