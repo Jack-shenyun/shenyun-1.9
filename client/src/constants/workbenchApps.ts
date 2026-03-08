@@ -38,8 +38,8 @@ export const WORKBENCH_APP_ENTRIES: readonly WorkbenchAppEntry[] = [
   { id: "finance", menuId: "finance", label: "财务部", path: "/finance/receivable", icon: Calculator, color: "from-lime-500 to-green-700" },
   { id: "settings", menuId: "settings", label: "系统设置", path: "/settings/users", icon: Settings, color: "from-gray-500 to-zinc-700" },
   { id: "mail-collaboration", menuId: "common", label: "邮件协同", path: "/mail", icon: Mail, color: "from-blue-500 to-cyan-600" },
-  { id: "website-management", menuId: "common", label: "网站管理", path: "", icon: Globe, color: "from-indigo-500 to-blue-700" },
-  { id: "lead-marketing", menuId: "common", label: "获客营销", path: "", icon: Megaphone, color: "from-pink-500 to-rose-600" },
+  { id: "website-management", menuId: "common", label: "网站管理", path: "/website", icon: Globe, color: "from-indigo-500 to-blue-700" },
+  { id: "lead-marketing", menuId: "common", label: "获客营销", path: "/leads/overseas", icon: Megaphone, color: "from-pink-500 to-rose-600" },
 ] as const;
 
 export const WORKBENCH_APP_OPTIONS = WORKBENCH_APP_ENTRIES.map((item) => ({

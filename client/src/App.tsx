@@ -103,6 +103,9 @@ import WhatsAppPage from "./pages/whatsapp/WhatsAppPage";
 import DomesticLeadsPage from "./pages/leads/DomesticLeadsPage";
 import OverseasLeadsPage from "./pages/leads/OverseasLeadsPage";
 
+// 网站管理模块
+import WebsiteManagePage from "./pages/website/WebsiteManagePage";
+
 // 系统设置模块
 import DepartmentsPage from "./pages/settings/Departments";
 import CompanyInfoPage from "./pages/settings/Company";
@@ -219,6 +222,9 @@ function Router() {
       {/* 获客营销 */}
       <Route path="/leads/domestic" component={DomesticLeadsPage} />
       <Route path="/leads/overseas" component={OverseasLeadsPage} />
+
+      {/* 网站管理模块 */}
+      <Route path="/website" component={WebsiteManagePage} />
 
       {/* 系统设置 */}
       <Route path="/settings/company" component={CompanyInfoPage} />

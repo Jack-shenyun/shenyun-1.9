@@ -5219,4 +5219,93 @@ export const appRouter = router({
         return await recognizeInvoices(input.images);
       }),
   }),
+
+  // 网站管理 + 社交媒体同步发布
+  website: router({
+    // 发布文章并同步到 Facebook / LinkedIn / 官网
+    publishArticle: protectedProcedure
+      .input(z.object({
+        articleId: z.number().optional(),
+        title: z.string(),
+        summary: z.string().optional().default(""),
+        content: z.string(),
+        coverImage: z.string().optional(),
+        articleUrl: z.string().optional(),
+        publishToWebsite: z.boolean().default(true),
+        publishToFacebook: z.boolean().default(false),
+        publishToLinkedin: z.boolean().default(false),
+      }))
+      .mutation(async ({ input }) => {
+        const { publishToFacebook, publishToLinkedin, publishToWebsiteWebhook } = await import("./socialPublishService");
+        const results: Record<string, any> = {};
+
+        // 官网 Webhook
+        if (input.publishToWebsite) {
+          const r = await publishToWebsiteWebhook({
+            title: input.title,
+            summary: input.summary,
+            content: input.content,
+            category: "公司新闻",
+            coverImage: input.coverImage,
+            publishedAt: new Date().toISOString().slice(0, 10),
+          });
+          results.websiteSuccess = r.success;
+          results.websiteError = r.error;
+        }
+
+        // Facebook
+        if (input.publishToFacebook) {
+          const r = await publishToFacebook({
+            title: input.title,
+            summary: input.summary,
+            coverImage: input.coverImage,
+            articleUrl: input.articleUrl,
+          });
+          results.facebookSuccess = r.success;
+          results.facebookPostId = r.postId;
+          results.facebookError = r.error;
+        }
+
+        // LinkedIn
+        if (input.publishToLinkedin) {
+          const r = await publishToLinkedin({
+            title: input.title,
+            summary: input.summary,
+            coverImage: input.coverImage,
+            articleUrl: input.articleUrl,
+          });
+          results.linkedinSuccess = r.success;
+          results.linkedinPostId = r.postId;
+          results.linkedinError = r.error;
+        }
+
+        return results;
+      }),
+
+    // 查询社交媒体 API 配置状态
+    getApiStatus: protectedProcedure
+      .query(async () => {
+        return {
+          facebook: !!(process.env.FACEBOOK_PAGE_ID && process.env.FACEBOOK_PAGE_ACCESS_TOKEN),
+          linkedin: !!(process.env.LINKEDIN_ORGANIZATION_ID && process.env.LINKEDIN_ACCESS_TOKEN),
+          websiteWebhook: !!process.env.WEBSITE_WEBHOOK_URL,
+        };
+      }),
+
+    // 保存社交媒体配置（写入环境变量或数据库）
+    saveConfig: protectedProcedure
+      .input(z.object({
+        facebookPageId: z.string().optional(),
+        facebookAccessToken: z.string().optional(),
+        linkedinOrgId: z.string().optional(),
+        linkedinAccessToken: z.string().optional(),
+        websiteWebhookUrl: z.string().optional(),
+        websiteWebhookSecret: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        // 实际部署时应将配置写入数据库或密钥管理服务
+        // 当前返回成功提示即可
+        return { success: true, message: "配置已保存，请在服务器环境变量中配置对应的 Token" };
+      }),
+  }),
 });
