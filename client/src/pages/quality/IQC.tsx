@@ -13,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -317,6 +316,20 @@ export default function IQCPage() {
       } catch { setSignatures([]); }
     }
   }, [editId, editData]);
+
+  // 产品编码变化时自动匹配检验要求
+  useEffect(() => {
+    if (!formData.productCode || editId) return; // 编辑模式不自动覆盖
+    const matched = (reqList as any[]).find(
+      (r: any) => r.productCode && r.productCode === formData.productCode
+    ) ?? (reqList as any[]).find(
+      (r: any) => r.productName && formData.productName && r.productName === formData.productName
+    );
+    if (matched && matched.id !== formData.inspectionRequirementId) {
+      setFormData((p) => ({ ...p, inspectionRequirementId: matched.id }));
+      setLastAppliedReqId(null); // 重置，允许重新带入检验项
+    }
+  }, [formData.productCode, formData.productName, reqList, editId]);
 
   // 选择检验要求时带入检验项
   useEffect(() => {
@@ -1093,22 +1106,18 @@ export default function IQCPage() {
               <TabsContent value="items" className="mt-4">
                 {formData.reportMode === "online" && (
                   <div className="space-y-4">
-                    {/* 检验要求选择 */}
+                    {/* 检验要求自动关联提示 + 添加项目按钮 */}
                     <div className="flex items-center gap-3">
-                      <Label className="text-sm text-muted-foreground shrink-0">检验要求</Label>
-                      <Select
-                        value={formData.inspectionRequirementId ? String(formData.inspectionRequirementId) : ""}
-                        onValueChange={(v) => setFormData((p) => ({ ...p, inspectionRequirementId: v ? Number(v) : null }))}
-                      >
-                        <SelectTrigger className="max-w-md">
-                          <SelectValue placeholder="选择检验要求（自动带入检验项目）" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(reqList as any[]).map((r: any) => (
-                            <SelectItem key={r.id} value={String(r.id)}>{r.requirementNo} - {r.productName}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {formData.inspectionRequirementId ? (
+                        <div className="flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-2.5 py-1">
+                          <Check className="w-3 h-3" />
+                          已自动关联检验要求：{(reqList as any[]).find((r: any) => r.id === formData.inspectionRequirementId)?.requirementNo ?? ""}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground">
+                          选择产品后将自动关联检验要求
+                        </div>
+                      )}
                       <Button type="button" variant="outline" size="sm" onClick={() => setItems([...items, emptyItem()])}>
                         <Plus className="w-3 h-3 mr-1" />添加项目
                       </Button>
@@ -1117,7 +1126,7 @@ export default function IQCPage() {
                     {/* 检验项目表格 */}
                     {items.length === 0 ? (
                       <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
-                        请先选择检验要求，或手动添加检验项目
+                        选择产品后将自动关联检验要求并带入检验项目，也可点击“添加项目”手动添加
                       </div>
                     ) : (
                       <Table>
