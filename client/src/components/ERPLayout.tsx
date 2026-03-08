@@ -1,4 +1,4 @@
-import { formatDate } from "@/lib/formatters";
+import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -125,7 +125,6 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
-import { formatDate, formatDateTime } from "@/lib/formatters";
 
 // 菜单配置 - 九大部门模块
 const menuConfig = [
