@@ -17,6 +17,9 @@ import {
   CheckCircle2,
   FileText,
   ArrowRight,
+  MapPin,
+  Globe,
+  MessageCircle,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -386,6 +389,35 @@ export default function Dashboard() {
 
         {/* 右侧操作区 */}
         <div className="flex items-center gap-2">
+          {/* 国内获客入口 */}
+          <button
+            type="button"
+            onClick={() => navigate("/leads/domestic")}
+            title="国内获客"
+            className="relative flex h-8 items-center justify-center gap-1.5 rounded-full px-2 transition-colors hover:bg-white/30 text-slate-600 hover:text-green-700"
+          >
+            <MapPin className="h-4 w-4" />
+            <span className="text-xs font-medium hidden lg:block">国内获客</span>
+          </button>
+          {/* 海外获客入口 */}
+          <button
+            type="button"
+            onClick={() => navigate("/leads/overseas")}
+            title="海外获客"
+            className="relative flex h-8 items-center justify-center gap-1.5 rounded-full px-2 transition-colors hover:bg-white/30 text-slate-600 hover:text-blue-700"
+          >
+            <Globe className="h-4 w-4" />
+            <span className="text-xs font-medium hidden lg:block">海外获客</span>
+          </button>
+          {/* WhatsApp 工作台入口 */}
+          <button
+            type="button"
+            onClick={() => navigate("/whatsapp")}
+            title="WhatsApp 工作台"
+            className="relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-white/30 text-slate-600 hover:text-[#25D366]"
+          >
+            <MessageCircle className="h-4 w-4" />
+          </button>
           {/* 待办铃铛 - Odoo 风格下拉面板 */}
           <Popover>
             <PopoverTrigger asChild>
