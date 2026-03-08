@@ -20,6 +20,7 @@ import {
   MapPin,
   Globe,
   MessageCircle,
+  MoreHorizontal,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -371,53 +372,77 @@ export default function Dashboard() {
         background: "#ffffff",
       }}
     >
-      {/* Odoo 风格顶部导航栏 */}
+      {/* 顶部导航栏 */}
       <header
-        className="sticky top-0 z-50 flex h-12 items-center justify-between px-4 md:px-6"
+        className="sticky top-0 z-50 flex h-12 items-center justify-between px-3 md:px-6"
         style={{
-          background: "rgba(255,255,255,0.15)",
+          background: "rgba(255,255,255,0.92)",
           backdropFilter: "blur(12px)",
-          borderBottom: "1px solid rgba(255,255,255,0.2)",
+          borderBottom: "1px solid rgba(0,0,0,0.06)",
         }}
       >
         {/* 左侧 Logo */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
           <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
-          <span className="text-xs text-slate-400 hidden md:block">公司管理系统</span>
         </div>
 
         {/* 右侧操作区 */}
-        <div className="flex items-center gap-2">
-          {/* 国内获客入口 */}
-          <button
-            type="button"
-            onClick={() => navigate("/leads/domestic")}
-            title="国内获客"
-            className="relative flex h-8 items-center justify-center gap-1.5 rounded-full px-2 transition-colors hover:bg-white/30 text-slate-600 hover:text-green-700"
-          >
-            <MapPin className="h-4 w-4" />
-            <span className="text-xs font-medium hidden lg:block">国内获客</span>
-          </button>
-          {/* 海外获客入口 */}
-          <button
-            type="button"
-            onClick={() => navigate("/leads/overseas")}
-            title="海外获客"
-            className="relative flex h-8 items-center justify-center gap-1.5 rounded-full px-2 transition-colors hover:bg-white/30 text-slate-600 hover:text-blue-700"
-          >
-            <Globe className="h-4 w-4" />
-            <span className="text-xs font-medium hidden lg:block">海外获客</span>
-          </button>
-          {/* WhatsApp 工作台入口 */}
-          <button
-            type="button"
-            onClick={() => navigate("/whatsapp")}
-            title="WhatsApp 工作台"
-            className="relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-white/30 text-slate-600 hover:text-[#25D366]"
-          >
-            <MessageCircle className="h-4 w-4" />
-          </button>
+        <div className="flex items-center gap-1">
+          {/* 国内获客 + 海外获客 + WhatsApp：手机端折叠到更多菜单 */}
+          <div className="hidden sm:flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => navigate("/leads/domestic")}
+              title="国内获客"
+              className="flex h-8 items-center justify-center gap-1 rounded-full px-2 transition-colors hover:bg-slate-100 text-slate-600 hover:text-green-700"
+            >
+              <MapPin className="h-4 w-4" />
+              <span className="text-xs font-medium hidden lg:block">国内获客</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/leads/overseas")}
+              title="海外获客"
+              className="flex h-8 items-center justify-center gap-1 rounded-full px-2 transition-colors hover:bg-slate-100 text-slate-600 hover:text-blue-700"
+            >
+              <Globe className="h-4 w-4" />
+              <span className="text-xs font-medium hidden lg:block">海外获客</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/whatsapp")}
+              title="WhatsApp"
+              className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-slate-100 text-slate-600 hover:text-[#25D366]"
+            >
+              <MessageCircle className="h-4 w-4" />
+            </button>
+          </div>
+          {/* 手机端：更多菜单（折叠国内获客/海外获客/WhatsApp） */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex sm:hidden h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-slate-100 text-slate-600"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44 rounded-xl shadow-xl border-0 p-1">
+              <DropdownMenuItem onClick={() => navigate("/leads/domestic")} className="rounded-lg text-sm cursor-pointer gap-2">
+                <MapPin className="h-4 w-4 text-green-600" />
+                国内获客
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/leads/overseas")} className="rounded-lg text-sm cursor-pointer gap-2">
+                <Globe className="h-4 w-4 text-blue-600" />
+                海外获客
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate("/whatsapp")} className="rounded-lg text-sm cursor-pointer gap-2">
+                <MessageCircle className="h-4 w-4 text-green-500" />
+                WhatsApp
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {/* 待办铃铛 - Odoo 风格下拉面板 */}
           <Popover>
             <PopoverTrigger asChild>
@@ -559,23 +584,23 @@ export default function Dashboard() {
       </header>
 
       {/* 主内容区 */}
-      <main className="mx-auto max-w-5xl px-4 py-10 md:px-8 md:py-14">
+      <main className="mx-auto max-w-5xl px-3 py-5 md:px-8 md:py-10">
         {/* 搜索框 */}
-        <div className="mb-10 flex justify-center">
+        <div className="mb-5 md:mb-8 flex justify-center">
           <div className="relative w-full max-w-md">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               value={appSearch}
               onChange={(e) => setAppSearch(e.target.value)}
               placeholder="搜索应用..."
-              className="h-11 rounded-full border-0 bg-white/70 pl-11 pr-4 text-sm shadow-md backdrop-blur-sm focus:bg-white/90 focus:shadow-lg transition-all placeholder:text-slate-400"
-              style={{ boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}
+              className="h-10 rounded-full border-0 bg-white/80 pl-11 pr-4 text-sm shadow-md backdrop-blur-sm focus:bg-white focus:shadow-lg transition-all placeholder:text-slate-400"
+              style={{ boxShadow: "0 2px 12px rgba(0,0,0,0.08)" }}
             />
           </div>
         </div>
 
-        {/* 应用网格 */}
-        <div className="grid grid-cols-4 gap-6 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7">
+        {/* 应用网格 - 手机4列，平板5列，桌面7列 */}
+        <div className="grid grid-cols-4 gap-x-2 gap-y-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-7 sm:gap-4 md:gap-6">
           {filteredApps.map((item) => {
             const IconComponent = APP_ICONS[item.id];
             return (
@@ -583,13 +608,10 @@ export default function Dashboard() {
                 key={item.id}
                 type="button"
                 onClick={() => handleAppClick(item)}
-                className="group flex flex-col items-center gap-2.5 rounded-2xl p-3 transition-all duration-200 hover:bg-white/20 active:scale-95"
+                className="group flex flex-col items-center gap-1.5 rounded-2xl p-1.5 sm:p-2.5 transition-all duration-200 hover:bg-white/30 active:scale-95"
               >
-                {/* 图标卡片 */}
-                <div
-                  className="relative overflow-hidden rounded-2xl shadow-md transition-all duration-200 group-hover:-translate-y-1 group-hover:shadow-xl"
-                  style={{ width: 72, height: 72 }}
-                >
+                {/* 图标卡片 - 使用 aspect-square 自适应宽度 */}
+                <div className="relative w-full aspect-square overflow-hidden rounded-2xl shadow-md transition-all duration-200 group-hover:-translate-y-0.5 group-hover:shadow-xl">
                   {IconComponent ? (
                     <IconComponent className="w-full h-full" />
                   ) : (
@@ -604,7 +626,7 @@ export default function Dashboard() {
                   />
                 </div>
                 {/* 标签 */}
-                <span className="text-[12px] font-medium text-slate-700 text-center leading-tight max-w-[80px] truncate">
+                <span className="text-[11px] sm:text-[12px] font-medium text-slate-700 text-center leading-tight w-full truncate">
                   {item.label}
                 </span>
               </button>
@@ -621,18 +643,18 @@ export default function Dashboard() {
 
         {/* 最近使用 */}
         {recentVisits.length > 0 && (
-          <div className="mt-14">
-            <div className="flex items-center gap-2 mb-4">
+          <div className="mt-8 md:mt-12">
+            <div className="flex items-center gap-2 mb-3">
               <Clock className="h-4 w-4 text-slate-400" />
               <span className="text-sm font-medium text-slate-500">最近使用</span>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
               {recentVisits.map((item) => (
                 <button
                   key={item.path}
                   type="button"
                   onClick={() => navigate(item.path)}
-                  className="group flex flex-col items-start rounded-2xl bg-white/60 px-4 py-3 text-left shadow-sm backdrop-blur-sm transition-all hover:bg-white/90 hover:-translate-y-0.5 hover:shadow-md"
+                  className="group flex flex-col items-start rounded-xl bg-white/70 px-3 py-2.5 text-left shadow-sm backdrop-blur-sm transition-all hover:bg-white/90 hover:-translate-y-0.5 hover:shadow-md"
                 >
                   <p className="text-sm font-medium text-slate-800 truncate w-full">
                     {item.parentLabel ? `${item.parentLabel} · ${item.label}` : item.label}

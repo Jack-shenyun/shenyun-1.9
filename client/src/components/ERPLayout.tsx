@@ -118,6 +118,7 @@ import {
   FileCheck,
   DollarSign,
   MessageCircle,
+  MoreHorizontal,
 } from "lucide-react";
 import {
   Popover,
@@ -568,73 +569,103 @@ function ERPLayoutContent({
 
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden">
-      {/* 全宽顶部导航栏 - 与首页完全一致 */}
+      {/* 全宽顶部导航栏 */}
       <header
-        className="flex-none w-full z-50 flex h-14 items-center justify-between px-4 md:px-6"
+        className="flex-none w-full z-50 flex h-12 items-center justify-between px-3 md:px-6"
         style={{
           background: "rgba(255,255,255,0.95)",
           backdropFilter: "blur(12px)",
           borderBottom: "1px solid rgba(0,0,0,0.08)",
         }}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {isMobile && (
-            <SidebarTrigger className="h-9 w-9 rounded-lg bg-background mr-1" />
+            <SidebarTrigger className="h-8 w-8 rounded-lg bg-background" />
           )}
-          <div className="flex items-center gap-3">
-            <img src={shenyunLogo} alt="SHENYUN" className="h-8 w-auto object-contain" />
-            <span className="text-base font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
-            <span className="text-sm text-slate-400 hidden md:block">公司管理系统</span>
+          <div className="flex items-center gap-2">
+            <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
+            <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {/* 国内获客独立入口 */}
-          <button
-            type="button"
-            onClick={() => setLocation("/leads/domestic")}
-            title="国内获客"
-            className="relative flex h-9 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors hover:bg-green-50 text-slate-600 hover:text-green-700"
-          >
-            <MapPin className="h-4 w-4" />
-            <span className="text-xs font-medium hidden lg:block">国内获客</span>
-          </button>
-          {/* 海外获客独立入口 */}
-          <button
-            type="button"
-            onClick={() => setLocation("/leads/overseas")}
-            title="海外获客"
-            className="relative flex h-9 items-center justify-center gap-1.5 rounded-full px-2.5 transition-colors hover:bg-blue-50 text-slate-600 hover:text-blue-700"
-          >
-            <Globe className="h-4 w-4" />
-            <span className="text-xs font-medium hidden lg:block">海外获客</span>
-          </button>
-          {/* WhatsApp 工作台独立入口 */}
-          <button
-            type="button"
-            onClick={() => setLocation("/whatsapp")}
-            title="WhatsApp 工作台"
-            className="relative flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-[#e8fdf0] text-slate-600 hover:text-[#25D366]"
-          >
-            <MessageCircle className="h-5 w-5" />
-          </button>
-          {/* 获客情报独立入口 */}
-          <button
-            type="button"
-            onClick={() => setLocation("/prospect")}
-            title="获客情报"
-            className="relative flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
-          >
-            <Target className="h-5 w-5 text-slate-600" />
-          </button>
-          {/* 邮件协同独立入口 */}
-          <button
-            type="button"
-            onClick={() => setLocation("/mail")}
-            title="邮件协同"
-            className="relative flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
-          >
-            <Mail className="h-5 w-5 text-slate-600" />
-          </button>
+        <div className="flex items-center gap-1">
+          {/* 桌面端展示所有快捷入口 */}
+          <div className="hidden sm:flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setLocation("/leads/domestic")}
+              title="国内获客"
+              className="flex h-8 items-center justify-center gap-1 rounded-full px-2 transition-colors hover:bg-green-50 text-slate-600 hover:text-green-700"
+            >
+              <MapPin className="h-4 w-4" />
+              <span className="text-xs font-medium hidden lg:block">国内获客</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLocation("/leads/overseas")}
+              title="海外获客"
+              className="flex h-8 items-center justify-center gap-1 rounded-full px-2 transition-colors hover:bg-blue-50 text-slate-600 hover:text-blue-700"
+            >
+              <Globe className="h-4 w-4" />
+              <span className="text-xs font-medium hidden lg:block">海外获客</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLocation("/whatsapp")}
+              title="WhatsApp"
+              className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-[#e8fdf0] text-slate-600 hover:text-[#25D366]"
+            >
+              <MessageCircle className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setLocation("/prospect")}
+              title="获客情报"
+              className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
+            >
+              <Target className="h-4 w-4 text-slate-600" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setLocation("/mail")}
+              title="邮件协同"
+              className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-slate-100"
+            >
+              <Mail className="h-4 w-4 text-slate-600" />
+            </button>
+          </div>
+          {/* 手机端：更多菜单（折叠快捷入口） */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex sm:hidden h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-slate-100 text-slate-600"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44 rounded-xl shadow-xl border-0 p-1">
+              <DropdownMenuItem onClick={() => setLocation("/leads/domestic")} className="rounded-lg text-sm cursor-pointer gap-2">
+                <MapPin className="h-4 w-4 text-green-600" />
+                国内获客
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLocation("/leads/overseas")} className="rounded-lg text-sm cursor-pointer gap-2">
+                <Globe className="h-4 w-4 text-blue-600" />
+                海外获客
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLocation("/whatsapp")} className="rounded-lg text-sm cursor-pointer gap-2">
+                <MessageCircle className="h-4 w-4 text-green-500" />
+                WhatsApp
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLocation("/prospect")} className="rounded-lg text-sm cursor-pointer gap-2">
+                <Target className="h-4 w-4 text-orange-500" />
+                获客情报
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLocation("/mail")} className="rounded-lg text-sm cursor-pointer gap-2">
+                <Mail className="h-4 w-4 text-blue-500" />
+                邮件协同
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Popover>
             <PopoverTrigger asChild>
               <button
