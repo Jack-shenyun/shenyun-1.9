@@ -1774,6 +1774,7 @@ export const iqcInspections = mysqlTable("iqc_inspections", {
   productName: varchar("productName", { length: 200 }).notNull(),
   specification: varchar("specification", { length: 200 }),
   supplierId: int("supplierId"),
+  supplierName: varchar("supplierName", { length: 200 }),
   supplierCode: varchar("supplierCode", { length: 50 }),
   batchNo: varchar("batchNo", { length: 50 }),
   sterilizationBatchNo: varchar("sterilizationBatchNo", { length: 50 }),

@@ -5733,6 +5733,7 @@ export async function ensureIqcInspectionsTable(dbArg?: ReturnType<typeof drizzl
     { name: "qualifiedQty", ddl: "DECIMAL(12,4) NULL" },
     { name: "reportMode", ddl: "VARCHAR(20) NULL" },
     { name: "supplierCode", ddl: "VARCHAR(50) NULL" },
+    { name: "supplierName", ddl: "VARCHAR(200) NULL" },
   ];
   for (const col of iqcNewCols) {
     try {
