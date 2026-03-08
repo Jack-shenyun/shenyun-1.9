@@ -1,11 +1,15 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
-import { PackageSearch, Plus, Search, Edit2, Trash2, Eye, MoreHorizontal, X, ChevronDown, Paperclip, FileText, Upload } from "lucide-react";
-import { ATTACHMENT_ACCEPT } from "@shared/uploadPolicy";
 import { SignatureStatusCard, SignatureRecord } from "@/components/ElectronicSignature";
+import { ATTACHMENT_ACCEPT } from "@shared/uploadPolicy";
+import {
+  PackageSearch, Plus, Search, Edit2, Trash2, Eye, ChevronLeft, ChevronRight,
+  X, ChevronDown, Paperclip, FileText, Upload, Check, XCircle, Save, ArrowLeft,
+  Calendar, User, Hash, ClipboardCheck, AlertTriangle, MoreHorizontal,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -14,31 +18,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/formatters";
-
-// ==================== 可拖拽列宽 Hook ====================
-function useResizableColumns(initialWidths: number[]) {
-  const [widths, setWidths] = React.useState(initialWidths);
-  const dragging = React.useRef<{ colIdx: number; startX: number; startW: number } | null>(null);
-
-  const onMouseDown = (colIdx: number) => (e: React.MouseEvent) => {
-    e.preventDefault();
-    dragging.current = { colIdx, startX: e.clientX, startW: widths[colIdx] };
-    const onMove = (me: MouseEvent) => {
-      if (!dragging.current) return;
-      const delta = me.clientX - dragging.current.startX;
-      const newW = Math.max(60, dragging.current.startW + delta);
-      setWidths((prev) => { const next = [...prev]; next[dragging.current!.colIdx] = newW; return next; });
-    };
-    const onUp = () => { dragging.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  return { widths, onMouseDown };
-}
 
 // ==================== 类型 ====================
 type InspectionItemForm = {
@@ -50,11 +32,9 @@ type InspectionItemForm = {
   minVal: string;
   maxVal: string;
   unit: string;
-  // 定量：样本量 + 各样品数值
   sampleCount: number;
-  sampleValues: string[]; // 每个样品的实测值
-  measuredValue: string;  // 均值（自动计算）
-  // 定性
+  sampleValues: string[];
+  measuredValue: string;
   acceptedValues: string;
   actualValue: string;
   conclusion: "pass" | "fail" | "pending";
@@ -98,17 +78,17 @@ type FormData = {
   remark: string;
 };
 
-const RESULT_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending: { label: "待检验", variant: "secondary" },
-  passed: { label: "合格", variant: "default" },
-  failed: { label: "不合格", variant: "destructive" },
-  conditional_pass: { label: "条件合格", variant: "outline" },
+const RESULT_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; color: string }> = {
+  pending: { label: "待检验", variant: "secondary", color: "bg-slate-100 text-slate-600" },
+  passed: { label: "合格", variant: "default", color: "bg-emerald-50 text-emerald-700" },
+  failed: { label: "不合格", variant: "destructive", color: "bg-red-50 text-red-700" },
+  conditional_pass: { label: "条件合格", variant: "outline", color: "bg-amber-50 text-amber-700" },
 };
 
 const CONCLUSION_MAP: Record<string, { label: string; color: string }> = {
-  pass: { label: "合格", color: "text-green-600" },
+  pass: { label: "合格", color: "text-emerald-600" },
   fail: { label: "不合格", color: "text-red-600" },
-  pending: { label: "待判定", color: "text-gray-400" },
+  pending: { label: "待判定", color: "text-slate-400" },
 };
 
 let keyCounter = 0;
@@ -159,16 +139,59 @@ function autoConclusion(item: InspectionItemForm): "pass" | "fail" | "pending" {
   }
 }
 
+// ==================== 状态流水线组件（Odoo 风格） ====================
+function StatusPipeline({ current, onChange }: { current: string; onChange?: (v: string) => void }) {
+  const steps = [
+    { key: "pending", label: "待检验" },
+    { key: "passed", label: "合格" },
+    { key: "conditional_pass", label: "条件合格" },
+    { key: "failed", label: "不合格" },
+  ];
+  const currentIdx = steps.findIndex((s) => s.key === current);
+
+  return (
+    <div className="flex items-center">
+      {steps.map((step, idx) => {
+        const isActive = step.key === current;
+        const isPast = idx < currentIdx && currentIdx >= 0;
+        return (
+          <div
+            key={step.key}
+            onClick={() => onChange?.(step.key)}
+            className={`
+              relative px-4 py-1.5 text-xs font-medium cursor-pointer select-none transition-all
+              ${idx === 0 ? "rounded-l-full" : ""} ${idx === steps.length - 1 ? "rounded-r-full" : ""}
+              ${isActive
+                ? step.key === "passed" ? "bg-emerald-600 text-white"
+                  : step.key === "failed" ? "bg-red-600 text-white"
+                  : step.key === "conditional_pass" ? "bg-amber-500 text-white"
+                  : "bg-primary text-primary-foreground"
+                : isPast ? "bg-slate-200 text-slate-600" : "bg-slate-100 text-slate-500"
+              }
+            `}
+          >
+            {step.label}
+            {idx < steps.length - 1 && (
+              <div className="absolute right-0 top-0 h-full w-px bg-white/50" />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ==================== 主组件 ====================
 export default function IQCPage() {
   const { user } = useAuth();
+
+  // 视图模式：list = 列表视图，form = 表单视图（新建/编辑），detail = 详情视图
+  const [viewMode, setViewMode] = useState<"list" | "form" | "detail">("list");
+  const [editId, setEditId] = useState<number | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
+
   const [search, setSearch] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
-
-  const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId] = useState<number | null>(null);
-  const [showDetail, setShowDetail] = useState(false);
-  const [detailId, setDetailId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [showReceiptPicker, setShowReceiptPicker] = useState(false);
@@ -186,24 +209,19 @@ export default function IQCPage() {
   });
   const [items, setItems] = useState<InspectionItemForm[]>([]);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([emptyAttachment()]);
-  // 附件上传相关
+
+  // 附件上传
   const [uploadFiles, setUploadFiles] = useState<Array<{ id: string; file: File; previewUrl?: string }>>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // 电子签名相关
+
+  // 电子签名
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
-  // 项目内容表格列宽：#、项目名称、类型、检验要求、样品量、检验结果、操作
-  const colDefs = [
-    { label: "#", init: 36 },
-    { label: "项目名称", init: 120 },
-    { label: "类型", init: 60 },
-    { label: "检验要求", init: 180 },
-    { label: "样品量", init: 70 },
-    { label: "数值", init: 320 },
-    { label: "检验结果", init: 90 },
-    { label: "", init: 36 },
-  ];
-  const { widths: colWidths, onMouseDown: colResizeDown } = useResizableColumns(colDefs.map((c) => c.init));
+
+  // 当前 Tab
+  const [activeTab, setActiveTab] = useState("items");
+
+  const [lastAppliedReqId, setLastAppliedReqId] = useState<number | null>(null);
 
   // ==================== 查询 ====================
   const { data: iqcList = [], refetch } = trpc.iqcInspections.list.useQuery({
@@ -235,10 +253,8 @@ export default function IQCPage() {
 
   const { data: selectedReqDetail } = trpc.inspectionRequirements.getById.useQuery(
     { id: formData.inspectionRequirementId! },
-    { enabled: !!formData.inspectionRequirementId && showForm }
+    { enabled: !!formData.inspectionRequirementId && viewMode === "form" }
   );
-
-  const [lastAppliedReqId, setLastAppliedReqId] = useState<number | null>(null);
 
   // 编辑时填充数据
   useEffect(() => {
@@ -295,7 +311,6 @@ export default function IQCPage() {
         const att = d.attachments ? JSON.parse(d.attachments) : [];
         setAttachments(att.length ? att.map((a: any) => ({ ...a, key: newKey() })) : [emptyAttachment()]);
       } catch { setAttachments([emptyAttachment()]); }
-      // 加载已保存的签名
       try {
         const sigs = d.signatures ? JSON.parse(d.signatures) : [];
         setSignatures(Array.isArray(sigs) ? sigs : []);
@@ -308,50 +323,48 @@ export default function IQCPage() {
     if (
       selectedReqDetail &&
       (selectedReqDetail as any).items?.length > 0 &&
+      formData.inspectionRequirementId &&
       formData.inspectionRequirementId !== lastAppliedReqId
     ) {
-      setItems((selectedReqDetail as any).items.map((it: any) => ({
+      setLastAppliedReqId(formData.inspectionRequirementId);
+      const reqItems = (selectedReqDetail as any).items as any[];
+      setItems(reqItems.map((ri: any, idx: number) => ({
         key: newKey(),
-        requirementItemId: it.id,
-        itemName: it.itemName,
-        itemType: it.itemType,
-        standard: it.standard ?? "",
-        minVal: it.minVal ?? "",
-        maxVal: it.maxVal ?? "",
-        unit: it.unit ?? "",
+        requirementItemId: ri.id,
+        itemName: ri.itemName,
+        itemType: ri.itemType ?? "qualitative",
+        standard: ri.standard ?? "",
+        minVal: ri.minValue ?? "",
+        maxVal: ri.maxValue ?? "",
+        unit: ri.unit ?? "",
         sampleCount: 1,
         sampleValues: [""],
         measuredValue: "",
-        acceptedValues: it.acceptedValues ?? "",
+        acceptedValues: ri.acceptedValues ?? "",
         actualValue: "",
         conclusion: "pending" as const,
-        sortOrder: it.sortOrder ?? 0,
+        sortOrder: idx,
         remark: "",
       })));
-      setLastAppliedReqId(formData.inspectionRequirementId);
     }
   }, [selectedReqDetail, formData.inspectionRequirementId, lastAppliedReqId]);
 
-  // 自动计算合格数量
-  useEffect(() => {
-    const recv = parseFloat(formData.receivedQty);
-    const sample = parseFloat(formData.sampleQty);
-    if (!isNaN(recv) && !isNaN(sample)) {
-      setFormData((p) => ({ ...p, qualifiedQty: String(recv - sample) }));
-    }
-  }, [formData.receivedQty, formData.sampleQty]);
-
-  // ==================== mutations ====================
+  // ==================== Mutations ====================
   const createMutation = trpc.iqcInspections.create.useMutation({
-    onSuccess: () => { toast.success("来料检验单已创建"); refetch(); setShowForm(false); setSubmitting(false); },
+    onSuccess: (data: any) => {
+      toast.success("来料检验单已创建");
+      refetch();
+      setEditId(data.id);
+      setSubmitting(false);
+    },
     onError: (e: any) => { toast.error("创建失败：" + e.message); setSubmitting(false); },
   });
   const updateMutation = trpc.iqcInspections.update.useMutation({
-    onSuccess: () => { toast.success("已更新"); refetch(); setShowForm(false); setSubmitting(false); },
+    onSuccess: () => { toast.success("已更新"); refetch(); setSubmitting(false); },
     onError: (e: any) => { toast.error("更新失败：" + e.message); setSubmitting(false); },
   });
   const deleteMutation = trpc.iqcInspections.delete.useMutation({
-    onSuccess: () => { toast.success("已删除"); refetch(); },
+    onSuccess: () => { toast.success("已删除"); refetch(); setViewMode("list"); },
     onError: (e: any) => toast.error("删除失败：" + e.message),
   });
   const uploadAttachmentsMutation = trpc.iqcInspections.uploadAttachments.useMutation();
@@ -361,7 +374,6 @@ export default function IQCPage() {
 
   const handleSignComplete = (signature: SignatureRecord) => {
     setSignatures((prev) => [...prev, signature]);
-    // 如果已经有保存的记录（editId），就实时保存到后端
     if (editId) {
       saveSignatureMutation.mutate({ id: editId, signature });
     }
@@ -375,18 +387,15 @@ export default function IQCPage() {
       reader.readAsDataURL(file);
     });
 
-  function appendUploadFiles(fileList: FileList | File[]) {
-    const incoming = Array.from(fileList || []);
+  function appendUploadFiles(fileList: FileList) {
     const next = [...uploadFiles];
-    for (const file of incoming) {
-      if (next.length >= 10) { toast.warning("最多上传10个附件"); break; }
-      const id = `f-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    Array.from(fileList).forEach((file) => {
+      const id = newKey();
       const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined;
       next.push({ id, file, previewUrl });
-    }
+    });
     setUploadFiles(next);
   }
-
   function removeUploadFile(id: string) {
     setUploadFiles((prev) => {
       const item = prev.find((f) => f.id === id);
@@ -395,6 +404,7 @@ export default function IQCPage() {
     });
   }
 
+  // ==================== 操作 ====================
   function openCreate() {
     setEditId(null);
     setLastAppliedReqId(null);
@@ -415,7 +425,26 @@ export default function IQCPage() {
     setAttachments([emptyAttachment()]);
     setUploadFiles([]);
     setSignatures([]);
-    setShowForm(true);
+    setActiveTab("items");
+    setViewMode("form");
+  }
+
+  function openEdit(id: number) {
+    setEditId(id);
+    setLastAppliedReqId(null);
+    setActiveTab("items");
+    setViewMode("form");
+  }
+
+  function openDetail(id: number) {
+    setDetailId(id);
+    setViewMode("detail");
+  }
+
+  function goBack() {
+    setViewMode("list");
+    setEditId(null);
+    setDetailId(null);
   }
 
   function selectReceiptItem(receipt: any, item: any) {
@@ -437,33 +466,22 @@ export default function IQCPage() {
       unit: item.unit ?? "",
     }));
     setShowReceiptPicker(false);
-    const productName = item.materialName ?? "";
-    const productCode = item.materialCode ?? "";
-    const matched = (reqList as any[]).find((r: any) =>
-      r.productName === productName || (productCode && r.productCode === productCode)
-    );
-    if (matched) {
-      setFormData((p) => ({ ...p, inspectionRequirementId: matched.id }));
-      setLastAppliedReqId(null);
-      toast.info(`已自动匹配检验要求：${matched.requirementNo}`);
-    }
   }
 
   function updateItem(idx: number, patch: Partial<InspectionItemForm>) {
     setItems((prev) => {
       const next = [...prev];
-      next[idx] = { ...next[idx], ...patch };
-      // 定量：更新样品值时重新计算均值和结论
-      if (patch.sampleValues !== undefined || patch.minVal !== undefined || patch.maxVal !== undefined) {
-        const sv = patch.sampleValues ?? next[idx].sampleValues;
-        const avg = calcAvg(sv);
-        next[idx].measuredValue = avg;
-        next[idx].conclusion = autoConclusion({ ...next[idx], measuredValue: avg });
+      const updated = { ...next[idx], ...patch };
+      if (patch.sampleValues) {
+        if (updated.itemType === "quantitative") {
+          updated.measuredValue = calcAvg(patch.sampleValues);
+        } else {
+          const allSame = patch.sampleValues.every((v) => v === patch.sampleValues![0]);
+          updated.actualValue = allSame ? patch.sampleValues[0] : patch.sampleValues.join(",");
+        }
+        updated.conclusion = autoConclusion(updated);
       }
-      // 定性：更新实际值时自动判定结论
-      if (patch.actualValue !== undefined || patch.acceptedValues !== undefined) {
-        next[idx].conclusion = autoConclusion(next[idx]);
-      }
+      next[idx] = updated;
       return next;
     });
   }
@@ -471,40 +489,47 @@ export default function IQCPage() {
   function setSampleCount(idx: number, count: number) {
     setItems((prev) => {
       const next = [...prev];
-      const old = next[idx].sampleValues;
+      const item = { ...next[idx] };
+      const old = item.sampleValues;
       const newVals = Array.from({ length: count }, (_, i) => old[i] ?? "");
-      next[idx] = { ...next[idx], sampleCount: count, sampleValues: newVals };
-      const avg = calcAvg(newVals);
-      next[idx].measuredValue = avg;
-      next[idx].conclusion = autoConclusion({ ...next[idx], measuredValue: avg });
+      item.sampleCount = count;
+      item.sampleValues = newVals;
+      if (item.itemType === "quantitative") item.measuredValue = calcAvg(newVals);
+      item.conclusion = autoConclusion(item);
+      next[idx] = item;
       return next;
     });
   }
 
-  async function handleSubmit() {
-    if (!formData.inspectionNo) return toast.error("请填写检验编号");
-    if (!formData.productName) return toast.error("请填写产品名称");
-    if (!formData.inspectorName) return toast.error("请填写检验员");
+  async function handleSubmit(overrideResult?: string) {
+    if (!formData.productName) { toast.error("请填写产品名称"); return; }
     setSubmitting(true);
     try {
-      // 先上传附件，获取已保存的文件路径
-      let savedFilePaths: Array<{ fileName: string; filePath: string; mimeType: string }> = [];
+      let savedFilePaths: any[] = [];
+      try {
+        const att = JSON.parse(JSON.stringify(attachments.filter((a) => a.fileUrl || a.recordName)));
+        savedFilePaths = att;
+      } catch {}
       if (uploadFiles.length > 0) {
         const filesPayload = await Promise.all(
-          uploadFiles.map(async (item) => ({
-            name: item.file.name,
-            mimeType: item.file.type,
-            base64: await toBase64(item.file),
+          uploadFiles.map(async (uf) => ({
+            name: uf.file.name,
+            mimeType: uf.file.type,
+            base64: await toBase64(uf.file),
           }))
         );
-        savedFilePaths = await uploadAttachmentsMutation.mutateAsync({
+        const uploaded = await uploadAttachmentsMutation.mutateAsync({
           inspectionNo: formData.inspectionNo,
           files: filesPayload,
         });
+        savedFilePaths = [...savedFilePaths, ...((uploaded as any[]) || [])];
+        setUploadFiles([]);
       }
       const attJson = JSON.stringify(savedFilePaths);
+      const finalResult = overrideResult ?? formData.result;
       const payload = {
         ...formData,
+        result: finalResult,
         goodsReceiptId: formData.goodsReceiptId ?? undefined,
         goodsReceiptItemId: formData.goodsReceiptItemId ?? undefined,
         productId: formData.productId ?? undefined,
@@ -512,6 +537,7 @@ export default function IQCPage() {
         inspectionRequirementId: formData.inspectionRequirementId ?? undefined,
         inspectorId: formData.inspectorId ?? undefined,
         attachments: attJson,
+        signatures: JSON.stringify(signatures),
         items: items.map((it, idx) => ({
           requirementItemId: it.requirementItemId,
           itemName: it.itemName,
@@ -535,158 +561,449 @@ export default function IQCPage() {
         createMutation.mutate(payload);
       }
     } catch (err: any) {
-      toast.error("附件上传失败：" + (err?.message ?? "未知错误"));
+      toast.error("操作失败：" + (err?.message ?? "未知错误"));
       setSubmitting(false);
     }
   }
 
   const list = iqcList as any[];
 
+  // 统计
+  const stats = useMemo(() => ({
+    total: list.length,
+    pending: list.filter((r) => r.result === "pending").length,
+    passed: list.filter((r) => r.result === "passed").length,
+    failed: list.filter((r) => r.result === "failed").length,
+    conditional: list.filter((r) => r.result === "conditional_pass").length,
+  }), [list]);
+
+  // 列表中当前记录的前后导航
+  const currentListIdx = list.findIndex((r) => r.id === (editId ?? detailId));
+
+  // ==================== 列表视图 ====================
+  if (viewMode === "list") {
+    return (
+      <ERPLayout>
+        <div className="flex flex-col h-full">
+          {/* 顶部栏 */}
+          <div className="border-b bg-background px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <ClipboardCheck className="w-5 h-5 text-primary" />
+                <h1 className="text-lg font-semibold">来料检验</h1>
+                <span className="text-sm text-muted-foreground">IQC</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button onClick={openCreate} size="sm" className="gap-1.5">
+                  <Plus className="w-3.5 h-3.5" />新建
+                </Button>
+              </div>
+            </div>
+
+            {/* 搜索和过滤 */}
+            <div className="flex items-center gap-3 mt-3">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="搜索编号、产品、供应商..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8 h-8 text-sm"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                {[
+                  { key: "all", label: "全部", count: stats.total },
+                  { key: "pending", label: "待检验", count: stats.pending },
+                  { key: "passed", label: "合格", count: stats.passed },
+                  { key: "failed", label: "不合格", count: stats.failed },
+                  { key: "conditional_pass", label: "条件合格", count: stats.conditional },
+                ].map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setResultFilter(f.key)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      resultFilter === f.key
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    {f.label} ({f.count})
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 列表 */}
+          <div className="flex-1 overflow-auto">
+            <Table>
+              <TableHeader className="sticky top-0 bg-muted/50 z-10">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[140px] font-medium">检验编号</TableHead>
+                  <TableHead className="font-medium">产品名称</TableHead>
+                  <TableHead className="font-medium">供应商</TableHead>
+                  <TableHead className="font-medium">批次号</TableHead>
+                  <TableHead className="w-[100px] font-medium">到货数量</TableHead>
+                  <TableHead className="w-[100px] font-medium">检验员</TableHead>
+                  <TableHead className="w-[100px] font-medium">检验日期</TableHead>
+                  <TableHead className="w-[90px] font-medium">结果</TableHead>
+                  <TableHead className="w-[50px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {list.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center text-muted-foreground py-16">
+                      <div className="flex flex-col items-center gap-2">
+                        <PackageSearch className="w-10 h-10 text-muted-foreground/50" />
+                        <span>暂无检验记录</span>
+                        <Button variant="outline" size="sm" onClick={openCreate} className="mt-2">
+                          <Plus className="w-3.5 h-3.5 mr-1" />新建检验
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : list.map((row: any) => (
+                  <TableRow
+                    key={row.id}
+                    className="cursor-pointer hover:bg-muted/30 transition-colors"
+                    onClick={() => openDetail(row.id)}
+                  >
+                    <TableCell className="font-mono text-sm text-primary">{row.inspectionNo}</TableCell>
+                    <TableCell>
+                      <div className="font-medium text-sm">{row.productName}</div>
+                      {row.specification && (
+                        <div className="text-xs text-muted-foreground">{row.specification}</div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">{row.supplierName ?? "-"}</TableCell>
+                    <TableCell className="text-sm font-mono">{row.batchNo ?? "-"}</TableCell>
+                    <TableCell className="text-sm">
+                      {row.receivedQty ? `${parseFloat(row.receivedQty)} ${row.unit ?? ""}` : "-"}
+                    </TableCell>
+                    <TableCell className="text-sm">{row.inspectorName ?? "-"}</TableCell>
+                    <TableCell className="text-sm">{row.inspectionDate ? formatDate(row.inspectionDate) : "-"}</TableCell>
+                    <TableCell>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${RESULT_MAP[row.result]?.color ?? "bg-slate-100 text-slate-600"}`}>
+                        {RESULT_MAP[row.result]?.label ?? row.result}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEdit(row.id); }}>
+                            <Edit2 className="w-4 h-4 mr-2" />编辑
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={(e) => { e.stopPropagation(); if (confirm("确认删除？")) deleteMutation.mutate({ id: row.id }); }}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />删除
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </ERPLayout>
+    );
+  }
+
+  // ==================== 详情视图 ====================
+  if (viewMode === "detail" && detailData) {
+    const d = detailData as any;
+    let detailSigs: SignatureRecord[] = [];
+    try { detailSigs = d.signatures ? JSON.parse(d.signatures) : []; } catch {}
+
+    return (
+      <ERPLayout>
+        <div className="flex flex-col h-full">
+          {/* 顶部操作栏 */}
+          <div className="border-b bg-background px-6 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" onClick={goBack} className="gap-1 text-muted-foreground">
+                  <ArrowLeft className="w-4 h-4" />来料检验
+                </Button>
+                <span className="text-muted-foreground">/</span>
+                <span className="font-semibold">{d.inspectionNo}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => openEdit(d.id)}>
+                  <Edit2 className="w-3.5 h-3.5 mr-1.5" />编辑
+                </Button>
+                {currentListIdx > 0 && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openDetail(list[currentListIdx - 1].id)}>
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                )}
+                {currentListIdx >= 0 && (
+                  <span className="text-xs text-muted-foreground">{currentListIdx + 1} / {list.length}</span>
+                )}
+                {currentListIdx < list.length - 1 && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openDetail(list[currentListIdx + 1].id)}>
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-between mt-2">
+              <div />
+              <StatusPipeline current={d.result} />
+            </div>
+          </div>
+
+          {/* 详情内容 */}
+          <div className="flex-1 overflow-auto">
+            <div className="max-w-5xl mx-auto px-6 py-6">
+              {/* 标题 */}
+              <h2 className="text-2xl font-bold mb-6">{d.inspectionNo}</h2>
+
+              {/* 两列字段布局 */}
+              <div className="grid grid-cols-2 gap-x-12 gap-y-3 mb-8">
+                <FieldRow label="产品名称" value={d.productName} />
+                <FieldRow label="到货单号" value={d.goodsReceiptNo} link />
+                <FieldRow label="规格型号" value={d.specification} />
+                <FieldRow label="批次号" value={d.batchNo} />
+                <FieldRow label="供应商" value={d.supplierName} />
+                <FieldRow label="到货数量" value={d.receivedQty ? `${parseFloat(d.receivedQty)} ${d.unit ?? ""}` : "-"} />
+                <FieldRow label="抽样数量" value={d.sampleQty} />
+                <FieldRow label="合格数量" value={d.qualifiedQty} />
+                <FieldRow label="检验员" value={d.inspectorName} />
+                <FieldRow label="检验日期" value={d.inspectionDate ? formatDate(d.inspectionDate) : "-"} />
+                <FieldRow label="填报方式" value={d.reportMode === "offline" ? "线下填写" : "线上填写"} />
+              </div>
+
+              {/* Tab 页签 */}
+              <Tabs defaultValue="items" className="w-full">
+                <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
+                  <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                    检验项目
+                  </TabsTrigger>
+                  <TabsTrigger value="attachments" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                    附件资料
+                  </TabsTrigger>
+                  <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                    电子签名
+                  </TabsTrigger>
+                  <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                    备注
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="items" className="mt-4">
+                  {d.items?.length > 0 ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-10">#</TableHead>
+                          <TableHead>项目名称</TableHead>
+                          <TableHead className="w-20">类型</TableHead>
+                          <TableHead>检验标准</TableHead>
+                          <TableHead>实测值</TableHead>
+                          <TableHead className="w-20">结论</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {d.items.map((it: any, idx: number) => (
+                          <TableRow key={it.id}>
+                            <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                            <TableCell className="font-medium">{it.itemName}</TableCell>
+                            <TableCell>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
+                                {it.itemType === "quantitative" ? "定量" : "定性"}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {it.itemType === "quantitative"
+                                ? `${it.minVal ?? ""}～${it.maxVal ?? ""} ${it.unit ?? ""}`
+                                : it.acceptedValues ?? "-"
+                              }
+                            </TableCell>
+                            <TableCell>
+                              {it.itemType === "quantitative" ? (
+                                <div>
+                                  <span className="font-medium">{it.measuredValue ? parseFloat(it.measuredValue).toFixed(2) : "-"}</span>
+                                  {it.sampleValues && (() => {
+                                    try { const sv = JSON.parse(it.sampleValues); return <span className="text-xs text-muted-foreground ml-1">[{sv.join(", ")}]</span>; } catch { return null; }
+                                  })()}
+                                </div>
+                              ) : (
+                                <span>{it.actualValue ?? "-"}</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <span className={`text-sm font-medium ${CONCLUSION_MAP[it.conclusion]?.color ?? ""}`}>
+                                {CONCLUSION_MAP[it.conclusion]?.label ?? it.conclusion}
+                              </span>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="text-center text-muted-foreground py-8">暂无检验项目</div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="attachments" className="mt-4">
+                  {(() => {
+                    try {
+                      const atts = d.attachments ? JSON.parse(d.attachments) : [];
+                      if (!atts.length) return <div className="text-center text-muted-foreground py-8">暂无附件</div>;
+                      return (
+                        <div className="space-y-2">
+                          {atts.map((att: any, idx: number) => (
+                            <div key={idx} className="flex items-center gap-3 p-2 rounded border bg-muted/20">
+                              <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />
+                              <span className="text-sm">{att.fileName || att.recordName || `附件 ${idx + 1}`}</span>
+                              {att.filePath && (
+                                <a href={att.filePath} target="_blank" rel="noopener" className="text-xs text-primary hover:underline ml-auto">查看</a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    } catch { return <div className="text-center text-muted-foreground py-8">暂无附件</div>; }
+                  })()}
+                </TabsContent>
+
+                <TabsContent value="signatures" className="mt-4">
+                  {detailSigs.length > 0 ? (
+                    <SignatureStatusCard
+                      documentType="IQC"
+                      documentNo={d.inspectionNo}
+                      documentId={d.id}
+                      signatures={detailSigs}
+                    />
+                  ) : (
+                    <div className="text-center text-muted-foreground py-8">暂无签名记录</div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="notes" className="mt-4">
+                  <div className="text-sm whitespace-pre-wrap">{d.remark || "暂无备注"}</div>
+                </TabsContent>
+              </Tabs>
+            </div>
+          </div>
+        </div>
+      </ERPLayout>
+    );
+  }
+
+  // ==================== 表单视图（新建/编辑） ====================
   return (
     <ERPLayout>
-      <div className="p-6 space-y-4">
-        {/* 标题栏 */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <PackageSearch className="w-6 h-6 text-primary" />
-            <div>
-              <h1 className="text-xl font-bold">来料检验（IQC）</h1>
-              <p className="text-sm text-muted-foreground">原材料入库前的质量检验</p>
+      <div className="flex flex-col h-full">
+        {/* 顶部操作栏 */}
+        <div className="border-b bg-background px-6 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Button variant="ghost" size="sm" onClick={goBack} className="gap-1 text-muted-foreground">
+                <ArrowLeft className="w-4 h-4" />来料检验
+              </Button>
+              <span className="text-muted-foreground">/</span>
+              <span className="font-semibold">{editId ? formData.inspectionNo : "新建"}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* 合格/不合格快捷按钮 */}
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                onClick={() => handleSubmit("passed")}
+                disabled={submitting}
+              >
+                <Check className="w-3.5 h-3.5" />合格
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="gap-1"
+                onClick={() => handleSubmit("failed")}
+                disabled={submitting}
+              >
+                <XCircle className="w-3.5 h-3.5" />不合格
+              </Button>
+              <div className="w-px h-6 bg-border mx-1" />
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1"
+                onClick={() => handleSubmit()}
+                disabled={submitting}
+              >
+                <Save className="w-3.5 h-3.5" />{submitting ? "保存中..." : "保存"}
+              </Button>
             </div>
           </div>
-          <Button onClick={openCreate} className="gap-2">
-            <Plus className="w-4 h-4" />新建检验
-          </Button>
-        </div>
-
-        {/* 筛选栏 */}
-        <div className="flex gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="搜索检验编号、产品名称..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <div className="flex items-center justify-between mt-2">
+            <div />
+            <StatusPipeline current={formData.result} onChange={(v) => setFormData((p) => ({ ...p, result: v }))} />
           </div>
-          <Select value={resultFilter} onValueChange={setResultFilter}>
-            <SelectTrigger className="w-36"><SelectValue placeholder="检验结果" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部状态</SelectItem>
-              <SelectItem value="pending">待检验</SelectItem>
-              <SelectItem value="passed">合格</SelectItem>
-              <SelectItem value="failed">不合格</SelectItem>
-              <SelectItem value="conditional_pass">条件合格</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
 
-        {/* 统计卡片 */}
-        <div className="grid grid-cols-4 gap-4">
-          {[
-            { label: "待检验", count: list.filter((r) => r.result === "pending").length, color: "text-blue-600" },
-            { label: "合格", count: list.filter((r) => r.result === "passed").length, color: "text-green-600" },
-            { label: "不合格", count: list.filter((r) => r.result === "failed").length, color: "text-red-600" },
-            { label: "条件合格", count: list.filter((r) => r.result === "conditional_pass").length, color: "text-orange-600" },
-          ].map((s) => (
-            <div key={s.label} className="bg-card border rounded-lg p-4">
-              <div className={`text-2xl font-bold ${s.color}`}>{s.count}</div>
-              <div className="text-sm text-muted-foreground">{s.label}</div>
-            </div>
-          ))}
-        </div>
+        {/* 表单内容 */}
+        <div className="flex-1 overflow-auto">
+          <div className="max-w-5xl mx-auto px-6 py-6">
+            {/* 两列字段布局 */}
+            <div className="grid grid-cols-2 gap-x-12 gap-y-4 mb-8">
+              {/* 左列 */}
+              <EditFieldRow label="产品名称" required>
+                <div className="flex gap-2">
+                  <Input
+                    value={formData.productName}
+                    onChange={(e) => setFormData((p) => ({ ...p, productName: e.target.value }))}
+                    placeholder="产品名称"
+                    className="flex-1"
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={() => setShowReceiptPicker(true)}>
+                    <ChevronDown className="w-3 h-3 mr-1" />
+                    {formData.goodsReceiptNo || "关联到货单"}
+                  </Button>
+                </div>
+              </EditFieldRow>
+              <EditFieldRow label="检验编号">
+                <Input
+                  value={formData.inspectionNo}
+                  onChange={(e) => setFormData((p) => ({ ...p, inspectionNo: e.target.value }))}
+                  className="bg-muted/30"
+                />
+              </EditFieldRow>
 
-        {/* 列表 */}
-        <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>检验编号</TableHead>
-                <TableHead>到货单号</TableHead>
-                <TableHead>产品名称</TableHead>
-                <TableHead>规格</TableHead>
-                <TableHead>供应商</TableHead>
-                <TableHead>批次号</TableHead>
-                <TableHead>到货数量</TableHead>
-                <TableHead>抽样数量</TableHead>
-                <TableHead>合格数量</TableHead>
-                <TableHead>检验员</TableHead>
-                <TableHead>检验日期</TableHead>
-                <TableHead>结果</TableHead>
-                <TableHead className="w-16">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {list.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={13} className="text-center text-muted-foreground py-8">暂无检验记录</TableCell>
-                </TableRow>
-              ) : list.map((row: any) => (
-                <TableRow key={row.id}>
-                  <TableCell className="font-mono text-sm">{row.inspectionNo}</TableCell>
-                  <TableCell className="text-sm">{row.goodsReceiptNo ?? "-"}</TableCell>
-                  <TableCell>{row.productName}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{row.specification ?? "-"}</TableCell>
-                  <TableCell className="text-sm">{row.supplierName ?? "-"}</TableCell>
-                  <TableCell className="text-sm">{row.batchNo ?? "-"}</TableCell>
-                  <TableCell className="text-sm">{row.receivedQty ? `${parseFloat(row.receivedQty)} ${row.unit ?? ""}` : "-"}</TableCell>
-                  <TableCell className="text-sm">{row.sampleQty ? parseFloat(row.sampleQty) : "-"}</TableCell>
-                  <TableCell className="text-sm">{row.qualifiedQty ? parseFloat(row.qualifiedQty) : "-"}</TableCell>
-                  <TableCell className="text-sm">{row.inspectorName ?? "-"}</TableCell>
-                  <TableCell className="text-sm">{row.inspectionDate ? formatDate(row.inspectionDate) : "-"}</TableCell>
-                  <TableCell>
-                    <Badge variant={RESULT_MAP[row.result]?.variant ?? "secondary"}>
-                      {RESULT_MAP[row.result]?.label ?? row.result}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="w-4 h-4" /></Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => { setDetailId(row.id); setShowDetail(true); }}>
-                          <Eye className="w-4 h-4 mr-2" />查看
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => { setEditId(row.id); setShowForm(true); }}>
-                          <Edit2 className="w-4 h-4 mr-2" />编辑
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive" onClick={() => { if (confirm("确认删除？")) deleteMutation.mutate({ id: row.id }); }}>
-                          <Trash2 className="w-4 h-4 mr-2" />删除
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+              <EditFieldRow label="规格型号">
+                <Input
+                  value={formData.specification}
+                  onChange={(e) => setFormData((p) => ({ ...p, specification: e.target.value }))}
+                  placeholder="规格型号"
+                />
+              </EditFieldRow>
+              <EditFieldRow label="检验日期" required>
+                <Input
+                  type="date"
+                  value={formData.inspectionDate}
+                  onChange={(e) => setFormData((p) => ({ ...p, inspectionDate: e.target.value }))}
+                />
+              </EditFieldRow>
 
-      {/* ==================== 新建/编辑弹窗 ==================== */}
-      <DraggableDialog open={showForm} onOpenChange={setShowForm}>
-        <DraggableDialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <div className="space-y-6 p-1">
-            <h2 className="text-lg font-semibold border-b pb-2 text-center">来料检验单</h2>
-
-            {/* 顶部基本信息 */}
-            <div className="grid grid-cols-4 gap-4 items-start">
-              {/* 填报方式 */}
-              <div className="space-y-1">
-                <Label>填报方式</Label>
-                <Select
-                  value={formData.reportMode}
-                  onValueChange={(v) => setFormData((p) => ({ ...p, reportMode: v as "online" | "offline" }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择填报方式" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="online">线上填写</SelectItem>
-                    <SelectItem value="offline">线下填写</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {/* 检验员 */}
-              <div className="space-y-1">
-                <Label>检验员 <span className="text-destructive">*</span></Label>
+              <EditFieldRow label="供应商">
+                <Input
+                  value={formData.supplierName}
+                  onChange={(e) => setFormData((p) => ({ ...p, supplierName: e.target.value }))}
+                  placeholder="供应商名称"
+                />
+              </EditFieldRow>
+              <EditFieldRow label="检验员" required>
                 <Select
                   value={formData.inspectorId ? String(formData.inspectorId) : "__manual__"}
                   onValueChange={(v) => {
@@ -705,400 +1022,341 @@ export default function IQCPage() {
                     <SelectItem value="__manual__">手动输入</SelectItem>
                   </SelectContent>
                 </Select>
-                {(!formData.inspectorId || formData.inspectorId === null) && (
+              </EditFieldRow>
+
+              <EditFieldRow label="批次号">
+                <Input
+                  value={formData.batchNo}
+                  onChange={(e) => setFormData((p) => ({ ...p, batchNo: e.target.value }))}
+                  placeholder="批次号"
+                />
+              </EditFieldRow>
+              <EditFieldRow label="填报方式">
+                <Select
+                  value={formData.reportMode}
+                  onValueChange={(v) => setFormData((p) => ({ ...p, reportMode: v as "online" | "offline" }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="online">线上填写</SelectItem>
+                    <SelectItem value="offline">线下填写</SelectItem>
+                  </SelectContent>
+                </Select>
+              </EditFieldRow>
+
+              <EditFieldRow label="到货数量">
+                <div className="flex gap-2">
                   <Input
-                    value={formData.inspectorName}
-                    onChange={(e) => setFormData((p) => ({ ...p, inspectorName: e.target.value }))}
-                    placeholder="输入检验员姓名"
-                    className="mt-1"
+                    value={formData.receivedQty}
+                    onChange={(e) => setFormData((p) => ({ ...p, receivedQty: e.target.value }))}
+                    placeholder="数量"
+                    className="flex-1"
                   />
-                )}
-              </div>
-              {/* 检验日期 */}
-              <div className="space-y-1">
-                <Label>日期时间 <span className="text-destructive">*</span></Label>
-                <Input type="date" value={formData.inspectionDate} onChange={(e) => setFormData((p) => ({ ...p, inspectionDate: e.target.value }))} />
-              </div>
-              {/* 检验编号 */}
-              <div className="space-y-1">
-                <Label>检验编号</Label>
-                <Input value={formData.inspectionNo} onChange={(e) => setFormData((p) => ({ ...p, inspectionNo: e.target.value }))} placeholder="自动生成无需填写" className="bg-muted/40" />
-              </div>
+                  <Input
+                    value={formData.unit}
+                    onChange={(e) => setFormData((p) => ({ ...p, unit: e.target.value }))}
+                    placeholder="单位"
+                    className="w-20"
+                  />
+                </div>
+              </EditFieldRow>
+              <EditFieldRow label="灭菌批号">
+                <Input
+                  value={formData.sterilizationBatchNo}
+                  onChange={(e) => setFormData((p) => ({ ...p, sterilizationBatchNo: e.target.value }))}
+                  placeholder="灭菌批号"
+                />
+              </EditFieldRow>
+
+              <EditFieldRow label="抽样数量">
+                <Input
+                  value={formData.sampleQty}
+                  onChange={(e) => setFormData((p) => ({ ...p, sampleQty: e.target.value }))}
+                  placeholder="抽样数量"
+                />
+              </EditFieldRow>
+              <EditFieldRow label="合格数量">
+                <Input
+                  value={formData.qualifiedQty}
+                  onChange={(e) => setFormData((p) => ({ ...p, qualifiedQty: e.target.value }))}
+                  placeholder="合格数量"
+                />
+              </EditFieldRow>
             </div>
 
-            {/* 产品信息区块 */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="w-1 h-5 bg-teal-500 rounded" />
-                <h3 className="font-semibold text-sm">产品信息</h3>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setShowReceiptPicker(true)}>
-                    <ChevronDown className="w-3 h-3 mr-1" />
-                    {formData.goodsReceiptNo ? formData.goodsReceiptNo : "选择到货明细"}
-                  </Button>
-                  <div className="flex items-center gap-1">
-                    <Label className="text-xs whitespace-nowrap text-muted-foreground">供应商名称</Label>
-                    <Input
-                      value={formData.supplierName}
-                      onChange={(e) => setFormData((p) => ({ ...p, supplierName: e.target.value }))}
-                      placeholder="供应商名称"
-                      className="h-8 w-40 text-sm"
-                    />
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Label className="text-xs whitespace-nowrap text-muted-foreground">抽样数量</Label>
-                    <Input
-                      value={formData.sampleQty}
-                      onChange={(e) => setFormData((p) => ({ ...p, sampleQty: e.target.value }))}
-                      placeholder="抽样数量"
-                      type="number"
-                      className="h-8 w-28 text-sm"
-                    />
-                  </div>
-                </div>
-                {formData.productName && (
-                  <div className="text-sm border rounded-md overflow-hidden">
-                    <div className="grid grid-cols-5 bg-muted/60 text-muted-foreground font-medium">
-                      <div className="px-3 py-1.5 border-r">产品编码</div>
-                      <div className="px-3 py-1.5 border-r">产品名称</div>
-                      <div className="px-3 py-1.5 border-r">规格</div>
-                      <div className="px-3 py-1.5 border-r">到货数量</div>
-                      <div className="px-3 py-1.5">批次号</div>
+            {/* Tab 页签 */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
+                <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                  检验项目 {items.length > 0 && `(${items.length})`}
+                </TabsTrigger>
+                <TabsTrigger value="attachments" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                  附件资料
+                </TabsTrigger>
+                <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                  电子签名
+                </TabsTrigger>
+                <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                  备注
+                </TabsTrigger>
+              </TabsList>
+
+              {/* 检验项目 Tab */}
+              <TabsContent value="items" className="mt-4">
+                {formData.reportMode === "online" && (
+                  <div className="space-y-4">
+                    {/* 检验要求选择 */}
+                    <div className="flex items-center gap-3">
+                      <Label className="text-sm text-muted-foreground shrink-0">检验要求</Label>
+                      <Select
+                        value={formData.inspectionRequirementId ? String(formData.inspectionRequirementId) : ""}
+                        onValueChange={(v) => setFormData((p) => ({ ...p, inspectionRequirementId: v ? Number(v) : null }))}
+                      >
+                        <SelectTrigger className="max-w-md">
+                          <SelectValue placeholder="选择检验要求（自动带入检验项目）" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(reqList as any[]).map((r: any) => (
+                            <SelectItem key={r.id} value={String(r.id)}>{r.requirementNo} - {r.productName}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setItems([...items, emptyItem()])}>
+                        <Plus className="w-3 h-3 mr-1" />添加项目
+                      </Button>
                     </div>
-                    <div className="grid grid-cols-5">
-                      <div className="px-3 py-1.5 border-r">{formData.productCode || "-"}</div>
-                      <div className="px-3 py-1.5 border-r font-medium">{formData.productName}</div>
-                      <div className="px-3 py-1.5 border-r">{formData.specification || "-"}</div>
-                      <div className="px-3 py-1.5 border-r">{formData.receivedQty || "-"}</div>
-                      <div className="px-3 py-1.5">{formData.batchNo || "-"}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
 
-            {/* 线上填写区块 */}
-            {formData.reportMode === "online" && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-1 h-5 bg-teal-500 rounded" />
-                  <h3 className="font-semibold text-sm">线上填写</h3>
-                </div>
-
-                {/* 检验要求选择 */}
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Label>检验要求</Label>
-                  <Select
-                    value={formData.inspectionRequirementId ? String(formData.inspectionRequirementId) : ""}
-                    onValueChange={(v) => {
-                      setFormData((p) => ({ ...p, inspectionRequirementId: Number(v) }));
-                      setLastAppliedReqId(null);
-                    }}
-                  >
-                    <SelectTrigger className="w-72">
-                      <SelectValue placeholder="关联数据（选择检验要求）" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(reqList as any[]).map((r: any) => (
-                        <SelectItem key={r.id} value={String(r.id)}>{r.requirementNo} - {r.productName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <span className="text-xs text-muted-foreground">选择后自动带入检验项目</span>
-                </div>
-
-                {/* 项目内容表格 */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <Label className="font-medium">项目内容</Label>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setItems([...items, emptyItem()])}>
-                      <Plus className="w-3 h-3 mr-1" />添加
-                    </Button>
-                  </div>
-                  {items.length === 0 ? (
-                    <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">请先选择检验要求，或手动添加检验项目</div>
-                  ) : (
-                    <div className="border rounded-md overflow-auto">
-                      {/* 表头 */}
-                      <div className="flex bg-muted/60 text-xs text-muted-foreground font-medium select-none" style={{ minWidth: colWidths.reduce((a, b) => a + b, 0) }}>
-                        {colDefs.map((col, ci) => (
-                          <div
-                            key={ci}
-                            className="relative px-2 py-2 border-r last:border-r-0 shrink-0 overflow-hidden"
-                            style={{ width: colWidths[ci] }}
-                          >
-                            {col.label}
-                            {ci < colDefs.length - 1 && (
-                              <div
-                                className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-teal-400 active:bg-teal-500"
-                                onMouseDown={colResizeDown(ci)}
-                              />
-                            )}
-                          </div>
-                        ))}
+                    {/* 检验项目表格 */}
+                    {items.length === 0 ? (
+                      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                        请先选择检验要求，或手动添加检验项目
                       </div>
-                      {/* 表身 */}
-                      {items.map((item, idx) => (
-                        <div
-                          key={item.key}
-                          className="flex items-start border-t text-sm"
-                          style={{ minWidth: colWidths.reduce((a, b) => a + b, 0) }}
-                        >
-                          {/* # */}
-                          <div className="px-2 py-2 shrink-0 text-muted-foreground" style={{ width: colWidths[0] }}>{idx + 1}</div>
-                          {/* 项目名称 */}
-                          <div className="px-2 py-2 shrink-0 font-medium overflow-hidden text-ellipsis" style={{ width: colWidths[1] }}>{item.itemName || "-"}</div>
-                          {/* 类型 */}
-                          <div className="px-2 py-2 shrink-0" style={{ width: colWidths[2] }}>
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                              {item.itemType === "qualitative" ? "定性" : "定量"}
-                            </span>
-                          </div>
-                          {/* 检验要求 */}
-                          <div className="px-2 py-2 shrink-0 text-xs text-muted-foreground overflow-hidden" style={{ width: colWidths[3] }}>
-                            {item.itemType === "qualitative"
-                              ? `合格値：${item.acceptedValues || "合格/不合格"}`
-                              : `${item.minVal || ""} ~ ${item.maxVal || ""} ${item.unit || ""}`
-                            }
-                          </div>
-                          {/* 样品量 */}
-                          <div className="px-2 py-1.5 shrink-0" style={{ width: colWidths[4] }}>
-                            <Input
-                              type="number" min={1} max={20}
-                              value={item.sampleCount}
-                              onChange={(e) => setSampleCount(idx, Math.max(1, parseInt(e.target.value) || 1))}
-                              className="h-7 w-full text-xs"
-                            />
-                          </div>
-                          {/* 数値（样品输入） */}
-                          <div className="px-2 py-1.5 shrink-0 flex items-center gap-1.5 flex-wrap" style={{ width: colWidths[5] }}>
-                            {item.itemType === "qualitative" ? (
-                              Array.from({ length: item.sampleCount }).map((_, si) => (
-                                <Select
-                                  key={si}
-                                  value={item.sampleValues[si] || ""}
-                                  onValueChange={(v) => {
-                                    const newVals = [...item.sampleValues];
-                                    newVals[si] = v;
-                                    updateItem(idx, { sampleValues: newVals });
-                                  }}
-                                >
-                                  <SelectTrigger className="h-7 w-20 text-xs"><SelectValue placeholder="-" /></SelectTrigger>
-                                  <SelectContent>
-                                    {item.acceptedValues.split(",").map((v) => v.trim()).filter(Boolean).map((v) => (
-                                      <SelectItem key={v} value={v}>{v}</SelectItem>
-                                    ))}
-                                    {item.acceptedValues.split(",").map((v) => v.trim()).filter(Boolean).length === 0 && (
-                                      <>
-                                        <SelectItem value="合格">合格</SelectItem>
-                                        <SelectItem value="不合格">不合格</SelectItem>
-                                      </>
-                                    )}
-                                  </SelectContent>
-                                </Select>
-                              ))
-                            ) : (
-                              <>
-                                {Array.from({ length: item.sampleCount }).map((_, si) => (
-                                  <Input
-                                    key={si}
-                                    value={item.sampleValues[si] || ""}
-                                    onChange={(e) => {
-                                      const newVals = [...item.sampleValues];
-                                      newVals[si] = e.target.value;
-                                      updateItem(idx, { sampleValues: newVals });
-                                    }}
-                                    className="h-7 w-16 text-xs"
-                                    placeholder={`${si + 1}`}
-                                  />
-                                ))}
-                                {item.measuredValue && (
-                                  <span className="text-xs text-muted-foreground whitespace-nowrap">均値: {parseFloat(item.measuredValue).toFixed(2)} {item.unit}</span>
-                                )}
-                              </>
-                            )}
-                          </div>
-                          {/* 检验结果（判定） */}
-                          <div className="px-2 py-2 shrink-0 flex items-center justify-center" style={{ width: colWidths[6] }}>
-                            {(() => {
-                              const c = autoConclusion(item);
-                              return (
-                                <span className={`text-xs font-medium ${
-                                  c === "pass" ? "text-green-600" : c === "fail" ? "text-red-500" : "text-gray-400"
-                                }`}>
-                                  {c === "pass" ? "合格" : c === "fail" ? "不合格" : "待判定"}
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">#</TableHead>
+                            <TableHead className="w-[140px]">项目名称</TableHead>
+                            <TableHead className="w-[70px]">类型</TableHead>
+                            <TableHead className="w-[180px]">检验要求</TableHead>
+                            <TableHead className="w-[60px]">样品量</TableHead>
+                            <TableHead>数值录入</TableHead>
+                            <TableHead className="w-[80px]">结论</TableHead>
+                            <TableHead className="w-10" />
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {items.map((item, idx) => (
+                            <TableRow key={item.key}>
+                              <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                              <TableCell className="font-medium text-sm">{item.itemName || "-"}</TableCell>
+                              <TableCell>
+                                <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
+                                  {item.itemType === "qualitative" ? "定性" : "定量"}
                                 </span>
-                              );
-                            })()}
-                          </div>
-                          {/* 删除 */}
-                          <div className="px-1 py-1.5 shrink-0 flex items-center justify-center" style={{ width: colWidths[7] }}>
-                            <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => setItems(items.filter((_, i) => i !== idx))}>
-                              <X className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {item.itemType === "qualitative"
+                                  ? `合格值：${item.acceptedValues || "合格/不合格"}`
+                                  : `${item.minVal || ""} ~ ${item.maxVal || ""} ${item.unit || ""}`
+                                }
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number" min={1} max={20}
+                                  value={item.sampleCount}
+                                  onChange={(e) => setSampleCount(idx, Math.max(1, parseInt(e.target.value) || 1))}
+                                  className="h-7 w-14 text-xs"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  {item.itemType === "qualitative" ? (
+                                    Array.from({ length: item.sampleCount }).map((_, si) => (
+                                      <Select
+                                        key={si}
+                                        value={item.sampleValues[si] || ""}
+                                        onValueChange={(v) => {
+                                          const newVals = [...item.sampleValues];
+                                          newVals[si] = v;
+                                          updateItem(idx, { sampleValues: newVals });
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-7 w-20 text-xs"><SelectValue placeholder="-" /></SelectTrigger>
+                                        <SelectContent>
+                                          {item.acceptedValues.split(",").map((v) => v.trim()).filter(Boolean).map((v) => (
+                                            <SelectItem key={v} value={v}>{v}</SelectItem>
+                                          ))}
+                                          {item.acceptedValues.split(",").map((v) => v.trim()).filter(Boolean).length === 0 && (
+                                            <>
+                                              <SelectItem value="合格">合格</SelectItem>
+                                              <SelectItem value="不合格">不合格</SelectItem>
+                                            </>
+                                          )}
+                                        </SelectContent>
+                                      </Select>
+                                    ))
+                                  ) : (
+                                    <>
+                                      {Array.from({ length: item.sampleCount }).map((_, si) => (
+                                        <Input
+                                          key={si}
+                                          value={item.sampleValues[si] || ""}
+                                          onChange={(e) => {
+                                            const newVals = [...item.sampleValues];
+                                            newVals[si] = e.target.value;
+                                            updateItem(idx, { sampleValues: newVals });
+                                          }}
+                                          className="h-7 w-16 text-xs"
+                                          placeholder={`${si + 1}`}
+                                        />
+                                      ))}
+                                      {item.measuredValue && (
+                                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                          均值: {parseFloat(item.measuredValue).toFixed(2)} {item.unit}
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {(() => {
+                                  const c = autoConclusion(item);
+                                  return (
+                                    <span className={`text-xs font-medium ${CONCLUSION_MAP[c]?.color ?? ""}`}>
+                                      {CONCLUSION_MAP[c]?.label ?? "待判定"}
+                                    </span>
+                                  );
+                                })()}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => setItems(items.filter((_, i) => i !== idx))}
+                                >
+                                  <X className="w-3 h-3" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                )}
+              </TabsContent>
 
-            {/* 附件上传 */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="w-1 h-5 bg-teal-500 rounded" />
-                <h3 className="font-semibold text-sm">附件资料</h3>
-              </div>
-              <div
-                className={`rounded-md border border-dashed p-4 transition-colors ${isDragging ? "border-teal-500 bg-teal-50" : "border-border"}`}
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDragging(false);
-                  appendUploadFiles(e.dataTransfer.files);
-                }}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  multiple
-                  accept={ATTACHMENT_ACCEPT}
-                  capture={undefined}
-                  onChange={(e) => {
-                    if (e.target.files) appendUploadFiles(e.target.files);
-                    e.currentTarget.value = "";
+              {/* 附件资料 Tab */}
+              <TabsContent value="attachments" className="mt-4">
+                <div
+                  className={`rounded-lg border-2 border-dashed p-6 transition-colors ${isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/20"}`}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    appendUploadFiles(e.dataTransfer.files);
                   }}
-                />
-                {/* 拍照上传用的隐藏 input */}
-                <input
-                  id="iqc-camera-input"
-                  type="file"
-                  className="hidden"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={(e) => {
-                    if (e.target.files) appendUploadFiles(e.target.files);
-                    e.currentTarget.value = "";
-                  }}
-                />
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="text-sm text-muted-foreground">
-                    {isDragging ? "松开鼠标即可上传" : "拖拽文件到此处，或点击按鈕选择文件"}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-                      <Upload className="h-3.5 w-3.5 mr-1.5" />
-                      选择文件
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("iqc-camera-input")?.click()}>
-                      <FileText className="h-3.5 w-3.5 mr-1.5" />
-                      拍照上传
-                    </Button>
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    multiple
+                    accept={ATTACHMENT_ACCEPT}
+                    onChange={(e) => {
+                      if (e.target.files) appendUploadFiles(e.target.files);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                  <input
+                    id="iqc-camera-input"
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => {
+                      if (e.target.files) appendUploadFiles(e.target.files);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                  <div className="flex flex-col items-center gap-3">
+                    <Upload className="w-8 h-8 text-muted-foreground/50" />
+                    <div className="text-sm text-muted-foreground text-center">
+                      {isDragging ? "松开鼠标即可上传" : "拖拽文件到此处，或点击下方按钮选择文件"}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                        <Upload className="h-3.5 w-3.5 mr-1.5" />选择文件
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("iqc-camera-input")?.click()}>
+                        <FileText className="h-3.5 w-3.5 mr-1.5" />拍照上传
+                      </Button>
+                    </div>
+                    <div className="text-xs text-muted-foreground">支持 JPG、PNG、PDF、Word、Excel，单个文件建议不超过 20MB</div>
                   </div>
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">支持 JPG、PNG、PDF、Word、Excel，单个文件建议不超过20MB</div>
                 {uploadFiles.length > 0 && (
-                  <div className="mt-3 grid grid-cols-1 gap-2">
+                  <div className="mt-4 space-y-2">
                     {uploadFiles.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between rounded border px-2 py-1.5 text-sm bg-background">
-                        <div className="flex items-center gap-2 min-w-0">
+                      <div key={item.id} className="flex items-center justify-between rounded-lg border px-3 py-2 bg-muted/20">
+                        <div className="flex items-center gap-3 min-w-0">
                           {item.previewUrl ? (
                             <img src={item.previewUrl} alt="" className="h-8 w-8 object-cover rounded shrink-0" />
                           ) : (
                             <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
                           )}
                           <span className="truncate text-sm">{item.file.name}</span>
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            {(item.file.size / 1024).toFixed(0)} KB
-                          </span>
+                          <span className="text-xs text-muted-foreground shrink-0">{(item.file.size / 1024).toFixed(0)} KB</span>
                         </div>
-                        <Button type="button" size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => removeUploadFile(item.id)}>
-                          <X className="h-3.5 w-3.5" />
+                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => removeUploadFile(item.id)}>
+                          <X className="w-3 h-3" />
                         </Button>
                       </div>
                     ))}
                   </div>
                 )}
-              </div>
-            </div>
+              </TabsContent>
 
-            {/* 检验结论 */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="w-1 h-5 bg-teal-500 rounded" />
-                <h3 className="font-semibold text-sm">检验结论</h3>
-              </div>
-              <div className="flex items-center gap-4">
-                <Label>检验结果</Label>
-                <RadioGroup
-                  value={formData.result}
-                  onValueChange={(v) => setFormData((p) => ({ ...p, result: v }))}
-                  className="flex gap-4"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <RadioGroupItem value="passed" id="r-pass" />
-                    <Label htmlFor="r-pass" className="cursor-pointer px-3 py-1 rounded bg-green-100 text-green-700 font-medium">合格</Label>
+              {/* 电子签名 Tab */}
+              <TabsContent value="signatures" className="mt-4">
+                {!editId ? (
+                  <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+                    <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
+                    <div className="text-sm">请先保存检验单，保存后可进行电子签名</div>
+                    <div className="text-xs mt-1">符合 FDA 21 CFR Part 11 法规要求</div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <RadioGroupItem value="failed" id="r-fail" />
-                    <Label htmlFor="r-fail" className="cursor-pointer px-3 py-1 rounded bg-red-100 text-red-700 font-medium">不合格</Label>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <RadioGroupItem value="conditional_pass" id="r-cond" />
-                    <Label htmlFor="r-cond" className="cursor-pointer px-3 py-1 rounded bg-orange-100 text-orange-700 font-medium">条件合格</Label>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <RadioGroupItem value="pending" id="r-pending" />
-                    <Label htmlFor="r-pending" className="cursor-pointer px-3 py-1 rounded bg-gray-100 text-gray-600 font-medium">待检验</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-              <div className="space-y-1">
-                <Label>备注</Label>
-                <Textarea value={formData.remark} onChange={(e) => setFormData((p) => ({ ...p, remark: e.target.value }))} placeholder="备注信息" rows={2} />
-              </div>
-            </div>
+                ) : (
+                  <SignatureStatusCard
+                    documentType="IQC"
+                    documentNo={formData.inspectionNo}
+                    documentId={editId}
+                    signatures={signatures}
+                    onSignComplete={handleSignComplete}
+                  />
+                )}
+              </TabsContent>
 
-            {/* 电子签名区块 */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="w-1 h-5 bg-teal-500 rounded" />
-                <h3 className="font-semibold text-sm">电子签名</h3>
-                <span className="text-xs text-muted-foreground">(符合 FDA 21 CFR Part 11 法规要求)</span>
-              </div>
-              {!editId && (
-                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground text-center">
-                  请先保存检验单，保存后可进行电子签名
-                </div>
-              )}
-              {editId && (
-                <SignatureStatusCard
-                  documentType="IQC"
-                  documentNo={formData.inspectionNo}
-                  documentId={editId}
-                  signatures={signatures}
-                  onSignComplete={handleSignComplete}
+              {/* 备注 Tab */}
+              <TabsContent value="notes" className="mt-4">
+                <Textarea
+                  value={formData.remark}
+                  onChange={(e) => setFormData((p) => ({ ...p, remark: e.target.value }))}
+                  placeholder="输入备注信息..."
+                  rows={6}
+                  className="resize-none"
                 />
-              )}
-            </div>
-
-            {/* 底部按鈕 */}
-            <div className="flex justify-end gap-3 pt-2 border-t">
-              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>取消</Button>
-              <Button type="button" variant="outline" onClick={() => { setFormData((p) => ({ ...p, result: "pending" })); handleSubmit(); }} disabled={submitting}>保存草稿</Button>
-              <Button type="button" onClick={handleSubmit} disabled={submitting}>
-                {submitting ? "提交中..." : "提交"}
-              </Button>
-            </div>
+              </TabsContent>
+            </Tabs>
           </div>
-        </DraggableDialogContent>
-      </DraggableDialog>
+        </div>
+      </div>
 
       {/* ==================== 到货单选择弹窗 ==================== */}
       <DraggableDialog open={showReceiptPicker} onOpenChange={setShowReceiptPicker}>
@@ -1153,108 +1411,29 @@ export default function IQCPage() {
           </div>
         </DraggableDialogContent>
       </DraggableDialog>
-
-      {/* ==================== 详情弹窗 ==================== */}
-      <DraggableDialog open={showDetail} onOpenChange={setShowDetail}>
-        <DraggableDialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
-          {detailData && (
-            <div className="space-y-4 p-1">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">{(detailData as any).inspectionNo}</h2>
-                <Badge variant={RESULT_MAP[(detailData as any).result]?.variant ?? "secondary"}>
-                  {RESULT_MAP[(detailData as any).result]?.label ?? (detailData as any).result}
-                </Badge>
-              </div>
-              <div className="grid grid-cols-3 gap-3 text-sm border rounded-lg p-4 bg-muted/20">
-                <div><span className="text-muted-foreground">产品名称：</span>{(detailData as any).productName}</div>
-                <div><span className="text-muted-foreground">规格：</span>{(detailData as any).specification ?? "-"}</div>
-                <div><span className="text-muted-foreground">供应商：</span>{(detailData as any).supplierName ?? "-"}</div>
-                <div><span className="text-muted-foreground">到货单号：</span>{(detailData as any).goodsReceiptNo ?? "-"}</div>
-                <div><span className="text-muted-foreground">批次号：</span>{(detailData as any).batchNo ?? "-"}</div>
-                <div><span className="text-muted-foreground">到货数量：</span>{(detailData as any).receivedQty} {(detailData as any).unit}</div>
-                <div><span className="text-muted-foreground">抽样数量：</span>{(detailData as any).sampleQty ?? "-"}</div>
-                <div><span className="text-muted-foreground">合格数量：</span>{(detailData as any).qualifiedQty ?? "-"}</div>
-                <div><span className="text-muted-foreground">填报方式：</span>{(detailData as any).reportMode === "offline" ? "线下填写" : "线上填写"}</div>
-                <div><span className="text-muted-foreground">检验员：</span>{(detailData as any).inspectorName ?? "-"}</div>
-                <div><span className="text-muted-foreground">检验日期：</span>{formatDate((detailData as any).inspectionDate)}</div>
-              </div>
-              {(detailData as any).items?.length > 0 && (
-                <div>
-                  <Label className="text-base font-medium mb-2 block">检验项目明细</Label>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>#</TableHead>
-                        <TableHead>项目名称</TableHead>
-                        <TableHead>类型</TableHead>
-                        <TableHead>检验标准</TableHead>
-                        <TableHead>实测/判定值</TableHead>
-                        <TableHead>结论</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(detailData as any).items.map((it: any, idx: number) => (
-                        <TableRow key={it.id}>
-                          <TableCell>{idx + 1}</TableCell>
-                          <TableCell>{it.itemName}</TableCell>
-                          <TableCell>
-                            <Badge variant={it.itemType === "quantitative" ? "default" : "secondary"} className="text-xs">
-                              {it.itemType === "quantitative" ? "定量" : "定性"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {it.itemType === "quantitative" ? `${it.minVal ?? ""}～${it.maxVal ?? ""} ${it.unit ?? ""}` : it.acceptedValues ?? "-"}
-                          </TableCell>
-                          <TableCell>
-                            {it.itemType === "quantitative" ? (
-                              <div>
-                                <div>{it.measuredValue ? `均值: ${parseFloat(it.measuredValue).toFixed(2)}` : "-"}</div>
-                                {it.sampleValues && (() => {
-                                  try { const sv = JSON.parse(it.sampleValues); return <div className="text-xs text-muted-foreground">[{sv.join(", ")}]</div>; } catch { return null; }
-                                })()}
-                              </div>
-                            ) : it.actualValue ?? "-"}
-                          </TableCell>
-                          <TableCell>
-                            <span className={CONCLUSION_MAP[it.conclusion]?.color ?? ""}>
-                              {CONCLUSION_MAP[it.conclusion]?.label ?? it.conclusion}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-              {(detailData as any).remark && (
-                <div className="text-sm"><span className="text-muted-foreground">备注：</span>{(detailData as any).remark}</div>
-              )}
-              {/* 签名展示 */}
-              {(() => {
-                try {
-                  const sigs: SignatureRecord[] = (detailData as any).signatures
-                    ? JSON.parse((detailData as any).signatures)
-                    : [];
-                  if (!sigs.length) return null;
-                  return (
-                    <div className="space-y-2 pt-2 border-t">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">电子签名记录</span>
-                      </div>
-                      <SignatureStatusCard
-                        documentType="IQC"
-                        documentNo={(detailData as any).inspectionNo}
-                        documentId={(detailData as any).id}
-                        signatures={sigs}
-                      />
-                    </div>
-                  );
-                } catch { return null; }
-              })()}
-            </div>
-          )}
-        </DraggableDialogContent>
-      </DraggableDialog>
     </ERPLayout>
+  );
+}
+
+// ==================== 辅助组件 ====================
+function FieldRow({ label, value, link }: { label: string; value?: string | number | null; link?: boolean }) {
+  const display = value != null && value !== "" ? String(value) : "-";
+  return (
+    <div className="flex items-baseline gap-4 py-1.5 border-b border-muted/50">
+      <span className="text-sm text-muted-foreground w-24 shrink-0">{label}</span>
+      <span className={`text-sm font-medium ${link ? "text-primary" : ""}`}>{display}</span>
+    </div>
+  );
+}
+
+function EditFieldRow({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-4">
+      <span className="text-sm text-muted-foreground w-24 shrink-0">
+        {label}
+        {required && <span className="text-destructive ml-0.5">*</span>}
+      </span>
+      <div className="flex-1">{children}</div>
+    </div>
   );
 }

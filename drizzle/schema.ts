@@ -1715,3 +1715,113 @@ export const emailContacts = mysqlTable("email_contacts", {
 });
 export type EmailContact = typeof emailContacts.$inferSelect;
 export type InsertEmailContact = typeof emailContacts.$inferInsert;
+
+// ==================== 检验要求（IQC/IPQC/OQC 标准） ====================
+
+/**
+ * 检验要求主表：按产品编号+产品名称定义检验标准
+ */
+export const inspectionRequirements = mysqlTable("inspection_requirements", {
+  id: int("id").autoincrement().primaryKey(),
+  requirementNo: varchar("requirementNo", { length: 50 }).notNull().unique(), // 检验要求编号
+  type: mysqlEnum("type", ["IQC", "IPQC", "OQC"]).notNull(), // 检验类型
+  productCode: varchar("productCode", { length: 50 }), // 产品编号
+  productName: varchar("productName", { length: 200 }).notNull(), // 产品名称
+  version: varchar("version", { length: 20 }).default("1.0"), // 版本号
+  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  remark: text("remark"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type InspectionRequirement = typeof inspectionRequirements.$inferSelect;
+export type InsertInspectionRequirement = typeof inspectionRequirements.$inferInsert;
+
+/**
+ * 检验要求明细表：每条检验项目（定性/定量）
+ */
+export const inspectionRequirementItems = mysqlTable("inspection_requirement_items", {
+  id: int("id").autoincrement().primaryKey(),
+  requirementId: int("requirementId").notNull(),
+  itemName: varchar("itemName", { length: 200 }).notNull(), // 检验项目名称
+  itemType: mysqlEnum("itemType", ["qualitative", "quantitative"]).notNull(), // 定性/定量
+  standard: varchar("standard", { length: 500 }), // 检验标准/判定依据
+  // 定量字段
+  minVal: decimal("minVal", { precision: 12, scale: 4 }), // 最小值
+  maxVal: decimal("maxVal", { precision: 12, scale: 4 }), // 最大值
+  unit: varchar("unit", { length: 20 }), // 单位
+  // 定性字段
+  acceptedValues: varchar("acceptedValues", { length: 500 }), // 合格判定值（逗号分隔）
+  sortOrder: int("sortOrder").default(0),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type InspectionRequirementItem = typeof inspectionRequirementItems.$inferSelect;
+export type InsertInspectionRequirementItem = typeof inspectionRequirementItems.$inferInsert;
+
+// ==================== 来料检验单（IQC 记录） ====================
+
+/**
+ * 来料检验单主表：每条对应到货单的一个产品行
+ */
+export const iqcInspections = mysqlTable("iqc_inspections", {
+  id: int("id").autoincrement().primaryKey(),
+  inspectionNo: varchar("inspectionNo", { length: 50 }).notNull().unique(), // 检验编号 R20260308-01
+  reportMode: mysqlEnum("reportMode", ["online", "offline"]).default("online").notNull(), // 填报方式
+  goodsReceiptId: int("goodsReceiptId"), // 关联到货单ID
+  goodsReceiptNo: varchar("goodsReceiptNo", { length: 50 }), // 到货单号
+  goodsReceiptItemId: int("goodsReceiptItemId"), // 关联到货单明细ID
+  productId: int("productId"),
+  productCode: varchar("productCode", { length: 50 }),
+  productName: varchar("productName", { length: 200 }).notNull(),
+  specification: varchar("specification", { length: 200 }),
+  supplierId: int("supplierId"),
+  supplierName: varchar("supplierName", { length: 200 }),
+  supplierCode: varchar("supplierCode", { length: 50 }), // 供应商编码
+  batchNo: varchar("batchNo", { length: 50 }), // 批次号
+  sterilizationBatchNo: varchar("sterilizationBatchNo", { length: 50 }), // 灭菌批号
+  receivedQty: decimal("receivedQty", { precision: 12, scale: 4 }), // 到货数量
+  sampleQty: decimal("sampleQty", { precision: 12, scale: 4 }), // 抽样数量
+  qualifiedQty: decimal("qualifiedQty", { precision: 12, scale: 4 }), // 合格数量
+  unit: varchar("unit", { length: 20 }),
+  inspectionRequirementId: int("inspectionRequirementId"), // 关联检验要求ID
+  inspectionDate: date("inspectionDate"),
+  inspectorId: int("inspectorId"),
+  inspectorName: varchar("inspectorName", { length: 64 }),
+  result: mysqlEnum("result", ["pending", "passed", "failed", "conditional_pass"]).default("pending").notNull(),
+  remark: text("remark"),
+  attachments: text("attachments"), // JSON: [{fileType,recordNo,recordName,conclusion,fileUrl}]
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type IqcInspection = typeof iqcInspections.$inferSelect;
+export type InsertIqcInspection = typeof iqcInspections.$inferInsert;
+
+/**
+ * 来料检验单明细表：每条检验项目的实测结果
+ */
+export const iqcInspectionItems = mysqlTable("iqc_inspection_items", {
+  id: int("id").autoincrement().primaryKey(),
+  iqcId: int("iqcId").notNull(),
+  requirementItemId: int("requirementItemId"), // 关联检验要求明细ID（可为空，手动添加时）
+  itemName: varchar("itemName", { length: 200 }).notNull(),
+  itemType: mysqlEnum("itemType", ["qualitative", "quantitative"]).notNull(),
+  standard: varchar("standard", { length: 500 }),
+  // 定量结果
+  minVal: decimal("minVal", { precision: 12, scale: 4 }),
+  maxVal: decimal("maxVal", { precision: 12, scale: 4 }),
+  unit: varchar("unit", { length: 20 }),
+  measuredValue: varchar("measuredValue", { length: 100 }), // 实测值（定量均值或单值）
+  sampleValues: text("sampleValues"), // JSON: 各样品数值数组 ["1.2","1.3",...]
+  // 定性结果
+  acceptedValues: varchar("acceptedValues", { length: 500 }),
+  actualValue: varchar("actualValue", { length: 200 }), // 实际值/描述
+  // 结论
+  conclusion: mysqlEnum("conclusion", ["pass", "fail", "pending"]).default("pending").notNull(),
+  sortOrder: int("sortOrder").default(0),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type IqcInspectionItem = typeof iqcInspectionItems.$inferSelect;
+export type InsertIqcInspectionItem = typeof iqcInspectionItems.$inferInsert;

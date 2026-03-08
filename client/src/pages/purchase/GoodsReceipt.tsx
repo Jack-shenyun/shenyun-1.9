@@ -193,7 +193,7 @@ export default function GoodsReceiptPage() {
       };
     });
     setLines(newLines);
-  }, [poDetail?.id, formData.purchaseOrderId]);
+  }, [poDetail?.order?.id, formData.purchaseOrderId]);
 
   function resetForm() {
     const now = new Date();

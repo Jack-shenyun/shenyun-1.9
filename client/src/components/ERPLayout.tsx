@@ -114,6 +114,7 @@ import {
   Mail,
   ScrollText,
   PackageCheck,
+  FileCheck,
 } from "lucide-react";
 import {
   Popover,
@@ -211,6 +212,7 @@ const menuConfig = [
       { icon: Beaker, label: "成品检验", path: "/quality/oqc" },
       { icon: Boxes, label: "留样管理", path: "/quality/samples" },
       { icon: AlertTriangle, label: "不良事件", path: "/quality/incidents" },
+      { icon: FileCheck, label: "检验要求", path: "/quality/inspection-requirements" },
     ],
   },
   {

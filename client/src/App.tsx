@@ -62,6 +62,7 @@ import IPQCPage from "./pages/quality/IPQC";
 import OQCPage from "./pages/quality/OQC";
 import SamplesPage from "./pages/quality/Samples";
 import IncidentsPage from "./pages/quality/Incidents";
+import InspectionRequirementsPage from "./pages/quality/InspectionRequirements";
 
 // 采购部模块
 import SuppliersPage from "./pages/purchase/Suppliers";
@@ -164,6 +165,7 @@ function Router() {
       <Route path="/quality/oqc" component={OQCPage} />
       <Route path="/quality/samples" component={SamplesPage} />
       <Route path="/quality/incidents" component={IncidentsPage} />
+      <Route path="/quality/inspection-requirements" component={InspectionRequirementsPage} />
 
       {/* 采购部 */}
       <Route path="/purchase/suppliers" component={SuppliersPage} />
