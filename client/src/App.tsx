@@ -71,6 +71,9 @@ import RaDashboardPage from "./pages/ra/Dashboard";
 import RaProjectsPage from "./pages/ra/Projects";
 import RaWorkspacePage from "./pages/ra/Workspace";
 import RaTemplatesPage from "./pages/ra/Templates";
+import EuMdrPage from "./pages/ra/EuMdr";
+import UsFdaPage from "./pages/ra/UsFda";
+import CnNmpaPage from "./pages/ra/CnNmpa";
 
 // 采购部模块
 import SuppliersPage from "./pages/purchase/Suppliers";
@@ -198,6 +201,9 @@ function Router() {
       <Route path="/ra/projects" component={RaProjectsPage} />
       <Route path="/ra/workspace/:id" component={RaWorkspacePage} />
       <Route path="/ra/templates" component={RaTemplatesPage} />
+      <Route path="/ra/eu-mdr" component={EuMdrPage} />
+      <Route path="/ra/us-fda" component={UsFdaPage} />
+      <Route path="/ra/cn-nmpa" component={CnNmpaPage} />
 
       {/* 采购部 */}
       <Route path="/purchase/suppliers" component={SuppliersPage} />
