@@ -5,6 +5,7 @@ import net from "net";
 import path from "path";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
+import { registerFileManagerRoutes } from "../fileManagerRouter";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -44,6 +45,9 @@ async function startServer() {
       createContext,
     })
   );
+  // 文件管理 REST 接口
+  registerFileManagerRoutes(app as any);
+
   // uploaded files library
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
   // development mode uses Vite, production mode uses static files

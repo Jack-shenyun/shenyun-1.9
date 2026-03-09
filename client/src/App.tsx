@@ -12,6 +12,7 @@ import WorkflowCenterPage from "./pages/workflow/Center";
 
 // 管理部模块
 import DocumentsPage from "./pages/admin/Documents";
+import FileManagerPage from "./pages/admin/FileManager";
 import PersonnelPage from "./pages/admin/Personnel";
 import TrainingPage from "./pages/admin/Training";
 import AuditPage from "./pages/admin/Audit";
@@ -132,6 +133,7 @@ function Router() {
 
       {/* 管理部 */}
       <Route path="/admin/documents" component={DocumentsPage} />
+      <Route path="/admin/file-manager" component={FileManagerPage} />
       <Route path="/admin/personnel" component={PersonnelPage} />
       <Route path="/admin/training" component={TrainingPage} />
       <Route path="/admin/audit" component={AuditPage} />

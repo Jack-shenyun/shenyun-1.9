@@ -42,6 +42,7 @@ import {
   LogOut,
   PanelLeft,
   FileText,
+  HardDrive,
   Users,
   Handshake,
   ShoppingCart,
@@ -144,7 +145,8 @@ const menuConfig = [
     icon: Building2,
     label: "管理部",
     children: [
-      { icon: FileText, label: "文件管理", path: "/admin/documents" },
+      { icon: FileText, label: "知识库", path: "/admin/documents" },
+      { icon: HardDrive, label: "文件管理", path: "/admin/file-manager" },
       { icon: Users, label: "人事管理", path: "/admin/personnel" },
       { icon: GraduationCap, label: "培训管理", path: "/admin/training" },
       { icon: FileSearch, label: "内审管理", path: "/admin/audit" },
