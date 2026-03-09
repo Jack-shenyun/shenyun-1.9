@@ -101,6 +101,7 @@ import { orderApprovals, salesOrders as salesOrdersTable, salesOrderItems, inven
 } from "../drizzle/schema";
 import { eq, desc, sql, like, and, or } from "drizzle-orm";
 import { notifyTodoToUsers, sendApprovalResultNotification } from "./wechatService";
+import { raRouter } from "./raRouter";
 
 function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
@@ -5344,4 +5345,7 @@ export const appRouter = router({
         return { success: true, message: "配置已保存，请在服务器环境变量中配置对应的 Token" };
       }),
   }),
+
+  // ==================== 法规事务部 ====================
+  ra: raRouter,
 });

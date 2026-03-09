@@ -1913,3 +1913,33 @@ export const wechatNotifyLogs = mysqlTable("wechat_notify_logs", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type WechatNotifyLog = typeof wechatNotifyLogs.$inferSelect;
+
+
+// ==================== 法规事务模块 (Regulatory Affairs - RA) ====================
+
+/**
+ * 法规项目表
+ * 以产品为核心，每个产品可以创建多个法规申报项目（CE/FDA/NMPA）
+ */
+export const raProjects = mysqlTable("ra_projects", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  productId: int("productId"),
+  market: mysqlEnum("market", ["EU_MDR", "US_FDA", "CN_NMPA"]).notNull().default("EU_MDR"),
+  status: mysqlEnum("status", ["planning", "in_progress", "submitted", "approved", "archived"]).default("planning").notNull(),
+  currentStep: int("currentStep").default(1).notNull(),
+  classification: json("classification"),
+  technicalChars: json("technicalChars"),
+  applicableStandards: json("applicableStandards"),
+  productData: json("productData"),
+  gsprRequirements: json("gsprRequirements"),
+  documents: json("documents"),
+  activeDocumentId: varchar("activeDocumentId", { length: 64 }),
+  ownerId: int("ownerId"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RaProject = typeof raProjects.$inferSelect;
+export type InsertRaProject = typeof raProjects.$inferInsert;

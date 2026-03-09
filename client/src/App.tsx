@@ -66,6 +66,12 @@ import SamplesPage from "./pages/quality/Samples";
 import IncidentsPage from "./pages/quality/Incidents";
 import InspectionRequirementsPage from "./pages/quality/InspectionRequirements";
 
+// 法规事务部模块
+import RaDashboardPage from "./pages/ra/Dashboard";
+import RaProjectsPage from "./pages/ra/Projects";
+import RaWorkspacePage from "./pages/ra/Workspace";
+import RaTemplatesPage from "./pages/ra/Templates";
+
 // 采购部模块
 import SuppliersPage from "./pages/purchase/Suppliers";
 import PurchaseOrdersPage from "./pages/purchase/Orders";
@@ -186,6 +192,12 @@ function Router() {
       <Route path="/quality/samples" component={SamplesPage} />
       <Route path="/quality/incidents" component={IncidentsPage} />
       <Route path="/quality/inspection-requirements" component={InspectionRequirementsPage} />
+
+      {/* 法规事务部 */}
+      <Route path="/ra/dashboard" component={RaDashboardPage} />
+      <Route path="/ra/projects" component={RaProjectsPage} />
+      <Route path="/ra/workspace/:id" component={RaWorkspacePage} />
+      <Route path="/ra/templates" component={RaTemplatesPage} />
 
       {/* 采购部 */}
       <Route path="/purchase/suppliers" component={SuppliersPage} />
