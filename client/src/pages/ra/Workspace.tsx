@@ -18,7 +18,7 @@ import {
 import {
   ArrowLeft, ShieldCheck, FileText, ChevronRight, ChevronDown,
   Sparkles, Loader2, CheckCircle2, Clock, PenLine, Bot,
-  Globe, Save, AlertCircle, FolderOpen,
+  Globe, Save, AlertCircle, FolderOpen, Folder, ChevronLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { mdrDocumentTemplates, getAllDocuments } from "@/data/ra/mdrTemplates";
@@ -52,6 +52,8 @@ export default function RaWorkspacePage() {
   const [documents, setDocuments] = useState<DocumentDefinition[]>([]);
   const [activeDocId, setActiveDocId] = useState<DocumentId | null>(null);
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set(["section_01"]));
+  // 文件夹视图状态：null=显示所有文件夹，string=进入某个section
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"edit" | "preview">("edit");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -224,76 +226,114 @@ export default function RaWorkspacePage() {
 
         {/* 主体：左侧文档树 + 右侧编辑器 */}
         <div className="flex gap-4 h-[calc(100vh-200px)]">
-          {/* 左侧：文档结构树 */}
+          {/* 左侧：文件夹风格文档结构 */}
           <Card className="w-72 shrink-0 flex flex-col">
             <CardHeader className="py-3 px-4 border-b">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <FolderOpen className="w-4 h-4 text-primary" />
-                技术文件结构
+                {activeSectionId ? (
+                  <button
+                    onClick={() => setActiveSectionId(null)}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    返回
+                  </button>
+                ) : (
+                  <>
+                    <FolderOpen className="w-4 h-4 text-primary" />
+                    技术文件结构
+                  </>
+                )}
               </CardTitle>
+              {activeSectionId && (
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {mdrDocumentTemplates.find((m) => m.id === activeSectionId)?.title}
+                </p>
+              )}
             </CardHeader>
             <ScrollArea className="flex-1">
-              <div className="p-2 space-y-1">
-                {mdrDocumentTemplates.map((module) => {
-                  const isExpanded = expandedModules.has(module.id);
-                  return (
-                    <Collapsible
-                      key={module.id}
-                      open={isExpanded}
-                      onOpenChange={(open) => {
-                        setExpandedModules((prev) => {
-                          const next = new Set(prev);
-                          open ? next.add(module.id) : next.delete(module.id);
-                          return next;
-                        });
-                      }}
-                    >
-                      <CollapsibleTrigger className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md hover:bg-muted text-left">
-                        {isExpanded ? (
-                          <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                        ) : (
-                          <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                        )}
-                        <span className="text-xs font-medium text-muted-foreground truncate">
-                          {module.title}
-                        </span>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <div className="ml-4 space-y-0.5 mt-0.5">
-                          {module.documents.map((doc) => {
-                            const localDoc = documents.find((d) => d.id === doc.id);
-                            const progress = localDoc ? getDocProgress(localDoc) : 0;
-                            const isActive = activeDocId === doc.id;
-                            return (
-                              <button
-                                key={doc.id}
-                                onClick={() => {
-                                  setActiveDocId(doc.id as DocumentId);
-                                  setEditingSectionId(null);
-                                  updateMutation.mutate({ id: projectId, activeDocumentId: doc.id });
-                                }}
-                                className={`flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-left transition-colors text-xs
-                                  ${isActive
-                                    ? "bg-primary text-primary-foreground"
-                                    : "hover:bg-muted text-foreground"
-                                  }`}
-                              >
-                                <FileText className="w-3 h-3 shrink-0" />
-                                <span className="flex-1 truncate">{doc.title}</span>
-                                {progress > 0 && (
-                                  <span className={`text-[10px] shrink-0 ${isActive ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
-                                    {progress}%
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
+              {!activeSectionId ? (
+                /* 第一层：8个部分文件夹图标 */
+                <div className="p-3 grid grid-cols-2 gap-2">
+                  {mdrDocumentTemplates.map((module, idx) => {
+                    const sectionDocs = module.documents;
+                    const totalSecs = sectionDocs.reduce((s, d) => {
+                      const localDoc = documents.find((dd) => dd.id === d.id);
+                      return s + (localDoc?.sections.length || 0);
+                    }, 0);
+                    const filledSecs = sectionDocs.reduce((s, d) => {
+                      const localDoc = documents.find((dd) => dd.id === d.id);
+                      return s + (localDoc?.sections.filter((sec) => sec.content.trim()).length || 0);
+                    }, 0);
+                    const pct = totalSecs > 0 ? Math.round((filledSecs / totalSecs) * 100) : 0;
+                    return (
+                      <button
+                        key={module.id}
+                        onClick={() => {
+                          setActiveSectionId(module.id);
+                          // 自动选中该部分第一个文档
+                          if (module.documents.length > 0) {
+                            setActiveDocId(module.documents[0].id as DocumentId);
+                            setEditingSectionId(null);
+                          }
+                        }}
+                        className="flex flex-col items-center gap-1.5 p-2 rounded-lg hover:bg-amber-50 hover:border-amber-200 border border-transparent transition-all group"
+                      >
+                        <div className="relative">
+                          {pct > 0 ? (
+                            <FolderOpen className="w-10 h-10 text-amber-400 group-hover:text-amber-500 transition-colors" />
+                          ) : (
+                            <Folder className="w-10 h-10 text-amber-400 group-hover:text-amber-500 transition-colors" />
+                          )}
+                          {pct > 0 && (
+                            <span className="absolute -bottom-0.5 -right-1 text-[9px] bg-green-500 text-white rounded-full px-1 leading-tight">
+                              {pct}%
+                            </span>
+                          )}
                         </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  );
-                })}
-              </div>
+                        <span className="text-[10px] text-center text-gray-600 leading-tight line-clamp-2 w-full">
+                          第{idx + 1}部分
+                        </span>
+                        <span className="text-[9px] text-gray-400">{sectionDocs.length}个文件</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* 第二层：该部分下的文档列表 */
+                <div className="p-2 space-y-0.5">
+                  {mdrDocumentTemplates
+                    .find((m) => m.id === activeSectionId)
+                    ?.documents.map((doc) => {
+                      const localDoc = documents.find((d) => d.id === doc.id);
+                      const progress = localDoc ? getDocProgress(localDoc) : 0;
+                      const isActive = activeDocId === doc.id;
+                      return (
+                        <button
+                          key={doc.id}
+                          onClick={() => {
+                            setActiveDocId(doc.id as DocumentId);
+                            setEditingSectionId(null);
+                            updateMutation.mutate({ id: projectId, activeDocumentId: doc.id });
+                          }}
+                          className={`flex items-center gap-2 w-full px-2 py-2 rounded-md text-left transition-colors text-xs
+                            ${isActive
+                              ? "bg-primary text-primary-foreground"
+                              : "hover:bg-muted text-foreground"
+                            }`}
+                        >
+                          <FileText className="w-3.5 h-3.5 shrink-0" />
+                          <span className="flex-1 truncate">{doc.title}</span>
+                          {progress > 0 && (
+                            <span className={`text-[10px] shrink-0 ${isActive ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                              {progress}%
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                </div>
+              )}
             </ScrollArea>
           </Card>
 
