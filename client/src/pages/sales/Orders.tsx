@@ -1400,8 +1400,8 @@ export default function SalesOrdersPage() {
                   {/* 产品明细 */}
                   <div>
                     <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">产品明细</h3>
-                    <div className="rounded-lg border overflow-hidden">
-                      <Table>
+                    <div className="rounded-lg border overflow-hidden overflow-x-auto" style={{WebkitOverflowScrolling:'touch'}}>
+                      <Table style={{minWidth:'520px'}}>
                         <TableHeader>
                           <TableRow className="bg-muted/50">
                             <TableHead className="text-xs">产品编码</TableHead>

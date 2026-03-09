@@ -183,7 +183,7 @@ export default function LabelPrintPage() {
           </Select>
         </div>
 
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
           <Table>
             <TableHeader>
               <TableRow>

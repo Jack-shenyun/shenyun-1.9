@@ -572,7 +572,7 @@ export default function InboundPage() {
         </div>
 
         {/* 数据表格 */}
-        <div className="rounded-lg border overflow-hidden">
+        <div className="rounded-lg border overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">

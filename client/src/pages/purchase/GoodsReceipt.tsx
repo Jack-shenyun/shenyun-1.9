@@ -357,7 +357,7 @@ export default function GoodsReceiptPage() {
         </div>
 
         {/* 列表 */}
-        <div className="bg-white rounded-lg border overflow-hidden">
+        <div className="bg-white rounded-lg border overflow-x-auto" style={{WebkitOverflowScrolling:'touch'}}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -476,7 +476,7 @@ export default function GoodsReceiptPage() {
               {lines.length > 0 && (
                 <div>
                   <Label className="mb-2 block">到货明细</Label>
-                  <div className="border rounded overflow-hidden">
+                  <div className="border rounded overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-gray-50">

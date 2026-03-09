@@ -1039,7 +1039,7 @@ function CreateBOMDialog({
                     点击右上角「选择物料」按钮添加半成品/组件
                   </div>
                 ) : (
-                  <div className="border rounded-lg overflow-hidden">
+                  <div className="border rounded-lg overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/60 bg-muted/30">

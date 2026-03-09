@@ -898,7 +898,7 @@ function InventoryDetailContent({
               共 {(txList as any[]).length} 条记录
             </span>
           </h3>
-          <div className="rounded-lg border overflow-hidden">
+          <div className="rounded-lg border overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">

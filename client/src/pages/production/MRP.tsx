@@ -495,7 +495,7 @@ function MrpDetailDialog({ result, onClose }: { result: MrpResult; onClose: () =
                 </div>
               </div>
 
-              <div className="rounded-md border overflow-hidden">
+              <div className="rounded-md border overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">

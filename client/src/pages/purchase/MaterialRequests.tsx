@@ -279,7 +279,7 @@ export default function MaterialRequestsPage() {
         </div>
 
         {/* 列表 */}
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -400,7 +400,7 @@ export default function MaterialRequestsPage() {
                   <Plus className="w-3 h-3" /> 添加行
                 </Button>
               </div>
-              <div className="border rounded-md overflow-hidden">
+              <div className="border rounded-md overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
@@ -493,7 +493,7 @@ export default function MaterialRequestsPage() {
                 <div>
                   <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">申请明细</h3>
                   {selected.items && selected.items.length > 0 ? (
-                    <div className="border rounded-md overflow-hidden">
+                    <div className="border rounded-md overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/50">

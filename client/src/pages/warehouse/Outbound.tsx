@@ -610,7 +610,7 @@ export default function OutboundPage() {
         </div>
 
         {/* 数据表格 */}
-        <div className="rounded-lg border overflow-hidden">
+        <div className="rounded-lg border overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -916,7 +916,7 @@ export default function OutboundPage() {
                     : "请点击「添加明细」按钮添加出库物料"}
                 </div>
               ) : (
-                <div className="rounded-lg border overflow-hidden">
+                <div className="rounded-lg border overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-muted/50">

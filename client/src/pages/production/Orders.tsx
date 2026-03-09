@@ -1142,7 +1142,7 @@ export default function ProductionOrdersPage() {
                 );
               }
               return (
-                <div className="border rounded-lg overflow-hidden">
+                <div className="border rounded-lg overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                   <div className="max-h-[360px] overflow-y-auto">
                     <Table className="text-xs">
                       <TableHeader>

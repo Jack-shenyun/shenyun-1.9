@@ -282,7 +282,7 @@ export default function ProspectPage() {
                 </div>
 
                 {companies.map((company: Company) => (
-                  <div key={company.domain} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div key={company.domain} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                     {/* 公司基本信息 */}
                     <div className="p-5">
                       <div className="flex items-start justify-between gap-4">
@@ -459,7 +459,7 @@ export default function ProspectPage() {
 
           {/* ── 线索库 Tab ── */}
           <TabsContent value="leads">
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <TrendingUp className="h-5 w-5 text-emerald-600" />

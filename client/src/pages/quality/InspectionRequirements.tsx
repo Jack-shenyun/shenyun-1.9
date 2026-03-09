@@ -266,7 +266,7 @@ export default function InspectionRequirementsPage() {
         </div>
 
         {/* 列表 */}
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
           <Table>
             <TableHeader>
               <TableRow>
@@ -536,7 +536,7 @@ export default function InspectionRequirementsPage() {
                   <Plus className="w-3 h-3 mr-1" />添加项目
                 </Button>
               </div>
-              <div className="border rounded-lg overflow-hidden">
+              <div className="border rounded-lg overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                 <Table>
                   <TableHeader>
                     <TableRow>

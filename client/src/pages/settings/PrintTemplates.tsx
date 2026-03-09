@@ -706,7 +706,7 @@ export default function PrintTemplatesPage() {
             {selectedTemplate && (() => {
               const tpl = getTemplate(selectedTemplate);
               return (
-                <div className="border rounded-lg overflow-hidden">
+                <div className="border rounded-lg overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                   <div className="bg-muted px-3 py-2 text-xs text-muted-foreground flex items-center justify-between">
                     <span>打印预览（示例数据）</span>
                     <Badge variant="secondary" className="text-xs">{selectedTemplate.moduleLabel}</Badge>

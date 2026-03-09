@@ -837,7 +837,7 @@ export default function MaterialRequisitionPage() {
                         : "可选择关联生产指令（可选），或直接手动添加物料"}
                   </div>
                 ) : (
-                  <div className="border rounded-md overflow-hidden">
+                  <div className="border rounded-md overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/60 text-xs">
@@ -971,7 +971,7 @@ export default function MaterialRequisitionPage() {
                   onChange={(e) => setInventoryPickerSearch(e.target.value)}
                 />
               </div>
-              <div className="border rounded-md overflow-hidden max-h-[50vh] overflow-y-auto">
+              <div className="border rounded-md overflow-x-auto max-h-[50vh] overflow-y-auto" style={{WebkitOverflowScrolling:"touch"}}>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/60 text-xs sticky top-0">
@@ -1114,7 +1114,7 @@ export default function MaterialRequisitionPage() {
                   {getViewItems(viewingOrder).length > 0 && (
                     <div>
                       <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">物料明细 ({getViewItems(viewingOrder).length} 项)</h3>
-                      <div className="border rounded-md overflow-hidden">
+                      <div className="border rounded-md overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                         <Table>
                           <TableHeader>
                             <TableRow className="bg-muted/60">
@@ -1176,7 +1176,7 @@ export default function MaterialRequisitionPage() {
                   onChange={(e) => setBatchSearchCode(e.target.value)}
                 />
               </div>
-              <div className="border rounded-md overflow-hidden">
+              <div className="border rounded-md overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/60 text-xs">
