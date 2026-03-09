@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Settings } from "lucide-react";
+import { Settings, ChevronLeft } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import shenyunLogo from "@/assets/2ac420a999cddd5f145a62155f78b13e.png";
@@ -35,7 +35,16 @@ export default function FileManagerLayout({ children }: FileManagerLayoutProps) 
           borderBottom: "1px solid rgba(0,0,0,0.08)",
         }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors px-2 py-1 rounded-md hover:bg-slate-100"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            返回主页
+          </button>
+          <span className="text-slate-200">|</span>
           <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
           <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
           <span className="text-slate-300 hidden sm:block">·</span>
