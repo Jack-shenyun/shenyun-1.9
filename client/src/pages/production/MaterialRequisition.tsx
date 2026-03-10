@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
+import { formatDate } from "@/lib/formatters";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -575,7 +576,7 @@ export default function MaterialRequisitionPage() {
                       <TableCell className="text-center font-medium font-mono">{order.requisitionNo}</TableCell>
                       <TableCell className="text-center font-mono">{order.productionOrderNo || "-"}</TableCell>
                       <TableCell className="text-center">{product?.name || "-"}</TableCell>
-                      <TableCell className="text-center">{order.applicationDate ? String(order.applicationDate).split("T")[0] : "-"}</TableCell>
+                      <TableCell className="text-center">{formatDate(order.applicationDate)}</TableCell>
                       <TableCell className="text-center">
                         <Badge variant={statusMap[order.status]?.variant || "outline"} className={getStatusSemanticClass(order.status, statusMap[order.status]?.label)}>
                           {statusMap[order.status]?.label || order.status}
@@ -1105,7 +1106,7 @@ export default function MaterialRequisitionPage() {
                         <FieldRow label="关联任务">{viewingOrder.productionOrderNo || "-"}</FieldRow>
                       </div>
                       <div>
-                        <FieldRow label="申请日期">{viewingOrder.applicationDate ? String(viewingOrder.applicationDate).split("T")[0] : "-"}</FieldRow>
+                        <FieldRow label="申请日期">{formatDate(viewingOrder.applicationDate)}</FieldRow>
                       </div>
                     </div>
                   </div>

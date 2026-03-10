@@ -254,15 +254,18 @@ export function DraggableDialog({
 // 用于替换DialogContent的组件
 export function DraggableDialogContent({ 
   children, 
-  isMaximized = false 
+  isMaximized = false,
+  className,
 }: { 
   children: ReactNode;
   isMaximized?: boolean;
+  className?: string;
 }) {
   return (
     <div className={cn(
       "px-6 py-4",
-      isMaximized && "max-w-none"
+      isMaximized && "max-w-none",
+      className
     )}>
       {children}
     </div>

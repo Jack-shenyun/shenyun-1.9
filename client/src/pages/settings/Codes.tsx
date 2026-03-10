@@ -55,13 +55,149 @@ interface CodeRule {
   currentSerial: number;
   separator: string;
   example: string;
+  department: string;
   module: string;
   status: "active" | "inactive";
   description: string;
 }
 
-// 模拟数据
+const MODULE_NAME_MAP: Record<string, string> = {
+  purchaseOrder: "采购订单",
+  productionOrder: "生产订单",
+  materialRequest: "物料请购",
+  salesOrder: "销售订单",
+  customer: "客户管理",
+  inbound: "入库单",
+  outbound: "出库单",
+  receivable: "应收单",
+  paymentRecord: "付款/收款记录",
+  reimbursement: "报销单",
+  customs: "报关单",
+  productionPlan: "生产计划",
+  requisition: "领料单",
+  productionRecord: "生产记录",
+  routingCard: "流转卡",
+  sterilization: "灭菌单",
+  warehouseEntry: "生产入库申请",
+  stocktake: "盘点单",
+  sample: "留样单",
+  lab: "实验室记录",
+  qualityIncident: "质量事件",
+  training: "培训记录",
+  rdProject: "研发项目",
+  overtime: "加班申请",
+  leave: "请假申请",
+  outing: "外出申请",
+  "客户管理": "客户编码",
+  "销售订单": "销售订单编码",
+  "采购订单": "采购订单编码",
+  "生产订单": "生产订单编码",
+  "物料请购": "物料申请编码",
+  "入库单": "入库单编码",
+  "出库单": "出库单编码",
+  "应收单": "应收单编码",
+  "付款/收款记录": "资金流水编码",
+  "报销单": "报销编码",
+  "报关单": "报关编码",
+  "生产计划": "生产计划编码",
+  "领料单": "领料单编码",
+  "生产记录": "生产记录编码",
+  "流转卡": "流转卡编码",
+  "灭菌单": "灭菌单编码",
+  "生产入库申请": "生产入库申请编码",
+  "盘点单": "盘点单编码",
+  "留样单": "留样单编码",
+  "实验室记录": "实验室记录编码",
+  "质量事件": "质量事件编码",
+  "培训记录": "培训记录编码",
+  "研发项目": "研发项目编码",
+  "加班申请": "加班申请编码",
+  "请假申请": "请假申请编码",
+  "外出申请": "外出申请编码",
+};
 
+const MODULE_NAME_MAP_LOWER: Record<string, string> = Object.fromEntries(
+  Object.entries(MODULE_NAME_MAP).map(([k, v]) => [k.toLowerCase(), v]),
+);
+
+function toChineseModuleName(input: string): string {
+  const trimmed = String(input || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.endsWith("编码")) {
+    const stripped = trimmed.slice(0, -2);
+    if (stripped) return toChineseModuleName(stripped);
+  }
+  if (MODULE_NAME_MAP[trimmed]) return MODULE_NAME_MAP[trimmed];
+  const lower = trimmed.toLowerCase();
+  if (MODULE_NAME_MAP_LOWER[lower]) return MODULE_NAME_MAP_LOWER[lower];
+  const compact = lower.replace(/[\s_-]+/g, "");
+  if (MODULE_NAME_MAP_LOWER[compact]) return MODULE_NAME_MAP_LOWER[compact];
+  return trimmed;
+}
+
+function inferDepartmentByModule(moduleName: string): string {
+  const m = moduleName.trim();
+  const map: Record<string, string> = {
+    "客户管理": "销售部",
+    "销售订单": "销售部",
+    "报关单": "销售部",
+    "应收单": "销售部",
+    "采购订单": "采购部",
+    "物料请购": "采购部",
+    "生产订单": "生产部",
+    "生产计划": "生产部",
+    "领料单": "生产部",
+    "生产记录": "生产部",
+    "流转卡": "生产部",
+    "灭菌单": "生产部",
+    "生产入库申请": "生产部",
+    "入库单": "仓库管理",
+    "出库单": "仓库管理",
+    "盘点单": "仓库管理",
+    "付款/收款记录": "财务部",
+    "报销单": "财务部",
+    "留样单": "质量部",
+    "实验室记录": "质量部",
+    "质量事件": "质量部",
+    "研发项目": "研发部",
+    "培训记录": "管理部",
+    "加班申请": "管理部",
+    "请假申请": "管理部",
+    "外出申请": "管理部",
+  };
+  return map[m] || "系统设置";
+}
+
+function normalizeCodeRule(raw: any): CodeRule {
+  const rawModuleName = String(raw?.module ?? "");
+  const moduleName = toChineseModuleName(rawModuleName);
+  const prefix = String(raw?.prefix ?? "");
+  const dateFormat = String(raw?.dateFormat ?? "");
+  const serialLength = Number(raw?.serialLength ?? raw?.seqLength ?? 4);
+  const currentSerial = Number(raw?.currentSerial ?? raw?.currentSeq ?? 0);
+  const separator = String(raw?.separator ?? "-");
+  const description = String(raw?.description ?? "");
+  const example =
+    String(raw?.example ?? "") ||
+    [prefix, dateFormat ? "2026" : "", String(1).padStart(serialLength, "0")]
+      .filter(Boolean)
+      .join(separator);
+  const inferredName = MODULE_NAME_MAP[moduleName] || (moduleName ? `${moduleName}编码` : "");
+  return {
+    id: Number(raw?.id ?? 0),
+    name: String(raw?.name ?? "") || description || inferredName || "未命名编码规则",
+    prefix,
+    dateFormat,
+    serialLength,
+    currentSerial,
+    separator,
+    example,
+    department: inferDepartmentByModule(moduleName),
+    module: moduleName || "未分类",
+    status: (raw?.status === "inactive" ? "inactive" : "active") as "active" | "inactive",
+    description,
+  };
+}
 
 const moduleOptions = [
   { label: "管理部", value: "管理部" },
@@ -87,7 +223,13 @@ export default function CodesPage() {
   const createMutation = trpc.codeRules.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
   const updateMutation = trpc.codeRules.update.useMutation({ onSuccess: () => { refetch(); toast.success("更新成功"); } });
   const deleteMutation = trpc.codeRules.delete.useMutation({ onSuccess: () => { refetch(); toast.success("删除成功"); } });
-  const codeRules = _dbData as any[];
+  const codeRules = (_dbData as any[])
+    .map(normalizeCodeRule)
+    .filter((rule, index, arr) => {
+      const key = `${rule.module}::${rule.prefix}`;
+      return arr.findIndex((item) => `${item.module}::${item.prefix}` === key) === index;
+    })
+    .sort((a, b) => (a.department + a.module).localeCompare(b.department + b.module, "zh-CN"));
   const [searchTerm, setSearchTerm] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -111,7 +253,8 @@ export default function CodesPage() {
     (rule) =>
       String(rule.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       String(rule.prefix ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(rule.module ?? "").toLowerCase().includes(searchTerm.toLowerCase())
+      String(rule.module ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(rule.department ?? "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // 生成示例编码
@@ -221,7 +364,17 @@ export default function CodesPage() {
 
     const example = generateExample();
 
+    const payload = {
+      module: formData.module || formData.name,
+      prefix: formData.prefix,
+      dateFormat: formData.dateFormat || "",
+      seqLength: formData.serialLength,
+      example,
+      description: formData.description || formData.name,
+    };
+
     if (editingRule) {
+      updateMutation.mutate({ id: editingRule.id, data: payload });
       // 记录操作日志
       logOperation({
         module: "code_rule",
@@ -236,8 +389,10 @@ export default function CodesPage() {
       
       toast.success("编码规则已更新");
     } else {
+      createMutation.mutate(payload);
+      const nextId = codeRules.length > 0 ? Math.max(...codeRules.map((r: any) => r.id)) + 1 : 1;
       const newRule: CodeRule = {
-        id: Math.max(...codeRules.map((r: any) => r.id)) + 1,
+        id: nextId,
         name: formData.name,
         prefix: formData.prefix,
         dateFormat: formData.dateFormat,
@@ -358,6 +513,7 @@ export default function CodesPage() {
                     <TableHead className="text-center font-bold">流水号位数</TableHead>
                     <TableHead className="text-center font-bold">当前流水号</TableHead>
                     <TableHead className="text-center font-bold">示例</TableHead>
+                    <TableHead className="text-center font-bold">所属部门</TableHead>
                     <TableHead className="text-center font-bold">所属模块</TableHead>
                     <TableHead className="text-center font-bold">状态</TableHead>
                     <TableHead className="w-[100px] text-center font-bold">操作</TableHead>
@@ -366,7 +522,7 @@ export default function CodesPage() {
                 <TableBody>
                   {filteredRules.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                         {isLoading ? "加载中..." : "暂无数据"}
                       </TableCell>
                     </TableRow>
@@ -379,7 +535,7 @@ export default function CodesPage() {
                         <TableCell className="text-center">{rule.serialLength}</TableCell>
                         <TableCell className="text-center">{rule.currentSerial}</TableCell>
                         <TableCell className="text-center">
-                          <div className="flex items-center gap-1">
+                          <div className="w-full flex items-center justify-center gap-1">
                             <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
                               {rule.example}
                             </code>
@@ -392,6 +548,9 @@ export default function CodesPage() {
                               <Copy className="h-3 w-3" />
                             </Button>
                           </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline">{rule.department}</Badge>
                         </TableCell>
                         <TableCell className="text-center">
                           <Badge variant="outline">{rule.module}</Badge>
@@ -474,8 +633,8 @@ export default function CodesPage() {
               <div className="space-y-2">
                 <Label>日期格式</Label>
                 <Select
-                  value={formData.dateFormat}
-                  onValueChange={(v) => setFormData({ ...formData, dateFormat: v })}
+                  value={formData.dateFormat || "none"}
+                  onValueChange={(v) => setFormData({ ...formData, dateFormat: v === "none" ? "" : v })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="选择日期格式" />

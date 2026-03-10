@@ -240,32 +240,28 @@ const baseFormFields: FormField[] = [
 ];
 
 const columns: Column<Customer>[] = [
-  { key: "code", title: "客户编码", width: "110px" },
+  { key: "code", title: "客户编码" },
   { key: "name", title: "客户名称" },
   {
     key: "type",
     title: "客户类型",
-    width: "100px",
     render: (value) => <Badge variant="outline">{typeMap[value] || value}</Badge>,
   },
-  { key: "contactPerson", title: "联系人", width: "100px" },
-  { key: "phone", title: "联系电话", width: "130px" },
+  { key: "contactPerson", title: "联系人" },
+  { key: "phone", title: "联系电话" },
   {
     key: "province",
     title: "地区",
-    width: "120px",
     render: (value, record) => record.country || value || "-",
   },
   {
     key: "salesPersonName",
     title: "销售负责人",
-    width: "100px",
     render: (value) => value || "-",
   },
   {
     key: "status",
     title: "状态",
-    width: "100px",
     render: (value) => <StatusBadge status={value} statusMap={statusMap} />,
   },
 ];

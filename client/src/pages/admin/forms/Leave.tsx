@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import ERPLayout from "@/components/ERPLayout";
 import ModulePage, { Column, StatusBadge } from "@/components/ModulePage";
-import { Calendar, Plus } from "lucide-react";
+import { Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import FormDialog from "@/components/FormDialog";
@@ -57,7 +56,7 @@ export default function LeavePage() {
   };
 
   return (
-    <ERPLayout>
+    <>
       <ModulePage
         title="请假申请"
         description="管理员工请假申请及审批流程"
@@ -65,6 +64,7 @@ export default function LeavePage() {
         columns={columns}
         data={data}
         loading={isLoading}
+        compact
         onAdd={() => { setEditingRecord(null); setFormOpen(true); }}
         onEdit={(record) => { setEditingRecord(record); setFormOpen(true); }}
         onDelete={(record) => deleteMutation.mutate({ id: record.id })}
@@ -97,6 +97,6 @@ export default function LeavePage() {
         }}
         onSubmit={handleSubmit}
       />
-    </ERPLayout>
+    </>
   );
 }

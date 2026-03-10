@@ -1798,6 +1798,49 @@ export async function getPurchaseOrderItems(orderId: number) {
     .where(eq(purchaseOrderItems.orderId, orderId));
 }
 
+/**
+ * 根据供应商ID和产品ID列表，查询每个产品最近一次采购订单的单价和货币
+ * 用于创建新采购单时自动带入上次采购价
+ */
+export async function getLastPurchasePrices(supplierId: number, productIds: number[]) {
+  const db = await getDb();
+  if (!db || productIds.length === 0) return [];
+
+  const results: { productId: number; unitPrice: string; currency: string }[] = [];
+
+  for (const productId of productIds) {
+    const rows = await db
+      .select({
+        productId: purchaseOrderItems.productId,
+        unitPrice: purchaseOrderItems.unitPrice,
+        currency: purchaseOrders.currency,
+        orderDate: purchaseOrders.orderDate,
+        createdAt: purchaseOrders.createdAt,
+      })
+      .from(purchaseOrderItems)
+      .innerJoin(purchaseOrders, eq(purchaseOrderItems.orderId, purchaseOrders.id))
+      .where(
+        and(
+          eq(purchaseOrders.supplierId, supplierId),
+          eq(purchaseOrderItems.productId, productId),
+          isNotNull(purchaseOrderItems.unitPrice)
+        )
+      )
+      .orderBy(desc(purchaseOrders.orderDate), desc(purchaseOrders.createdAt))
+      .limit(1);
+
+    if (rows.length > 0 && rows[0].unitPrice) {
+      results.push({
+        productId,
+        unitPrice: rows[0].unitPrice,
+        currency: rows[0].currency || "CNY",
+      });
+    }
+  }
+
+  return results;
+}
+
 export async function createPurchaseOrder(data: InsertPurchaseOrder, items: InsertPurchaseOrderItem[]) {
   const db = await getDb();
   if (!db) throw new Error("数据库连接不可用");
@@ -3718,10 +3761,49 @@ export async function deleteDepartment(id: number, deletedBy?: number) {
 
 // ==================== 编码规则 CRUD ====================
 
+const SYSTEM_CODE_RULE_SEEDS: InsertCodeRule[] = [
+  { module: "客户管理", prefix: "KH", dateFormat: "", seqLength: 5, currentSeq: 0, example: "KH-00001", description: "客户编码" },
+  { module: "销售订单", prefix: "SO", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "SO-2026-0001", description: "销售订单编码" },
+  { module: "采购订单", prefix: "PO", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "PO-2026-0001", description: "采购订单编码" },
+  { module: "生产订单", prefix: "MO", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "MO-2026-0001", description: "生产订单编码" },
+  { module: "物料请购", prefix: "MR", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "MR-2026-0001", description: "物料申请编码" },
+  { module: "入库单", prefix: "IN", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "IN-2026-0001", description: "仓库入库编码" },
+  { module: "出库单", prefix: "OUT", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "OUT-2026-0001", description: "仓库出库编码" },
+  { module: "应收单", prefix: "AR", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "AR-SO-2026-0001", description: "应收单编码" },
+  { module: "付款/收款记录", prefix: "PR", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "PR-2026-0001", description: "资金流水编码" },
+  { module: "报销单", prefix: "EXP", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "EXP-2026-0001", description: "费用报销编码" },
+  { module: "报关单", prefix: "CD", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "CD-2026-0001", description: "报关管理编码" },
+  { module: "生产计划", prefix: "PP", dateFormat: "YYYYMMDD", seqLength: 4, currentSeq: 0, example: "PP-20260309-0001", description: "生产计划编码" },
+  { module: "领料单", prefix: "MRO", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "MRO-2026-0001", description: "领料申请编码" },
+  { module: "生产记录", prefix: "PRD", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "PRD-2026-0001", description: "批记录编码" },
+  { module: "流转卡", prefix: "RC", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "RC-2026-0001", description: "生产流转卡编码" },
+  { module: "灭菌单", prefix: "ST", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "ST-2026-0001", description: "灭菌单编码" },
+  { module: "生产入库申请", prefix: "PWE", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "PWE-2026-0001", description: "生产入库申请编码" },
+  { module: "盘点单", prefix: "STK", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "STK-2026-0001", description: "库存盘点编码" },
+  { module: "留样单", prefix: "SP", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "SP-2026-0001", description: "留样管理编码" },
+  { module: "实验室记录", prefix: "LAB", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "LAB-2026-0001", description: "实验室记录编码" },
+  { module: "质量事件", prefix: "QI", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "QI-2026-0001", description: "质量事件编码" },
+  { module: "培训记录", prefix: "TR", dateFormat: "YYYY", seqLength: 3, currentSeq: 0, example: "TR-2026-001", description: "培训管理编码" },
+  { module: "研发项目", prefix: "RD", dateFormat: "YYYY", seqLength: 3, currentSeq: 0, example: "RD-2026-001", description: "研发项目编码" },
+  { module: "加班申请", prefix: "OT", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "OT-2026-0001", description: "加班申请编码" },
+  { module: "请假申请", prefix: "LV", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "LV-2026-0001", description: "请假申请编码" },
+  { module: "外出申请", prefix: "OUTREQ", dateFormat: "YYYY", seqLength: 4, currentSeq: 0, example: "OUTREQ-2026-0001", description: "外出申请编码" },
+];
+
 export async function getCodeRules() {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(codeRules);
+  const existingRules = await db.select().from(codeRules);
+  const existingKeys = new Set(existingRules.map((rule) => `${rule.module}::${rule.prefix}`));
+  const missingSeeds = SYSTEM_CODE_RULE_SEEDS.filter(
+    (seed) => !existingKeys.has(`${seed.module}::${seed.prefix}`),
+  );
+
+  if (missingSeeds.length > 0) {
+    await db.insert(codeRules).values(missingSeeds);
+  }
+
+  return await db.select().from(codeRules).orderBy(asc(codeRules.id));
 }
 
 export async function createCodeRule(data: InsertCodeRule) {
@@ -4652,6 +4734,7 @@ export async function getProductionPlans(params?: { search?: string; status?: st
     createdAt: productionPlans.createdAt,
     updatedAt: productionPlans.updatedAt,
     productSourceType: products.sourceType,
+    productProcurePermission: products.procurePermission,
     productIsSterilized: products.isSterilized,
     productSpecification: products.specification,
     productCode: products.code,

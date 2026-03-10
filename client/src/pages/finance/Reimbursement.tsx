@@ -625,7 +625,7 @@ export default function ReimbursementPage() {
 
   return (
     <ERPLayout>
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="w-full px-3 py-4 md:px-4 md:py-5">
         {/* 页头 */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">

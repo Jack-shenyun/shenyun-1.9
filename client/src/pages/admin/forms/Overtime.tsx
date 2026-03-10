@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import ERPLayout from "@/components/ERPLayout";
 import ModulePage, { Column, StatusBadge } from "@/components/ModulePage";
-import { Clock, Plus } from "lucide-react";
+import { Clock } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import FormDialog from "@/components/FormDialog";
@@ -51,7 +50,7 @@ export default function OvertimePage() {
   };
 
   return (
-    <ERPLayout>
+    <>
       <ModulePage
         title="加班申请"
         description="管理员工加班申请及审批流程"
@@ -59,6 +58,7 @@ export default function OvertimePage() {
         columns={columns}
         data={data}
         loading={isLoading}
+        compact
         onAdd={() => { setEditingRecord(null); setFormOpen(true); }}
         onEdit={(record) => { setEditingRecord(record); setFormOpen(true); }}
         onDelete={(record) => deleteMutation.mutate({ id: record.id })}
@@ -96,6 +96,6 @@ export default function OvertimePage() {
         }}
         onSubmit={handleSubmit}
       />
-    </ERPLayout>
+    </>
   );
 }

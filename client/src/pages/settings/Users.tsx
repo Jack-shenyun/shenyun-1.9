@@ -557,7 +557,12 @@ export default function UsersPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-center font-mono text-sm">{user.username}</TableCell>
-                        <TableCell className="text-center text-sm">{user.department || "-"}</TableCell>
+                        <TableCell className="text-center text-sm">
+                          {(() => {
+                            const count = parseDepartments(user.department).length;
+                            return count > 0 ? `${count}` : "-";
+                          })()}
+                        </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
                             {user.role === "admin" ? (
@@ -590,7 +595,7 @@ export default function UsersPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-center text-sm text-muted-foreground">
-                          {user.lastLogin}
+                          {formatDateTime(user.lastLogin)}
                         </TableCell>
                         <TableCell className="text-center">
                           <DropdownMenu>
@@ -917,7 +922,7 @@ export default function UsersPage() {
                         </div>
                       </FieldRow>
                       <FieldRow label="创建时间">{formatDateValue(viewingUser.createdAt)}</FieldRow>
-                      <FieldRow label="最后登录">{viewingUser.lastLogin}</FieldRow>
+                      <FieldRow label="最后登录">{formatDateTime(viewingUser.lastLogin)}</FieldRow>
                     </div>
                   </div>
                 </div>

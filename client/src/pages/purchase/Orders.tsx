@@ -1,5 +1,5 @@
 import { formatDate, formatDateTime } from "@/lib/formatters";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -7,6 +7,7 @@ import ERPLayout from "@/components/ERPLayout";
 import MaterialMultiSelect, { SelectedMaterial, Material } from "@/components/MaterialMultiSelect";
 import { ShoppingBag, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Layers, Printer, CheckCircle, XCircle, UserCheck } from "lucide-react";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -76,6 +77,9 @@ export default function PurchaseOrdersPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<PurchaseOrder | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
+  const [supplierSearch, setSupplierSearch] = useState("");
+  const [tempSupplierId, setTempSupplierId] = useState<number>(0);
   const { canDelete, isAdmin, isGM } = usePermission();
 
   // ===== 数据库查询 =====
@@ -84,21 +88,66 @@ export default function PurchaseOrdersPage() {
   );
   const { data: suppliersData = [] } = trpc.suppliers.list.useQuery();
   const { data: productsData = [] } = trpc.products.list.useQuery();
+  const { data: inventoryData = [] } = trpc.inventory.list.useQuery({ limit: 5000 });
   const createMutation = trpc.purchaseOrders.create.useMutation({ onSuccess: () => { refetch(); toast.success("采购单已创建"); setFormDialogOpen(false); } });
   const updateMutation = trpc.purchaseOrders.update.useMutation({ onSuccess: () => { refetch(); toast.success("采购单已更新"); setFormDialogOpen(false); setViewDialogOpen(false); } });
   const deleteMutation = trpc.purchaseOrders.delete.useMutation({ onSuccess: () => { refetch(); toast.success("采购单已删除"); } });
 
-  // 将产品数据转为 Material 接口供 MaterialMultiSelect 使用
-  const materialsFromDb: Material[] = (productsData as any[]).map((p: any) => ({
-    id: p.id,
-    code: p.code || "",
-    name: p.name || "",
-    spec: p.specification || "",
-    unit: p.unit || "个",
-    price: 0,
-    category: p.category || "",
-    stock: 0,
-  }));
+  const stockMaps = useMemo(() => {
+    const byProductId = new Map<number, number>();
+    const byCode = new Map<string, number>();
+    const byName = new Map<string, number>();
+
+    (inventoryData as any[]).forEach((inv: any) => {
+      const qty = Number(inv?.quantity || 0);
+      if (!Number.isFinite(qty)) return;
+      if (String(inv?.status || "") === "unqualified") return;
+
+      const productId = Number(inv?.productId || 0);
+      if (productId > 0) {
+        byProductId.set(productId, (byProductId.get(productId) || 0) + qty);
+      }
+
+      const code = String(inv?.materialCode || "").trim().toLowerCase();
+      if (code) {
+        byCode.set(code, (byCode.get(code) || 0) + qty);
+      }
+
+      const name = String(inv?.itemName || "").trim().toLowerCase();
+      if (name) {
+        byName.set(name, (byName.get(name) || 0) + qty);
+      }
+    });
+
+    return { byProductId, byCode, byName };
+  }, [inventoryData]);
+
+  // 将产品数据转为 Material 接口供 MaterialMultiSelect 使用（库存与库存台账联动）
+  const materialsFromDb: Material[] = useMemo(
+    () =>
+      (productsData as any[]).map((p: any) => {
+        const productId = Number(p.id || 0);
+        const code = String(p.code || "").trim().toLowerCase();
+        const name = String(p.name || "").trim().toLowerCase();
+        const stock =
+          (productId > 0 ? stockMaps.byProductId.get(productId) : undefined) ??
+          (code ? stockMaps.byCode.get(code) : undefined) ??
+          (name ? stockMaps.byName.get(name) : undefined) ??
+          0;
+
+        return {
+          id: p.id,
+          code: p.code || "",
+          name: p.name || "",
+          spec: p.specification || "",
+          unit: p.unit || "个",
+          price: 0,
+          category: p.category || "",
+          stock,
+        };
+      }),
+    [productsData, stockMaps]
+  );
 
   // 查看详情时加载明细
   const [viewItems, setViewItems] = useState<any[]>([]);
@@ -109,6 +158,11 @@ export default function PurchaseOrdersPage() {
   );
 
   const data = ordersData as unknown as PurchaseOrder[];
+
+  const toInputDate = (value: string | Date | null | undefined) => {
+    const formatted = formatDate(value ?? null);
+    return formatted === "-" ? "" : formatted;
+  };
 
   const [formData, setFormData] = useState({
     supplierId: 0,
@@ -141,8 +195,8 @@ export default function PurchaseOrdersPage() {
     // 加载明细
     setFormData({
       supplierId: record.supplierId,
-      orderDate: record.orderDate ? String(record.orderDate).split("T")[0] : "",
-      expectedDate: record.expectedDate ? String(record.expectedDate).split("T")[0] : "",
+      orderDate: toInputDate(record.orderDate),
+      expectedDate: toInputDate(record.expectedDate),
       currency: record.currency || "CNY",
       status: record.status,
       remark: record.remark || "",
@@ -233,6 +287,29 @@ export default function PurchaseOrdersPage() {
   const getSupplierName = (supplierId: number) => {
     const s = (suppliersData as any[]).find((s: any) => s.id === supplierId);
     return s?.name || "-";
+  };
+
+  const filteredSuppliers = (suppliersData as any[]).filter((s: any) => {
+    const keyword = supplierSearch.trim().toLowerCase();
+    if (!keyword) return true;
+    return [s.name, s.code, s.contactPerson, s.phone]
+      .map((v) => String(v || "").toLowerCase())
+      .some((v) => v.includes(keyword));
+  });
+
+  const selectedSupplierName = formData.supplierId ? getSupplierName(formData.supplierId) : "";
+
+  const openSupplierPicker = () => {
+    setTempSupplierId(formData.supplierId || 0);
+    setSupplierSearch("");
+    setSupplierPickerOpen(true);
+  };
+
+  const confirmSupplierPicker = () => {
+    if (tempSupplierId > 0) {
+      setFormData((prev) => ({ ...prev, supplierId: tempSupplierId }));
+    }
+    setSupplierPickerOpen(false);
   };
 
   // 获取详情明细
@@ -359,8 +436,8 @@ export default function PurchaseOrdersPage() {
                   <TableCell className="text-center font-medium">
                     ¥{Number(record.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </TableCell>
-                  <TableCell className="text-center">{record.orderDate ? String(record.orderDate).split("T")[0] : "-"}</TableCell>
-                  <TableCell className="text-center">{record.expectedDate ? String(record.expectedDate).split("T")[0] : "-"}</TableCell>
+                  <TableCell className="text-center">{formatDate(record.orderDate)}</TableCell>
+                  <TableCell className="text-center">{formatDate(record.expectedDate)}</TableCell>
                   <TableCell className="text-center">
                     <Badge variant={statusMap[record.status]?.variant || "outline"} className={getStatusSemanticClass(record.status, statusMap[record.status]?.label)}>
                       {statusMap[record.status]?.label || record.status}
@@ -408,33 +485,28 @@ export default function PurchaseOrdersPage() {
         </Card>
 
         {/* 新建/编辑表单对话框 */}
-        <DraggableDialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
+        <DraggableDialog
+          open={formDialogOpen}
+          onOpenChange={setFormDialogOpen}
+          defaultWidth={1180}
+          defaultHeight={760}
+          maxWidth="96vw"
+          maxHeight="92vh"
+        >
           <DraggableDialogContent>
             <DialogHeader>
               <DialogTitle>{isEditing ? "编辑采购单" : "新建采购单"}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-6 py-4">
+            <div className="space-y-6 py-4 max-h-[76vh] overflow-y-auto pr-1">
               {/* 供应商信息 */}
               <div>
                 <h3 className="text-sm font-medium mb-3">供应商信息</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>供应商 *</Label>
-                    <Select
-                      value={formData.supplierId ? String(formData.supplierId) : ""}
-                      onValueChange={(v) => setFormData({ ...formData, supplierId: Number(v) })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="选择供应商" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(suppliersData as any[]).map((s: any) => (
-                          <SelectItem key={s.id} value={String(s.id)}>
-                            {s.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Button type="button" variant="outline" className="w-full justify-start font-normal" onClick={openSupplierPicker}>
+                      {selectedSupplierName || "选择供应商"}
+                    </Button>
                   </div>
                   <div className="space-y-2">
                     <Label>货币</Label>
@@ -535,6 +607,67 @@ export default function PurchaseOrdersPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
+        {/* 供应商选择弹窗 */}
+        <Dialog open={supplierPickerOpen} onOpenChange={setSupplierPickerOpen}>
+          <DialogContent className="max-w-4xl">
+            <div className="space-y-3">
+              <h3 className="text-base font-semibold">选择供应商</h3>
+              <Input
+                value={supplierSearch}
+                onChange={(e) => setSupplierSearch(e.target.value)}
+                placeholder="搜索供应商名称、编码、联系人、电话..."
+              />
+              <div className="max-h-[420px] overflow-auto border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12 text-center">选择</TableHead>
+                      <TableHead>供应商名称</TableHead>
+                      <TableHead>供应商编码</TableHead>
+                      <TableHead>联系人</TableHead>
+                      <TableHead>联系电话</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredSuppliers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8 text-sm text-muted-foreground">
+                          暂无匹配供应商
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredSuppliers.map((s: any) => {
+                        const id = Number(s.id);
+                        const checked = tempSupplierId === id;
+                        return (
+                          <TableRow key={id} className="cursor-pointer" onClick={() => setTempSupplierId(id)}>
+                            <TableCell className="text-center">
+                              <input
+                                type="radio"
+                                name="supplier-picker"
+                                checked={checked}
+                                onChange={() => setTempSupplierId(id)}
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium">{s.name || "-"}</TableCell>
+                            <TableCell>{s.code || "-"}</TableCell>
+                            <TableCell>{s.contactPerson || "-"}</TableCell>
+                            <TableCell>{s.phone || "-"}</TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <Button variant="outline" onClick={() => setSupplierPickerOpen(false)}>取消</Button>
+                <Button onClick={confirmSupplierPicker} disabled={!tempSupplierId}>确认供应商</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* 查看详情对话框 */}
 <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
   <DraggableDialogContent>
@@ -572,8 +705,8 @@ export default function PurchaseOrdersPage() {
                 <FieldRow label="联系电话">{selectedRecord.phone || "-"}</FieldRow>
               </div>
               <div>
-                <FieldRow label="下单日期">{selectedRecord.orderDate ? String(selectedRecord.orderDate).split("T")[0] : "-"}</FieldRow>
-                <FieldRow label="交货日期">{selectedRecord.expectedDate ? String(selectedRecord.expectedDate).split("T")[0] : "-"}</FieldRow>
+                <FieldRow label="下单日期">{formatDate(selectedRecord.orderDate)}</FieldRow>
+                <FieldRow label="交货日期">{formatDate(selectedRecord.expectedDate)}</FieldRow>
                 <FieldRow label="货币">{selectedRecord.currency || "CNY"}</FieldRow>
                 <FieldRow label="创建时间">{formatDateTime(selectedRecord.createdAt)}</FieldRow>
               </div>

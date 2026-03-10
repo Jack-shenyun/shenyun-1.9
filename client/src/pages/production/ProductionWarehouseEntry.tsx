@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
+import { formatDate } from "@/lib/formatters";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -373,7 +374,7 @@ export default function ProductionWarehouseEntryPage() {
                       </TableCell>
                       <TableCell className="text-center">{warehouse?.name || "-"}</TableCell>
                       <TableCell className="text-center text-muted-foreground text-xs">{entry.sterilizationOrderNo || "-"}</TableCell>
-                      <TableCell className="text-center">{entry.applicationDate ? String(entry.applicationDate).split("T")[0] : "-"}</TableCell>
+                      <TableCell className="text-center">{formatDate(entry.applicationDate)}</TableCell>
                       <TableCell className="text-center">
                         <Badge variant={statusMap[entry.status]?.variant || "outline"} className={getStatusSemanticClass(entry.status, statusMap[entry.status]?.label)}>
                           {statusMap[entry.status]?.label || entry.status}
@@ -636,7 +637,7 @@ export default function ProductionWarehouseEntryPage() {
                 </FieldRow>
               </div>
               <div>
-                <FieldRow label="申请日期">{viewingEntry.applicationDate ? String(viewingEntry.applicationDate).split("T")[0] : "-"}</FieldRow>
+                <FieldRow label="申请日期">{formatDate(viewingEntry.applicationDate)}</FieldRow>
                 <FieldRow label="关联生产指令">{viewingEntry.productionOrderNo || "-"}</FieldRow>
                 <FieldRow label="关联灭菌单">{viewingEntry.sterilizationOrderNo || "-"}</FieldRow>
               </div>

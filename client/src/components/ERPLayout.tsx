@@ -683,26 +683,8 @@ function ERPLayoutContent({
           )}
         </div>
         <div className="flex items-center gap-1">
-          {/* 桌面端展示所有快捷入口 */}
+          {/* 桌面端展示快捷入口 */}
           <div className="hidden sm:flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setLocation("/leads/domestic")}
-              title="国内获客"
-              className="flex h-8 items-center justify-center gap-1 rounded-full px-2 transition-colors hover:bg-green-50 text-slate-600 hover:text-green-700"
-            >
-              <MapPin className="h-4 w-4" />
-              <span className="text-xs font-medium hidden lg:block">国内获客</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setLocation("/leads/overseas")}
-              title="海外获客"
-              className="flex h-8 items-center justify-center gap-1 rounded-full px-2 transition-colors hover:bg-blue-50 text-slate-600 hover:text-blue-700"
-            >
-              <Globe className="h-4 w-4" />
-              <span className="text-xs font-medium hidden lg:block">海外获客</span>
-            </button>
             <button
               type="button"
               onClick={() => setLocation("/whatsapp")}
@@ -739,14 +721,6 @@ function ERPLayoutContent({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44 rounded-xl shadow-xl border-0 p-1">
-              <DropdownMenuItem onClick={() => setLocation("/leads/domestic")} className="rounded-lg text-sm cursor-pointer gap-2">
-                <MapPin className="h-4 w-4 text-green-600" />
-                国内获客
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setLocation("/leads/overseas")} className="rounded-lg text-sm cursor-pointer gap-2">
-                <Globe className="h-4 w-4 text-blue-600" />
-                海外获客
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setLocation("/whatsapp")} className="rounded-lg text-sm cursor-pointer gap-2">
                 <MessageCircle className="h-4 w-4 text-green-500" />
                 WhatsApp

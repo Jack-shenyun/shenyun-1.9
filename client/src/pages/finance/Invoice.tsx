@@ -143,15 +143,16 @@ function ReceivedInvoiceTab() {
         setForm(f => ({
           ...f,
           invoiceNo: d.invoiceNo || f.invoiceNo,
+          invoiceCode: d.invoiceCode || f.invoiceCode,
           invoiceDate: d.invoiceDate || f.invoiceDate,
-          supplierName: d.sellerName || f.supplierName,
+          supplierName: d.sellerName || d.supplierName || f.supplierName,
           amountExTax: d.amountExTax ?? f.amountExTax,
           taxRate: d.taxRate ?? f.taxRate,
           taxAmount: d.taxAmount ?? f.taxAmount,
           totalAmount: d.totalAmount ?? f.totalAmount,
           invoiceType: (d.invoiceType as InvoiceType) || f.invoiceType,
         }));
-        toast.success(`AI识别成功（${result.provider}）`);
+        toast.success(`AI识别完成（${result.provider}），已填充可识别字段`);
       } else {
         toast.error(result?.error || "识别失败，请手动填写");
       }
@@ -707,7 +708,7 @@ function IssuedInvoiceTab() {
 export default function InvoicePage() {
   return (
     <ERPLayout>
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="w-full px-3 py-4 md:px-4 md:py-5">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2 bg-primary/10 rounded-lg">
             <FileText className="h-6 w-6 text-primary" />

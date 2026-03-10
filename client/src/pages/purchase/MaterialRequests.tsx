@@ -6,6 +6,7 @@ import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableD
 import ERPLayout from "@/components/ERPLayout";
 import { ClipboardList, Plus, Search, Eye, Trash2, CheckCircle, XCircle, Send, MoreHorizontal } from "lucide-react";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -134,6 +135,9 @@ export default function MaterialRequestsPage() {
   const [items, setItems] = useState<MaterialRequestItem[]>([
     { materialName: "", specification: "", quantity: "1", unit: "", estimatedPrice: "", remark: "" },
   ]);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
+  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
 
   // ── tRPC ──────────────────────────────────────────────
   const utils = trpc.useUtils();
@@ -142,6 +146,7 @@ export default function MaterialRequestsPage() {
     status: statusFilter !== "all" ? statusFilter : undefined,
     limit: 100,
   });
+  const { data: productsData = [] } = trpc.products.list.useQuery();
 
   const createMutation = trpc.materialRequests.create.useMutation({
     onSuccess: () => { toast.success("采购申请已创建"); setFormOpen(false); resetForm(); utils.materialRequests.list.invalidate(); },
@@ -165,6 +170,8 @@ export default function MaterialRequestsPage() {
   function resetForm() {
     setForm({ department: "", requestDate: today, urgency: "normal", reason: "", remark: "" });
     setItems([{ materialName: "", specification: "", quantity: "1", unit: "", estimatedPrice: "", remark: "" }]);
+    setSelectedProductIds([]);
+    setProductSearch("");
   }
 
   function handleItemChange(i: number, field: keyof MaterialRequestItem, val: string) {
@@ -176,6 +183,60 @@ export default function MaterialRequestsPage() {
   function removeItem(i: number) {
     if (items.length <= 1) return toast.warning("至少保留一条明细");
     setItems(prev => prev.filter((_, idx) => idx !== i));
+  }
+
+  const filteredProducts = (productsData as any[]).filter((p) => {
+    const keyword = productSearch.trim().toLowerCase();
+    if (!keyword) return true;
+    return [p.code, p.name, p.specification]
+      .map((x) => String(x || "").toLowerCase())
+      .some((x) => x.includes(keyword));
+  });
+
+  function openProductPicker() {
+    const existing = items
+      .map((x) => (typeof x.productId === "number" ? x.productId : null))
+      .filter((x): x is number => x !== null);
+    setSelectedProductIds(existing);
+    setProductPickerOpen(true);
+  }
+
+  function toggleProductSelection(id: number, checked: boolean) {
+    setSelectedProductIds((prev) => {
+      if (checked) {
+        if (prev.includes(id)) return prev;
+        return [...prev, id];
+      }
+      return prev.filter((x) => x !== id);
+    });
+  }
+
+  function confirmProductSelection() {
+    const productMap = new Map<number, any>((productsData as any[]).map((p) => [Number(p.id), p]));
+    const existingById = new Map<number, MaterialRequestItem>();
+    items.forEach((item) => {
+      if (typeof item.productId === "number") {
+        existingById.set(item.productId, item);
+      }
+    });
+
+    const nextItems: MaterialRequestItem[] = selectedProductIds.map((id) => {
+      const existing = existingById.get(id);
+      if (existing) return existing;
+      const product = productMap.get(id);
+      return {
+        productId: id,
+        materialName: String(product?.name || ""),
+        specification: String(product?.specification || ""),
+        quantity: "1",
+        unit: String(product?.unit || ""),
+        estimatedPrice: "",
+        remark: "",
+      };
+    });
+
+    setItems(nextItems.length > 0 ? nextItems : [{ materialName: "", specification: "", quantity: "1", unit: "", estimatedPrice: "", remark: "" }]);
+    setProductPickerOpen(false);
   }
 
   function handleSubmit() {
@@ -396,9 +457,14 @@ export default function MaterialRequestsPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <Label className="text-sm font-semibold">申请明细</Label>
-                <Button variant="outline" size="sm" onClick={addItem} className="h-7 text-xs gap-1">
-                  <Plus className="w-3 h-3" /> 添加行
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={openProductPicker} className="h-7 text-xs gap-1">
+                    <Plus className="w-3 h-3" /> 选择产品（多选）
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={addItem} className="h-7 text-xs gap-1">
+                    <Plus className="w-3 h-3" /> 添加行
+                  </Button>
+                </div>
               </div>
               <div className="border rounded-md overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                 <Table>
@@ -439,6 +505,66 @@ export default function MaterialRequestsPage() {
           </DialogFooter>
         </DraggableDialogContent>
       </DraggableDialog>
+
+      {/* 产品库选择弹窗（多选） */}
+      <Dialog open={productPickerOpen} onOpenChange={setProductPickerOpen}>
+        <DialogContent className="max-w-5xl">
+          <div className="space-y-3">
+            <h3 className="text-base font-semibold">选择产品（可多选）</h3>
+            <Input
+              value={productSearch}
+              onChange={(e) => setProductSearch(e.target.value)}
+              placeholder="搜索产品编码、名称、规格..."
+            />
+            <div className="max-h-[420px] overflow-auto border rounded-md">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12 text-center">选择</TableHead>
+                    <TableHead>产品编码</TableHead>
+                    <TableHead>产品名称</TableHead>
+                    <TableHead>规格</TableHead>
+                    <TableHead className="w-24">单位</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredProducts.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
+                        暂无可选产品
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredProducts.map((p: any) => {
+                      const id = Number(p.id);
+                      const checked = selectedProductIds.includes(id);
+                      return (
+                        <TableRow key={id}>
+                          <TableCell className="text-center">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => toggleProductSelection(id, e.target.checked)}
+                            />
+                          </TableCell>
+                          <TableCell>{p.code || "-"}</TableCell>
+                          <TableCell className="font-medium">{p.name || "-"}</TableCell>
+                          <TableCell>{p.specification || "-"}</TableCell>
+                          <TableCell>{p.unit || "-"}</TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setProductPickerOpen(false)}>取消</Button>
+              <Button onClick={confirmProductSelection}>确认选择（{selectedProductIds.length}）</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── 详情弹窗 ── */}
       <DraggableDialog open={viewOpen} onOpenChange={setViewOpen}>

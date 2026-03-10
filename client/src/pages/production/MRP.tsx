@@ -1,5 +1,6 @@
 import { formatDate, formatDateTime } from "@/lib/formatters";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import ERPLayout from "@/components/ERPLayout";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -86,6 +87,7 @@ type MrpItem = {
 // 主页面
 // ────────────────────────────────────────────────────────────
 export default function MRPPage() {
+  const [, setLocation] = useLocation();
   const { canDelete } = usePermission();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -353,7 +355,11 @@ export default function MRPPage() {
 
       {/* 详情弹窗 */}
       {detailPlan && (
-        <MrpDetailDialog result={detailPlan} onClose={() => setDetailPlan(null)} />
+        <MrpDetailDialog
+          result={detailPlan}
+          onClose={() => setDetailPlan(null)}
+          onGotoPurchasePlan={() => setLocation("/purchase/plan")}
+        />
       )}
     </ERPLayout>
   );
@@ -362,7 +368,15 @@ export default function MRPPage() {
 // ────────────────────────────────────────────────────────────
 // 详情弹窗
 // ────────────────────────────────────────────────────────────
-function MrpDetailDialog({ result, onClose }: { result: MrpResult; onClose: () => void }) {
+function MrpDetailDialog({
+  result,
+  onClose,
+  onGotoPurchasePlan,
+}: {
+  result: MrpResult;
+  onClose: () => void;
+  onGotoPurchasePlan: () => void;
+}) {
   const [filter, setFilter] = useState<"all" | "shortage">("all");
   const [urgency, setUrgency] = useState<"normal" | "urgent" | "critical">("normal");
   const [generating, setGenerating] = useState(false);
@@ -370,10 +384,12 @@ function MrpDetailDialog({ result, onClose }: { result: MrpResult; onClose: () =
   const generateMutation = trpc.mrp.generatePurchaseRequest.useMutation({
     onSuccess: (data) => {
       setGenerating(false);
-      toast.success(`采购申请单已生成：${data.requestNo}`, {
-        description: "已保存为草稿，请前往「物料申请」页面提交审批",
+      toast.success(`采购计划已生成：${data.count} 条`, {
+        description: "已进入采购计划看板，可继续采购处理",
         duration: 5000,
       });
+      onClose();
+      onGotoPurchasePlan();
     },
     onError: (err) => {
       setGenerating(false);
@@ -386,7 +402,7 @@ function MrpDetailDialog({ result, onClose }: { result: MrpResult; onClose: () =
 
   const handleGeneratePurchaseRequest = () => {
     if (shortageItems.length === 0) {
-      toast.info("物料充足，无需生成采购申请");
+      toast.info("物料充足，无需生成采购计划");
       return;
     }
     setGenerating(true);
@@ -548,16 +564,16 @@ function MrpDetailDialog({ result, onClose }: { result: MrpResult; onClose: () =
                 </Table>
               </div>
 
-              {/* 一键生成采购申请 */}
+              {/* 一键生成采购计划 */}
               {result.shortfallCount > 0 && (
                 <div className="border rounded-lg p-4 bg-orange-50/50 border-orange-200">
                   <div className="flex items-start gap-3">
                     <ShoppingCart className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <h4 className="font-semibold text-sm text-orange-800 mb-1">一键生成采购申请单</h4>
+                      <h4 className="font-semibold text-sm text-orange-800 mb-1">一键生成采购计划</h4>
                       <p className="text-xs text-orange-700 mb-3">
-                        将 {result.shortfallCount} 种缺料（净需求 &gt; 0）自动生成一张采购申请单（草稿），
-                        生成后请前往「物料申请」页面提交审批。
+                        将 {result.shortfallCount} 种缺料（净需求 &gt; 0）自动生成采购计划，
+                        生成后直接进入「采购计划看板」处理。
                       </p>
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-2">
@@ -584,7 +600,7 @@ function MrpDetailDialog({ result, onClose }: { result: MrpResult; onClose: () =
                           ) : (
                             <ShoppingCart className="w-3.5 h-3.5 mr-1" />
                           )}
-                          {generating ? "生成中..." : `生成采购申请（${result.shortfallCount} 种）`}
+                          {generating ? "生成中..." : `进入采购计划（${result.shortfallCount} 种）`}
                         </Button>
                       </div>
                     </div>

@@ -153,23 +153,20 @@ function resolveUserLabel(raw: string, userIdMap: Map<string, UserOption>, userN
   return userNameMap.get(raw)?.label || userNameMap.get(normalized)?.label || raw;
 }
 
+const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+    <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+    <span className="flex-1 text-sm text-right break-all">{children}</span>
+  </div>
+);
+
 function renderSelectionPreview(labels: string[]) {
   if (labels.length === 0) return <span className="text-muted-foreground">-</span>;
-  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
-      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
-      <span className="flex-1 text-sm text-right break-all">{children}</span>
-    </div>
-  );
-
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {labels.slice(0, 3).map((item) => (
-        <Badge key={item} variant="outline" className="font-normal">
-          {item}
-        </Badge>
-      ))}
-      {labels.length > 3 ? <Badge variant="secondary">+{labels.length - 3}</Badge> : null}
+    <div className="flex justify-center">
+      <Badge variant="secondary" className="min-w-[32px] justify-center font-semibold">
+        {labels.length}
+      </Badge>
     </div>
   );
 }
@@ -602,19 +599,19 @@ export default function WorkflowSettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-md border">
-              <Table>
+              <Table className="table-auto">
                 <TableHeader>
                   <TableRow className="bg-muted/60 bg-muted/40">
-                    <TableHead className="w-[110px] text-center font-bold">流程编码</TableHead>
-                    <TableHead className="w-[100px] text-center font-bold">模块</TableHead>
-                    <TableHead className="w-[120px] text-center font-bold">表单类型</TableHead>
-                    <TableHead className="w-[150px] text-center font-bold">表单</TableHead>
+                    <TableHead className="text-center font-bold whitespace-nowrap">流程编码</TableHead>
+                    <TableHead className="text-center font-bold whitespace-nowrap">模块</TableHead>
+                    <TableHead className="text-center font-bold whitespace-nowrap">表单类型</TableHead>
+                    <TableHead className="text-center font-bold whitespace-nowrap">表单</TableHead>
                   <TableHead className="text-center font-bold">发起人</TableHead>
                     <TableHead className="text-center font-bold">审核步骤</TableHead>
                     <TableHead className="text-center font-bold">审核后处理</TableHead>
                     <TableHead className="text-center font-bold">结束抄送</TableHead>
-                    <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
-                    <TableHead className="w-[70px] text-center font-bold">操作</TableHead>
+                    <TableHead className="text-center font-bold whitespace-nowrap">状态</TableHead>
+                    <TableHead className="text-center font-bold whitespace-nowrap">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

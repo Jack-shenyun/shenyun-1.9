@@ -455,7 +455,7 @@ function ExpenseTab() {
 export default function ExpenseManagementPage() {
   return (
     <ERPLayout>
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="w-full px-3 py-4 md:px-4 md:py-5">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2 bg-primary/10 rounded-lg">
             <DollarSign className="h-6 w-6 text-primary" />

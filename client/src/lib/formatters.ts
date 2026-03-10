@@ -18,6 +18,13 @@ export function safeLower(value: unknown): string {
 /** 格式化为 YYYY-MM-DD */
 export function formatDate(date: Date | string | number | null | undefined): string {
   if (date == null) return "-";
+  if (typeof date === "string") {
+    const trimmed = date.trim();
+    if (!trimmed) return "-";
+    // 纯日期字符串直接返回，避免时区导致前后偏移
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    if (/^\d{4}\/\d{2}\/\d{2}$/.test(trimmed)) return trimmed.replace(/\//g, "-");
+  }
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return "-";
   const y = d.getFullYear();
@@ -29,6 +36,14 @@ export function formatDate(date: Date | string | number | null | undefined): str
 /** 格式化为 YYYY-MM-DD HH:mm */
 export function formatDateTime(date: Date | string | number | null | undefined): string {
   if (date == null) return "-";
+  if (typeof date === "string") {
+    const trimmed = date.trim();
+    if (!trimmed) return "-";
+    // 已是标准时间文本时保持统一风格
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(trimmed)) {
+      return trimmed.replace("T", " ").slice(0, 16);
+    }
+  }
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return "-";
   const y = d.getFullYear();

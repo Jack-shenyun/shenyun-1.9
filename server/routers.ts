@@ -17,7 +17,7 @@ import {
   getCustomers, getCustomerById, createCustomer, updateCustomer, deleteCustomer, getNextCustomerCode, enrichCustomerLogoDomain,
   getSuppliers, getSupplierById, createSupplier, updateSupplier, deleteSupplier,
   getSalesOrders, getSalesOrderById, getSalesOrderItems, createSalesOrder, updateSalesOrder, deleteSalesOrder, getNextSalesOrderNo, getLastSalePrices,
-  getPurchaseOrders, getPurchaseOrderById, getPurchaseOrderItems, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder,
+  getPurchaseOrders, getPurchaseOrderById, getPurchaseOrderItems, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, getLastPurchasePrices,
   getProductionOrders, getProductionOrderById, createProductionOrder, updateProductionOrder, deleteProductionOrder,
   getInventory, getInventoryById, createInventory, updateInventory, deleteInventory, recalculateAllInventory, recalculateInventoryById,
   getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse,
@@ -1460,6 +1460,16 @@ export const appRouter = router({
         const order = await getPurchaseOrderById(input.id);
         const items = await getPurchaseOrderItems(input.id);
         return { order, items };
+      }),
+
+    // 获取历史采购价格（按供应商+产品查询最近一次单价和货币）
+    getLastPrices: protectedProcedure
+      .input(z.object({
+        supplierId: z.number(),
+        productIds: z.array(z.number()),
+      }))
+      .query(async ({ input }) => {
+        return await getLastPurchasePrices(input.supplierId, input.productIds);
       }),
 
     create: protectedProcedure
@@ -4240,8 +4250,21 @@ export const appRouter = router({
           };
         }
 
-        const { inventory: inventoryTable, purchaseOrders: poTable, purchaseOrderItems: poItemsTable } = await import("../drizzle/schema");
+        const { inventory: inventoryTable, purchaseOrders: poTable, purchaseOrderItems: poItemsTable, products: productsTable } = await import("../drizzle/schema");
         const { eq: deq, and: dand, inArray: dinArray, sql: dsql } = await import("drizzle-orm");
+
+        // 采购型产品不参与 MRP：应直接进入采购流程
+        const [planProduct] = await db
+          .select({
+            sourceType: productsTable.sourceType,
+            procurePermission: productsTable.procurePermission,
+          })
+          .from(productsTable)
+          .where(deq(productsTable.id, plan.productId))
+          .limit(1);
+        if (planProduct?.sourceType === "purchase" || planProduct?.procurePermission === "purchasable") {
+          throw new Error("该产品获取权限为“采购”，不进入MRP，请直接走采购流程");
+        }
         const materialCodes = [...new Set(bomItems.map((b: any) => b.materialCode).filter(Boolean))] as string[];
 
         // 合格库存
@@ -4317,8 +4340,14 @@ export const appRouter = router({
       .input(z.object({ status: z.string().optional(), search: z.string().optional() }).optional())
       .query(async ({ input }) => {
         const plans = await getProductionPlans({ status: input?.status, search: input?.search, limit: 200 });
+        // 采购型产品不进入 MRP（减库存后直接走采购）
+        const mrpPlans = plans.filter((p: any) => {
+          const isPurchaseSource = String(p.productSourceType || "") === "purchase";
+          const isPurchasable = String(p.productProcurePermission || "") === "purchasable";
+          return !isPurchaseSource && !isPurchasable;
+        });
         // 将 Date 对象序列化为字符串，避免前端渲染 [object Date]
-        return plans.map((p: any) => ({
+        return mrpPlans.map((p: any) => ({
           ...p,
           plannedStartDate: p.plannedStartDate ? String(p.plannedStartDate).split('T')[0] : null,
           plannedEndDate: p.plannedEndDate ? String(p.plannedEndDate).split('T')[0] : null,
@@ -4328,8 +4357,8 @@ export const appRouter = router({
       }),
 
     /**
-     * 一键生成采购申请单
-     * 将 MRP 运算结果中净需求 > 0 的物料，批量创建为一张采购申请单
+     * 一键生成采购计划
+     * 将 MRP 运算结果中净需求 > 0 的物料，逐条创建采购计划（进入采购计划看板）
      */
     generatePurchaseRequest: protectedProcedure
       .input(z.object({
@@ -4347,34 +4376,99 @@ export const appRouter = router({
       }))
       .mutation(async ({ input, ctx }) => {
         if (input.items.length === 0) throw new Error("没有需要采购的物料");
-        const { materialRequests: mrTable, materialRequestItems: mriTable } = await import("../drizzle/schema");
-        const requestNo = await getNextOrderNo("MR", mrTable, mrTable.requestNo);
-        const today = new Date().toISOString().split("T")[0];
         const db = await getDb();
         if (!db) throw new Error("数据库连接不可用");
-        const [inserted] = await db.insert(mrTable).values({
-          requestNo,
-          department: "生产部",
-          requesterId: ctx.user!.id,
-          requestDate: new Date(today) as any,
-          urgency: input.urgency || "normal",
-          reason: `MRP自动生成 — 生产计划 ${input.planNo}（${input.productName}）缺料申请`,
-          status: "draft",
-        });
-        const requestId = (inserted as any).insertId;
-        if (input.items.length > 0) {
-          await db.insert(mriTable).values(
-            input.items.map((item) => ({
-              requestId,
-              materialName: item.materialName,
-              specification: item.specification || "",
-              quantity: String(item.netRequirement) as any,
-              unit: item.unit || "",
-              remark: `物料编码: ${item.materialCode}`,
-            }))
-          );
+        const { products: productsTable, productionPlans: ppTable } = await import("../drizzle/schema");
+        const { eq: deq, and: dand } = await import("drizzle-orm");
+
+        const [sourcePlan] = await db
+          .select({
+            salesOrderId: ppTable.salesOrderId,
+            salesOrderNo: ppTable.salesOrderNo,
+            plannedEndDate: ppTable.plannedEndDate,
+          })
+          .from(ppTable)
+          .where(deq(ppTable.id, input.productionPlanId))
+          .limit(1);
+
+        const urgencyToPriority = (u?: "normal" | "urgent" | "critical"): "normal" | "high" | "urgent" => {
+          if (u === "critical") return "urgent";
+          if (u === "urgent") return "high";
+          return "normal";
+        };
+
+        const createdPlanNos: string[] = [];
+        const skippedItems: string[] = [];
+
+        for (const item of input.items) {
+          const [product] = await db
+            .select({
+              id: productsTable.id,
+              code: productsTable.code,
+              name: productsTable.name,
+              unit: productsTable.unit,
+              sourceType: productsTable.sourceType,
+            })
+            .from(productsTable)
+            .where(deq(productsTable.code, item.materialCode))
+            .limit(1);
+
+          if (!product || product.sourceType !== "purchase") {
+            skippedItems.push(item.materialCode || item.materialName);
+            continue;
+          }
+
+          const existsWhere = sourcePlan?.salesOrderId
+            ? dand(
+                deq(ppTable.productId, product.id),
+                deq(ppTable.salesOrderId, sourcePlan.salesOrderId),
+                deq(ppTable.status, "pending")
+              )
+            : dand(
+                deq(ppTable.productId, product.id),
+                deq(ppTable.status, "pending")
+              );
+
+          const exists = await db
+            .select({ id: ppTable.id })
+            .from(ppTable)
+            .where(existsWhere)
+            .limit(1);
+          if (exists.length > 0) {
+            continue;
+          }
+
+          const planNo = await getNextOrderNo("CP", ppTable, ppTable.planNo);
+          const today = new Date().toISOString().split("T")[0];
+          await createProductionPlan({
+            planNo,
+            planType: sourcePlan?.salesOrderId ? "sales_driven" : "internal",
+            salesOrderId: sourcePlan?.salesOrderId ?? undefined,
+            salesOrderNo: sourcePlan?.salesOrderNo ?? undefined,
+            productId: product.id,
+            productName: product.name,
+            plannedQty: String(item.netRequirement),
+            unit: item.unit || product.unit || "件",
+            plannedStartDate: new Date(today) as any,
+            plannedEndDate: sourcePlan?.plannedEndDate ?? undefined,
+            priority: urgencyToPriority(input.urgency),
+            status: "pending",
+            remark: `MRP自动生成：来自${input.planNo} 缺料 ${item.materialCode}（${item.materialName}）`,
+            createdBy: ctx.user?.id,
+          });
+          createdPlanNos.push(planNo);
         }
-        return { requestId, requestNo };
+
+        if (createdPlanNos.length === 0) {
+          throw new Error("未生成采购计划：缺料物料未匹配到采购型产品或已存在待采购计划");
+        }
+
+        return {
+          success: true,
+          count: createdPlanNos.length,
+          planNos: createdPlanNos,
+          skippedItems,
+        };
       }),
   }),
 
@@ -5448,7 +5542,6 @@ export const appRouter = router({
         return { success: true, message: "配置已保存，请在服务器环境变量中配置对应的 Token" };
       }),
   }),
-
   // ==================== 法规事务部 ====================
   ra: raRouter,
 

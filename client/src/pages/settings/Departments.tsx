@@ -72,6 +72,11 @@ interface DepartmentView extends DepartmentRecord {
   memberCount: number;
 }
 
+const statusMap: Record<"active" | "inactive", { label: string; variant: "default" | "secondary" }> = {
+  active: { label: "启用", variant: "default" },
+  inactive: { label: "停用", variant: "secondary" },
+};
+
 export default function DepartmentsPage() {
   const { data: _dbData = [], isLoading, refetch } = trpc.departments.list.useQuery();
   const { data: _usersData = [], refetch: refetchUsers } = trpc.users.list.useQuery();
@@ -386,7 +391,7 @@ export default function DepartmentsPage() {
                         <TableCell className="text-center font-medium">{dept.name}</TableCell>
                         <TableCell className="text-center">{dept.managerName}</TableCell>
                         <TableCell className="text-center">
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center justify-center gap-1">
                             <Users className="h-4 w-4 text-muted-foreground" />
                             {dept.memberCount}
                           </div>

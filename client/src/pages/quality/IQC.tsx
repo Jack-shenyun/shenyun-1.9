@@ -138,6 +138,28 @@ function autoConclusion(item: InspectionItemForm): "pass" | "fail" | "pending" {
   }
 }
 
+function calcQualifiedQtyByState(
+  sampleQtyRaw: string | number | undefined,
+  items: InspectionItemForm[],
+  result?: string,
+): string {
+  const sampleQty = parseFloat(String(sampleQtyRaw ?? "")) || 0;
+  if (sampleQty <= 0) return "0";
+
+  if (items.length > 0) {
+    const conclusions = items.map((it) => autoConclusion(it));
+    const allDone = conclusions.every((c) => c !== "pending");
+    if (allDone) {
+      const allPass = conclusions.every((c) => c === "pass");
+      return allPass ? String(sampleQty) : "0";
+    }
+  }
+
+  if (result === "passed" || result === "conditional_pass") return String(sampleQty);
+  if (result === "failed") return "0";
+  return "0";
+}
+
 // ==================== 状态流水线组件（Odoo 风格） ====================
 function StatusPipeline({ current, onChange }: { current: string; onChange?: (v: string) => void }) {
   const steps = [
@@ -330,19 +352,14 @@ export default function IQCPage() {
     }
   }, [editId, editData]);
 
-  // items变化时自动计算合格数量
+  // 自动计算合格数量（检验项完成优先；否则使用检验结果兜底）
   useEffect(() => {
-    if (items.length === 0) return;
-    const allDone = items.every((it) => it.conclusion !== 'pending');
-    if (!allDone) return; // 还有未判定的项目，不自动计算
-    const allPass = items.every((it) => it.conclusion === 'pass');
-    const sampleQty = parseFloat(String(formData.sampleQty)) || 0;
-    const qualifiedQty = allPass ? sampleQty : 0;
+    const qualifiedQty = calcQualifiedQtyByState(formData.sampleQty, items, formData.result);
     setFormData((p) => ({
       ...p,
-      qualifiedQty: qualifiedQty > 0 ? String(qualifiedQty) : '0',
+      qualifiedQty,
     }));
-  }, [items]);
+  }, [items, formData.sampleQty, formData.result]);
 
   // 产品编码变化时自动匹配检验要求
   useEffect(() => {
@@ -573,9 +590,11 @@ export default function IQCPage() {
       }
       const attJson = JSON.stringify(savedFilePaths);
       const finalResult = overrideResult ?? formData.result;
+      const computedQualifiedQty = calcQualifiedQtyByState(formData.sampleQty, items, finalResult);
       const payload = {
         ...formData,
         result: finalResult,
+        qualifiedQty: computedQualifiedQty,
         goodsReceiptId: formData.goodsReceiptId ?? undefined,
         goodsReceiptItemId: formData.goodsReceiptItemId ?? undefined,
         productId: formData.productId ?? undefined,

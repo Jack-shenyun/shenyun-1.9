@@ -100,6 +100,8 @@ export interface ModulePageProps<T> {
   importAccept?: string;
   /** 可选：审批流程表单类型，不传默认使用“待补充” */
   approvalFormType?: string;
+  /** 紧凑布局（减少留白） */
+  compact?: boolean;
 }
 
 const MODULE_BY_PATH_SEGMENT: Record<string, string> = {
@@ -137,6 +139,7 @@ export default function ModulePage<T extends { id: number | string }>({
   onImport,
   importAccept = ".csv,.xlsx,.xls",
   approvalFormType = "待补充",
+  compact = false,
 }: ModulePageProps<T>) {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterValue, setFilterValue] = useState("all");
@@ -280,9 +283,9 @@ export default function ModulePage<T extends { id: number | string }>({
 
   return (
     <ERPLayout>
-      <div className="space-y-6">
+      <div className={compact ? "space-y-4" : "space-y-6"}>
         {/* 页面标题 */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className={compact ? "flex flex-col md:flex-row md:items-center md:justify-between gap-3" : "flex flex-col md:flex-row md:items-center md:justify-between gap-4"}>
           <div className="flex items-center gap-3">
             {Icon && (
               <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -359,10 +362,10 @@ export default function ModulePage<T extends { id: number | string }>({
 
         {/* 统计卡片 */}
         {stats && stats.length > 0 && (
-          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
+          <div className={compact ? "grid gap-3 grid-cols-2 md:grid-cols-4" : "grid gap-4 grid-cols-2 md:grid-cols-4"}>
             {stats.map((stat, index) => (
               <Card key={index}>
-                <CardContent className="p-4">
+                <CardContent className={compact ? "p-3" : "p-4"}>
                   <p className="text-sm text-muted-foreground">{stat.label}</p>
                   <p
                     className={`text-2xl font-bold ${stat.color || "text-foreground"}`}
@@ -377,8 +380,8 @@ export default function ModulePage<T extends { id: number | string }>({
 
         {/* 搜索和筛选 */}
         <Card>
-          <CardContent className="p-4">
-            <div className="flex flex-col md:flex-row gap-4">
+          <CardContent className={compact ? "p-3" : "p-4"}>
+            <div className={compact ? "flex flex-col md:flex-row gap-3" : "flex flex-col md:flex-row gap-4"}>
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input

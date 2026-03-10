@@ -1,165 +1,140 @@
 /**
- * 发票 AI 识别服务
- * 优先级：豆包（字节跳动）→ 通义千问（阿里）→ 智谱（清华）
- * 支持图片（JPG/PNG/WEBP/GIF）和 PDF（自动转图片）
+ * 发票识别服务（非 AI）
+ * - 不调用任何外部大模型 API
+ * - 仅使用本地 PDF 文本提取 + 规则解析
  */
 
 import { execSync } from "child_process";
 import fs from "fs";
-import path from "path";
 import os from "os";
-import { OpenAI } from "openai";
+import path from "path";
 
-// ==================== 配置 ====================
-
-interface ProviderConfig {
-  name: string;
-  apiKey: string;
-  baseURL: string;
-  model: string;
-  enabled: boolean;
+function stripCurrency(value: string): string {
+  return value.replace(/[\s,￥¥元]/g, "").trim();
 }
 
-function getProviders(): ProviderConfig[] {
-  return [
-    {
-      name: "豆包",
-      apiKey: process.env.ARK_API_KEY || process.env.DOUBAO_API_KEY || "1843f480-20a6-48d2-a9a5-8a4a188a3f32",
-      baseURL: "https://ark.cn-beijing.volces.com/api/v3",
-      model: "doubao-1.5-vision-pro-32k-250115",
-      enabled: true,
-    },
-    {
-      name: "通义千问",
-      apiKey: process.env.QWEN_API_KEY || "",
-      baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      model: "qwen-vl-max",
-      enabled: !!(process.env.QWEN_API_KEY),
-    },
-    {
-      name: "智谱",
-      apiKey: process.env.ZHIPU_API_KEY || "b2427e1eaec24e1dbfc6b08c82e6d693.zc0XAEJ1g7iStgYY",
-      baseURL: "https://open.bigmodel.cn/api/paas/v4",
-      model: "glm-4v-flash",
-      enabled: true,
-    },
-  ];
+function toNumber(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const n = Number(stripCurrency(value));
+  return Number.isFinite(n) ? n : null;
 }
 
-// ==================== 提示词 ====================
-
-const INVOICE_PROMPT = `请识别这张发票图片，提取以下信息，以 JSON 格式返回：
-{
-  "invoiceNo": "发票号码",
-  "invoiceDate": "YYYY-MM-DD",
-  "sellerName": "销售方名称",
-  "totalAmount": 含税总金额(数字),
-  "taxAmount": 税额(数字),
-  "amountExTax": 不含税金额(数字),
-  "taxRate": 税率百分比(数字，如 13),
-  "description": "货物或服务名称简述",
-  "invoiceType": "vat_special(增值税专用) | vat_normal(增值税普通) | electronic(电子发票) | receipt(收据)"
+function normalizeDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const m = value.trim().match(/^(\d{4})[年\/.\-](\d{1,2})[月\/.\-](\d{1,2})/);
+  if (!m) return null;
+  return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
 }
-如果某个字段无法识别，返回 null。只返回 JSON，不要其他文字。`;
 
-// ==================== PDF 转图片 ====================
+function extractInvoiceDataFromText(rawText: string): Record<string, any> {
+  const text = rawText.replace(/\r/g, "\n");
 
-/**
- * 将 PDF base64 转为图片 base64 列表（每页一张）
- * 使用系统 pdftoppm（poppler-utils）
- */
-export async function pdfBase64ToImageBase64List(pdfBase64: string): Promise<string[]> {
+  const invoiceNo = text.match(/发票号码[：:\s]*([0-9]{8,20})/)?.[1] ?? null;
+  const invoiceCode = text.match(/发票代码[：:\s]*([0-9]{10,12})/)?.[1] ?? null;
+  const invoiceDate = normalizeDate(text.match(/开票日期[：:\s]*([0-9]{4}[年\/.\-][0-9]{1,2}[月\/.\-][0-9]{1,2})/)?.[1]);
+
+  let sellerName: string | null = null;
+  const salesBlock = text.match(/销售方信息([\s\S]{0,300})/);
+  if (salesBlock?.[1]) {
+    const sellerMatch = salesBlock[1].match(/名称[：:\s]*([^\n]+)/);
+    if (sellerMatch?.[1]) sellerName = sellerMatch[1].trim();
+  }
+
+  const isElectronic = /电子发票/.test(text);
+  const isSpecial = /专用发票/.test(text);
+
+  const totalAmount = toNumber(
+    text.match(/小写[^\d￥¥]*[￥¥]?\s*([0-9][0-9,]*\.?[0-9]*)/)?.[1]
+    ?? text.match(/价税合计[^\d￥¥]*[￥¥]?\s*([0-9][0-9,]*\.?[0-9]*)/)?.[1]
+  );
+
+  const taxFree = /免税/.test(text);
+  let taxRate: number | null = null;
+  let taxAmount: number | null = null;
+  let amountExTax: number | null = null;
+
+  if (taxFree) {
+    taxRate = 0;
+    taxAmount = 0;
+    amountExTax = totalAmount;
+  } else {
+    taxRate = toNumber(text.match(/税率[\/、]?征收率[^\d]*([0-9]{1,2})%/)?.[1] ?? null);
+    taxAmount = toNumber(text.match(/税额[^\d]*([0-9][0-9,]*\.?[0-9]*)/)?.[1] ?? null);
+    amountExTax = toNumber(text.match(/金额[^\d]*([0-9][0-9,]*\.?[0-9]*)/)?.[1] ?? null);
+
+    if (amountExTax !== null && taxAmount !== null && totalAmount === null) {
+      // keep null totalAmount in output,前端可手工校对
+    }
+    if (totalAmount !== null && amountExTax !== null && taxAmount === null) {
+      taxAmount = Math.round((totalAmount - amountExTax) * 100) / 100;
+    }
+    if (totalAmount !== null && taxAmount !== null && amountExTax === null) {
+      amountExTax = Math.round((totalAmount - taxAmount) * 100) / 100;
+    }
+  }
+
+  return {
+    invoiceNo,
+    invoiceCode,
+    invoiceDate,
+    sellerName,
+    totalAmount,
+    taxAmount,
+    amountExTax,
+    taxRate,
+    invoiceType: isElectronic ? "electronic" : (isSpecial ? "vat_special" : "vat_normal"),
+    rawText,
+  };
+}
+
+function isReasonableDate(value: string | null): boolean {
+  if (!value) return false;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return false;
+  const min = new Date("2024-01-01");
+  const max = new Date("2035-12-31");
+  return d >= min && d <= max;
+}
+
+function hasBasicConfidence(data: Record<string, any>): boolean {
+  const hasInvoiceNo = typeof data.invoiceNo === "string" && data.invoiceNo.length >= 8;
+  const hasSeller = typeof data.sellerName === "string" && data.sellerName.length >= 4;
+  const hasDate = isReasonableDate(data.invoiceDate ?? null);
+  const hasAmount = typeof data.totalAmount === "number" && data.totalAmount > 0;
+
+  // 至少满足两项核心字段，才允许自动填充
+  const score = [hasInvoiceNo, hasSeller, hasDate, hasAmount].filter(Boolean).length;
+  return score >= 2;
+}
+
+function extractPdfText(pdfBase64: string): string {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "invoice-ocr-"));
   try {
-    // 去掉 data:application/pdf;base64, 前缀
     const base64Data = pdfBase64.replace(/^data:[^;]+;base64,/, "");
     const pdfPath = path.join(tmpDir, "invoice.pdf");
+    const txtPath = path.join(tmpDir, "invoice.txt");
+
     fs.writeFileSync(pdfPath, Buffer.from(base64Data, "base64"));
 
-    // 用 pdftoppm 转为 PNG（每页一张，最多转前3页）
-    const outputPrefix = path.join(tmpDir, "page");
-    execSync(`pdftoppm -png -r 150 -l 3 "${pdfPath}" "${outputPrefix}"`, { timeout: 30000 });
+    try {
+      execSync(`pdftotext -layout -f 1 -l 1 "${pdfPath}" "${txtPath}"`, { timeout: 30000 });
+    } catch {
+      throw new Error("缺少 PDF 文本提取能力：请安装 poppler（brew install poppler）后重试");
+    }
 
-    // 读取生成的图片文件
-    const files = fs.readdirSync(tmpDir)
-      .filter(f => f.startsWith("page") && f.endsWith(".png"))
-      .sort();
+    if (!fs.existsSync(txtPath)) {
+      throw new Error("PDF 文本提取失败：未生成文本文件");
+    }
 
-    return files.map(f => {
-      const imgBuffer = fs.readFileSync(path.join(tmpDir, f));
-      return `data:image/png;base64,${imgBuffer.toString("base64")}`;
-    });
+    return fs.readFileSync(txtPath, "utf8");
   } finally {
-    // 清理临时文件
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
 }
 
-// ==================== 单个 provider 识别 ====================
-
-async function recognizeWithProvider(
-  provider: ProviderConfig,
-  imageBase64: string
-): Promise<Record<string, any>> {
-  const client = new OpenAI({
-    apiKey: provider.apiKey,
-    baseURL: provider.baseURL,
-  });
-
-  const response = await client.chat.completions.create({
-    model: provider.model,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: INVOICE_PROMPT },
-          { type: "image_url", image_url: { url: imageBase64 } },
-        ],
-      },
-    ],
-    max_tokens: 600,
-  });
-
-  const content = response.choices[0]?.message?.content || "{}";
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("模型未返回有效 JSON");
-  return JSON.parse(jsonMatch[0]);
-}
-
-// ==================== 三家轮询 ====================
-
-async function recognizeWithFallback(imageBase64: string): Promise<{
-  data: Record<string, any>;
-  provider: string;
-  error?: string;
-}> {
-  const providers = getProviders().filter(p => p.enabled);
-
-  if (providers.length === 0) {
-    throw new Error("未配置任何 AI 识别服务，请设置 ARK_API_KEY 或 ZHIPU_API_KEY 等环境变量");
-  }
-
-  const errors: string[] = [];
-
-  for (const provider of providers) {
-    try {
-      const data = await recognizeWithProvider(provider, imageBase64);
-      return { data, provider: provider.name };
-    } catch (err: any) {
-      const msg = `${provider.name} 识别失败: ${err.message}`;
-      errors.push(msg);
-      console.warn(`[InvoiceOCR] ${msg}`);
-    }
-  }
-
-  throw new Error(`所有 AI 服务均识别失败：${errors.join(" | ")}`);
-}
-
-// ==================== 主入口 ====================
-
 export interface OcrInput {
   name: string;
-  base64: string; // data:image/...;base64,... 或 data:application/pdf;base64,...
+  base64: string;
 }
 
 export interface OcrResult {
@@ -175,35 +150,41 @@ export async function recognizeInvoices(inputs: OcrInput[]): Promise<OcrResult[]
 
   for (const input of inputs) {
     try {
-      const isPdf = input.base64.startsWith("data:application/pdf") ||
-                    input.name.toLowerCase().endsWith(".pdf");
-
-      let imageBase64List: string[];
-
-      if (isPdf) {
-        // PDF 转图片，取第一页识别（通常发票只有一页）
-        imageBase64List = await pdfBase64ToImageBase64List(input.base64);
-        if (imageBase64List.length === 0) {
-          throw new Error("PDF 转图片失败，未生成任何页面");
-        }
-      } else {
-        imageBase64List = [input.base64];
+      const isPdf = input.base64.startsWith("data:application/pdf") || input.name.toLowerCase().endsWith(".pdf");
+      if (!isPdf) {
+        results.push({
+          name: input.name,
+          success: false,
+          error: "当前仅支持 PDF 发票规则识别（未启用 AI）",
+          data: {},
+        });
+        continue;
       }
 
-      // 识别第一张图（发票通常只有一页）
-      const { data, provider } = await recognizeWithFallback(imageBase64List[0]);
+      const rawText = extractPdfText(input.base64);
+      const data = extractInvoiceDataFromText(rawText);
+
+      if (!hasBasicConfidence(data)) {
+        results.push({
+          name: input.name,
+          success: false,
+          error: "识别置信度低，已阻止自动填充。请手动录入或上传更清晰的原始电子发票 PDF。",
+          data: {},
+        });
+        continue;
+      }
 
       results.push({
         name: input.name,
         success: true,
-        provider,
+        provider: "规则识别",
         data,
       });
     } catch (err: any) {
       results.push({
         name: input.name,
         success: false,
-        error: err.message,
+        error: err?.message || "识别失败",
         data: {},
       });
     }
