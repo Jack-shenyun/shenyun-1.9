@@ -1074,7 +1074,15 @@ export default function IQCPage() {
         setUploadFiles([]);
       }
       const attJson = JSON.stringify(savedFilePaths);
-      const finalResult = overrideResult ?? activeSubmitContext.formData.result;
+      // 自动计算整体结论：所有检验项目都判定且全部合格→合格，否则→不合格
+      function calcAutoResult(items: typeof activeSubmitContext.items): string {
+        const judged = items.filter((it) => it.conclusion !== "pending");
+        if (judged.length === 0) return "pending";
+        if (items.some((it) => it.conclusion === "pending")) return "pending";
+        return items.every((it) => it.conclusion === "pass") ? "passed" : "failed";
+      }
+      const autoResult = calcAutoResult(activeSubmitContext.items);
+      const finalResult = overrideResult ?? (autoResult !== "pending" ? autoResult : activeSubmitContext.formData.result);
       const mergedSignatures = mergeSignatureRecords(activeSubmitContext.signatures, extraSignature);
       pendingSignatureRef.current = extraSignature ?? null;
       const payload = {
@@ -1701,25 +1709,6 @@ export default function IQCPage() {
                 title={editId ? `来料检验表单 - ${formData.inspectionNo}` : "新建来料检验"}
                 targetRef={formPrintRef}
               />
-              {/* 合格/不合格快捷按钮 */}
-              <Button
-                size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
-                onClick={() => openResultConfirm("passed")}
-                disabled={submitting}
-              >
-                <Check className="w-3.5 h-3.5" />合格
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                className="gap-1"
-                onClick={() => openResultConfirm("failed")}
-                disabled={submitting}
-              >
-                <XCircle className="w-3.5 h-3.5" />不合格
-              </Button>
-              <div className="w-px h-6 bg-border mx-1" />
               <Button
                 size="sm"
                 variant="outline"
