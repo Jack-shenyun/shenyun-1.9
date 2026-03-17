@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   ClipboardCheck,
@@ -373,26 +374,7 @@ const LAB_FORMS: LabFormConfig[] = [
     type: "检验",
     description: "记录产品初始污染菌（生物负载）检验过程、结果及判定。",
     icon: Microscope,
-    sections: [
-      {
-        id: "basic",
-        title: "基础信息",
-        fields: [
-          { id: "docNo", label: "检验单号", type: "text", placeholder: "自动生成" },
-          { id: "sampleName", label: "样品名称", type: "text", placeholder: "填写样品名称" },
-          { id: "batchNo", label: "批号", type: "text", placeholder: "填写批号" },
-          { id: "sampleQty", label: "取样数量", type: "text", placeholder: "填写取样数量" },
-          { id: "inspectionDate", label: "检验日期", type: "date" },
-          { id: "standard", label: "检验依据", type: "text", placeholder: "填写检验依据", colSpan: 2 },
-          { id: "inspector", label: "检验员", type: "text", placeholder: "填写检验员" },
-          { id: "reviewer", label: "复核人", type: "text", placeholder: "填写复核人" },
-          { id: "result", label: "检验结果", type: "text", placeholder: "填写检验结果（如：CFU/件）" },
-          { id: "acceptanceCriteria", label: "合格标准", type: "text", placeholder: "填写合格标准" },
-          { id: "finalResult", label: "结果判定", type: "text", placeholder: "pass/fail" },
-          { id: "remark", label: "备注", type: "textarea", placeholder: "填写备注", colSpan: 2 },
-        ],
-      },
-    ],
+    sections: [], // 使用专用渲染器，不走通用 renderField
   },
   {
     id: "sterility",
@@ -401,30 +383,100 @@ const LAB_FORMS: LabFormConfig[] = [
     type: "检验",
     description: "记录产品无菌检验过程、培养结果及合格判定。",
     icon: TestTube,
-    sections: [
-      {
-        id: "basic",
-        title: "基础信息",
-        fields: [
-          { id: "docNo", label: "检验单号", type: "text", placeholder: "自动生成" },
-          { id: "sampleName", label: "样品名称", type: "text", placeholder: "填写样品名称" },
-          { id: "batchNo", label: "批号", type: "text", placeholder: "填写批号" },
-          { id: "sampleQty", label: "取样数量", type: "text", placeholder: "填写取样数量" },
-          { id: "inspectionDate", label: "检验日期", type: "date" },
-          { id: "standard", label: "检验依据", type: "text", placeholder: "填写检验依据", colSpan: 2 },
-          { id: "inspector", label: "检验员", type: "text", placeholder: "填写检验员" },
-          { id: "reviewer", label: "复核人", type: "text", placeholder: "填写复核人" },
-          { id: "cultureMethod", label: "培养方法", type: "text", placeholder: "薄膜过滤法/直接接种法" },
-          { id: "cultureTemp", label: "培养温度", type: "text", placeholder: "填写培养温度" },
-          { id: "cultureDays", label: "培养天数", type: "text", placeholder: "填写培养天数" },
-          { id: "result", label: "检验结果", type: "text", placeholder: "填写检验结果（合格/不合格）" },
-          { id: "finalResult", label: "结果判定", type: "text", placeholder: "pass/fail" },
-          { id: "remark", label: "备注", type: "textarea", placeholder: "填写备注", colSpan: 2 },
-        ],
-      },
-    ],
+    sections: [], // 使用专用渲染器，不走通用 renderField
   },
 ];
+
+// ===== Bioburden / Sterility 常量和辅助函数 =====
+const BIOBURDEN_STANDARD_OPTIONS = [
+  "初始污染菌检验标准一",
+  "初始污染菌检验标准二",
+  "企业内控标准",
+];
+const defaultBioburdenRowNames = ["阴性对照", "稀释10倍", "稀释100倍", "稀释1000倍"];
+const defaultSterilityRowNames = ["供试品"];
+
+interface BioburdenRow {
+  itemName: string;
+  plate1: string;
+  plate2: string;
+  average: string;
+  conclusion: "qualified" | "unqualified";
+}
+
+interface SterilityRow {
+  itemName: string;
+  colony1: string;
+  colony2: string;
+  average: string;
+  conclusion: "qualified" | "unqualified";
+}
+
+function parseBioburdenRows(raw: string | undefined): BioburdenRow[] {
+  try {
+    const arr = JSON.parse(raw || "[]");
+    if (!Array.isArray(arr) || arr.length === 0) {
+      return defaultBioburdenRowNames.map((name) => ({ itemName: name, plate1: "", plate2: "", average: "", conclusion: "qualified" as const }));
+    }
+    return arr.map((row: any, index: number) => ({
+      itemName: String(row?.itemName || defaultBioburdenRowNames[index] || `检测项${index + 1}`),
+      plate1: String(row?.plate1 || ""),
+      plate2: String(row?.plate2 || ""),
+      average: String(row?.average || ""),
+      conclusion: (row?.conclusion === "unqualified" ? "unqualified" : "qualified") as "qualified" | "unqualified",
+    }));
+  } catch {
+    return defaultBioburdenRowNames.map((name) => ({ itemName: name, plate1: "", plate2: "", average: "", conclusion: "qualified" as const }));
+  }
+}
+
+function parseSterilityRows(raw: string | undefined): SterilityRow[] {
+  try {
+    const arr = JSON.parse(raw || "[]");
+    if (!Array.isArray(arr) || arr.length === 0) {
+      return defaultSterilityRowNames.map((name) => ({ itemName: name, colony1: "", colony2: "", average: "", conclusion: "qualified" as const }));
+    }
+    return arr.map((row: any, index: number) => ({
+      itemName: String(row?.itemName || defaultSterilityRowNames[index] || `检验项${index + 1}`),
+      colony1: String(row?.colony1 || ""),
+      colony2: String(row?.colony2 || ""),
+      average: String(row?.average || ""),
+      conclusion: (row?.conclusion === "unqualified" ? "unqualified" : "qualified") as "qualified" | "unqualified",
+    }));
+  } catch {
+    return defaultSterilityRowNames.map((name) => ({ itemName: name, colony1: "", colony2: "", average: "", conclusion: "qualified" as const }));
+  }
+}
+
+function parseMediumBatchNos(raw: string | undefined): string[] {
+  try {
+    const arr = JSON.parse(raw || "[]");
+    if (!Array.isArray(arr)) return ["", "", ""];
+    while (arr.length < 3) arr.push("");
+    return arr.slice(0, 3).map(String);
+  } catch {
+    return ["", "", ""];
+  }
+}
+
+function calcBioburdenAverage(plate1: string, plate2: string): string {
+  const v1 = parseFloat(plate1);
+  const v2 = parseFloat(plate2);
+  if (!isFinite(v1) && !isFinite(v2)) return "";
+  if (!isFinite(v1)) return String(v2);
+  if (!isFinite(v2)) return String(v1);
+  return String(((v1 + v2) / 2).toFixed(1));
+}
+
+function calcSterilityAverage(colony1: string, colony2: string): string {
+  const v1 = parseFloat(colony1);
+  const v2 = parseFloat(colony2);
+  if (!isFinite(v1) && !isFinite(v2)) return "";
+  if (!isFinite(v1)) return String(v2);
+  if (!isFinite(v2)) return String(v1);
+  return String(((v1 + v2) / 2).toFixed(1));
+}
+// ===== End Bioburden / Sterility =====
 
 const COMMON_FIELD_DEFAULTS: Record<string, string> = {
   testDate: "",
@@ -1290,16 +1342,30 @@ function buildInitialState(form: LabFormConfig, recordNo = "") {
   }
 
   if (form.id === "bioburden") {
-    next.finalResult = "pass";
+    next.finalResult = "qualified";
     next.inspectionDate = new Date().toISOString().split("T")[0];
+    next.completionDate = new Date().toISOString().split("T")[0];
+    next.entryMode = "online";
+    next.specModel = "";
+    next.inspectionStandard = BIOBURDEN_STANDARD_OPTIONS[0];
+    next.mediumBatchNos = JSON.stringify(["", "", ""]);
+    next.bioburdenRows = JSON.stringify(defaultBioburdenRowNames.map((name) => ({ itemName: name, plate1: "", plate2: "", average: "", conclusion: "qualified" })));
+    next.paperReportName = "";
+    next.paperReportPath = "";
+    next.result = "qualified";
   }
 
   if (form.id === "sterility") {
-    next.finalResult = "pass";
+    next.finalResult = "qualified";
     next.inspectionDate = new Date().toISOString().split("T")[0];
-    next.cultureMethod = "薄膜过滤法";
-    next.cultureTemp = "23℃和30℃";
-    next.cultureDays = "14";
+    next.entryMode = "online";
+    next.endotoxinLimit = "";
+    next.samplePreparation = "";
+    next.inspectionBasis = "";
+    next.sterilityRows = JSON.stringify(defaultSterilityRowNames.map((name) => ({ itemName: name, colony1: "", colony2: "", average: "", conclusion: "qualified" })));
+    next.paperReportName = "";
+    next.paperReportPath = "";
+    next.result = "qualified";
   }
 
   return next;
@@ -1568,20 +1634,71 @@ function buildRecordPayload(form: LabFormConfig, values: Record<string, string>,
     };
   }
 
-  if (form.id === "bioburden" || form.id === "sterility") {
+  if (form.id === "bioburden") {
+    const bioRows = parseBioburdenRows(values.bioburdenRows);
+    const mediumBatchNos = parseMediumBatchNos(values.mediumBatchNos);
+    const conclusion = (values.result === "unqualified" ? "fail" : "pass") as "pass" | "fail";
     return {
       recordNo,
       formId: form.id,
       formTitle: form.title,
       formType: form.type,
       testType: form.shortTitle,
-      specification: values.standard || undefined,
-      result: values.result || undefined,
-      formData,
-      conclusion: (values.finalResult === "fail" ? "fail" : values.finalResult === "pass" ? "pass" : "pending") as "pass" | "fail" | "pending",
+      result: values.result === "unqualified" ? "不合格" : "合格",
+      formData: {
+        ...formData,
+        entryMode: values.entryMode || "online",
+        specModel: values.specModel || "",
+        completionDate: values.completionDate || "",
+        inspectionStandard: values.inspectionStandard || BIOBURDEN_STANDARD_OPTIONS[0],
+        mediumBatchNos: JSON.stringify(mediumBatchNos),
+        bioburdenRows: JSON.stringify(bioRows),
+        paperReportName: values.paperReportName || "",
+        paperReportPath: values.paperReportPath || "",
+        batchNo: values.batchNo || "",
+        productName: values.productName || "",
+        result: values.result || "qualified",
+      },
+      conclusion,
       testDate: values.inspectionDate || undefined,
       testerName: values.inspector || undefined,
-      reviewerName: values.reviewer || undefined,
+      reviewerName: undefined,
+      status: normalizeStatus(values.status) as "pending" | "testing" | "completed" | "reviewed",
+      remark: values.remark || undefined,
+    };
+  }
+
+  if (form.id === "sterility") {
+    const sterilityRows = parseSterilityRows(values.sterilityRows);
+    const conclusion = (values.result === "unqualified" ? "fail" : "pass") as "pass" | "fail";
+    return {
+      recordNo,
+      formId: form.id,
+      formTitle: form.title,
+      formType: form.type,
+      testType: form.shortTitle,
+      result: values.result === "unqualified" ? "不合格" : "合格",
+      formData: {
+        ...formData,
+        entryMode: values.entryMode || "online",
+        endotoxinLimit: values.endotoxinLimit || "",
+        samplePreparation: values.samplePreparation || "",
+        inspectionBasis: values.inspectionBasis || "",
+        sterilityRows: JSON.stringify(sterilityRows),
+        paperReportName: values.paperReportName || "",
+        paperReportPath: values.paperReportPath || "",
+        batchNo: values.batchNo || "",
+        productName: values.productName || "",
+        productCode: values.productCode || "",
+        quantity: values.quantity || "",
+        sterilizationBatchNo: values.sterilizationBatchNo || "",
+        warehouseEntryNo: values.warehouseEntryNo || "",
+        result: values.result || "qualified",
+      },
+      conclusion,
+      testDate: values.inspectionDate || undefined,
+      testerName: values.inspector || undefined,
+      reviewerName: undefined,
       status: normalizeStatus(values.status) as "pending" | "testing" | "completed" | "reviewed",
       remark: values.remark || undefined,
     };
@@ -1679,11 +1796,41 @@ function buildRecordViewState(form: LabFormConfig, record: LabRecordView) {
     next.signatures = record.formData.signatures || "[]";
   }
 
-  if (form.id === "bioburden" || form.id === "sterility") {
-    next.finalResult = record.formData.finalResult || (record.conclusion === "fail" ? "fail" : "pass");
-    next.inspector = record.formData.inspector || record.testerName || "";
-    next.reviewer = record.formData.reviewer || record.reviewerName || "";
+  if (form.id === "bioburden") {
+    next.entryMode = record.formData.entryMode || "online";
+    next.specModel = record.formData.specModel || "";
+    next.completionDate = record.formData.completionDate || record.testDate || new Date().toISOString().split("T")[0];
     next.inspectionDate = record.formData.inspectionDate || record.testDate || "";
+    next.inspector = record.formData.inspector || record.testerName || "";
+    next.inspectionStandard = record.formData.inspectionStandard || BIOBURDEN_STANDARD_OPTIONS[0];
+    next.mediumBatchNos = record.formData.mediumBatchNos || JSON.stringify(["", "", ""]);
+    next.bioburdenRows = record.formData.bioburdenRows || JSON.stringify(defaultBioburdenRowNames.map((name) => ({ itemName: name, plate1: "", plate2: "", average: "", conclusion: "qualified" })));
+    next.paperReportName = record.formData.paperReportName || "";
+    next.paperReportPath = record.formData.paperReportPath || "";
+    next.result = record.formData.result || (record.conclusion === "fail" ? "unqualified" : "qualified");
+    next.finalResult = record.formData.finalResult || (record.conclusion === "fail" ? "unqualified" : "qualified");
+    next.batchNo = record.formData.batchNo || "";
+    next.productName = record.formData.productName || "";
+  }
+
+  if (form.id === "sterility") {
+    next.entryMode = record.formData.entryMode || "online";
+    next.inspectionDate = record.formData.inspectionDate || record.testDate || "";
+    next.inspector = record.formData.inspector || record.testerName || "";
+    next.endotoxinLimit = record.formData.endotoxinLimit || "";
+    next.samplePreparation = record.formData.samplePreparation || "";
+    next.inspectionBasis = record.formData.inspectionBasis || "";
+    next.sterilityRows = record.formData.sterilityRows || JSON.stringify(defaultSterilityRowNames.map((name) => ({ itemName: name, colony1: "", colony2: "", average: "", conclusion: "qualified" })));
+    next.paperReportName = record.formData.paperReportName || "";
+    next.paperReportPath = record.formData.paperReportPath || "";
+    next.result = record.formData.result || (record.conclusion === "fail" ? "unqualified" : "qualified");
+    next.finalResult = record.formData.finalResult || (record.conclusion === "fail" ? "unqualified" : "qualified");
+    next.batchNo = record.formData.batchNo || "";
+    next.productName = record.formData.productName || "";
+    next.productCode = record.formData.productCode || "";
+    next.quantity = record.formData.quantity || "";
+    next.sterilizationBatchNo = record.formData.sterilizationBatchNo || "";
+    next.warehouseEntryNo = record.formData.warehouseEntryNo || "";
   }
 
   return next;
@@ -1845,6 +1992,108 @@ export default function LabPage() {
     [isEndotoxinPage, currentValues.signatures]
   );
   const endotoxinHistory = useMemo(() => buildEndotoxinHistory(records), [records]);
+
+  // Bioburden / Sterility 专用状态
+  const isBioburdenPage = activeForm?.id === "bioburden";
+  const isSterilityPage = activeForm?.id === "sterility";
+  const bioburdenRows = useMemo(
+    () => (isBioburdenPage ? parseBioburdenRows(currentValues.bioburdenRows) : []),
+    [isBioburdenPage, currentValues.bioburdenRows]
+  );
+  const sterilityRows = useMemo(
+    () => (isSterilityPage ? parseSterilityRows(currentValues.sterilityRows) : []),
+    [isSterilityPage, currentValues.sterilityRows]
+  );
+  const bioburdenMediumBatchNos = useMemo(
+    () => (isBioburdenPage ? parseMediumBatchNos(currentValues.mediumBatchNos) : ["", "", ""]),
+    [isBioburdenPage, currentValues.mediumBatchNos]
+  );
+  const bioburdenPaperInputRef = useRef<HTMLInputElement>(null);
+  const sterilityPaperInputRef = useRef<HTMLInputElement>(null);
+
+  const updateBioburdenRow = (index: number, field: keyof BioburdenRow, value: string) => {
+    if (!activeForm) return;
+    const rows = [...bioburdenRows];
+    const row = { ...rows[index], [field]: value };
+    if (field === "plate1" || field === "plate2") {
+      row.average = calcBioburdenAverage(field === "plate1" ? value : row.plate1, field === "plate2" ? value : row.plate2);
+    }
+    rows[index] = row as BioburdenRow;
+    updateField(activeForm.id, "bioburdenRows", JSON.stringify(rows));
+  };
+
+  const addBioburdenRow = () => {
+    if (!activeForm) return;
+    const rows = [...bioburdenRows, { itemName: "", plate1: "", plate2: "", average: "", conclusion: "qualified" as const }];
+    updateField(activeForm.id, "bioburdenRows", JSON.stringify(rows));
+  };
+
+  const removeBioburdenRow = (index: number) => {
+    if (!activeForm || bioburdenRows.length <= 1) return;
+    const rows = bioburdenRows.filter((_, i) => i !== index);
+    updateField(activeForm.id, "bioburdenRows", JSON.stringify(rows));
+  };
+
+  const updateSterilityRow = (index: number, field: keyof SterilityRow, value: string) => {
+    if (!activeForm) return;
+    const rows = [...sterilityRows];
+    const row = { ...rows[index], [field]: value };
+    if (field === "colony1" || field === "colony2") {
+      row.average = calcSterilityAverage(field === "colony1" ? value : row.colony1, field === "colony2" ? value : row.colony2);
+    }
+    rows[index] = row as SterilityRow;
+    updateField(activeForm.id, "sterilityRows", JSON.stringify(rows));
+  };
+
+  const addSterilityRow = () => {
+    if (!activeForm) return;
+    const rows = [...sterilityRows, { itemName: "", colony1: "", colony2: "", average: "", conclusion: "qualified" as const }];
+    updateField(activeForm.id, "sterilityRows", JSON.stringify(rows));
+  };
+
+  const removeSterilityRow = (index: number) => {
+    if (!activeForm || sterilityRows.length <= 1) return;
+    const rows = sterilityRows.filter((_, i) => i !== index);
+    updateField(activeForm.id, "sterilityRows", JSON.stringify(rows));
+  };
+
+  const handleBioburdenPaperUpload = (files: FileList | null) => {
+    if (!files || !files[0] || !activeForm) return;
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateField(activeForm.id, "paperReportName", file.name);
+      updateField(activeForm.id, "paperReportPath", String(reader.result || ""));
+      toast.success("纸质报告已上传");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSterilityPaperUpload = (files: FileList | null) => {
+    if (!files || !files[0] || !activeForm) return;
+    const file = files[0];
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateField(activeForm.id, "paperReportName", file.name);
+      updateField(activeForm.id, "paperReportPath", String(reader.result || ""));
+      toast.success("纸质报告已上传");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const { data: personnelData = [] } = trpc.personnel.list.useQuery(
+    { status: "active", limit: 500 },
+    { refetchOnWindowFocus: false }
+  );
+  const { user } = useAuth();
+  const currentUserName = String((user as any)?.name || "").trim();
+  const inspectorOptions = useMemo(() => {
+    const names = (personnelData as any[]).map((p: any) => String(p.name || "").trim()).filter(Boolean);
+    if (currentUserName && !names.includes(currentUserName)) {
+      return [currentUserName, ...names];
+    }
+    return names.length > 0 ? names : [currentUserName].filter(Boolean);
+  }, [personnelData, currentUserName]);
   const endotoxinProductSpecMap = useMemo(() => {
     return new Map((productsData as any[]).map((item: any) => [String(item.id || ""), String(item.specification || item.model || "")]));
   }, [productsData]);
@@ -5145,6 +5394,350 @@ export default function LabPage() {
     </div>
   );
 
+  const renderBioburdenEditor = () => (
+    <div className="space-y-6">
+      <Card>
+        <CardContent className="p-6 space-y-6">
+          {/* 在线填写/上传纸质切换 */}
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" checked={(currentValues.entryMode || "online") === "online"} onChange={() => updateField(activeForm!.id, "entryMode", "online")} />
+              <span className="text-sm">在线填写报告</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="radio" checked={currentValues.entryMode === "paper"} onChange={() => updateField(activeForm!.id, "entryMode", "paper")} />
+              <span className="text-sm">上传纸质报告</span>
+            </label>
+          </div>
+
+          <h2 className="text-2xl font-bold">初始污染菌检测记录</h2>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>编号 *</Label>
+              <Input value={currentValues.docNo || ""} onChange={(e) => updateField(activeForm!.id, "docNo", e.target.value)} placeholder="自动生成" />
+            </div>
+            <div className="space-y-2">
+              <Label>生产批号 *</Label>
+              <Input value={currentValues.batchNo || ""} onChange={(e) => updateField(activeForm!.id, "batchNo", e.target.value)} placeholder="输入生产批号" />
+            </div>
+            <div className="space-y-2">
+              <Label>产品名称 *</Label>
+              <Input value={currentValues.productName || ""} onChange={(e) => updateField(activeForm!.id, "productName", e.target.value)} placeholder="输入产品名称" />
+            </div>
+            <div className="space-y-2">
+              <Label>规格型号 *</Label>
+              <Input value={currentValues.specModel || ""} onChange={(e) => updateField(activeForm!.id, "specModel", e.target.value)} placeholder="输入规格型号" />
+            </div>
+            <div className="space-y-2">
+              <Label>完成日期 *</Label>
+              <Input type="date" value={currentValues.completionDate || ""} onChange={(e) => updateField(activeForm!.id, "completionDate", e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>检验日期 *</Label>
+              <Input type="date" value={currentValues.inspectionDate || ""} onChange={(e) => updateField(activeForm!.id, "inspectionDate", e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>检验员 *</Label>
+              <Select value={currentValues.inspector || undefined} onValueChange={(value) => updateField(activeForm!.id, "inspector", value)}>
+                <SelectTrigger><SelectValue placeholder="选择检验员" /></SelectTrigger>
+                <SelectContent>
+                  {inspectorOptions.map((name) => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>检验标准 *</Label>
+              <Select value={currentValues.inspectionStandard || BIOBURDEN_STANDARD_OPTIONS[0]} onValueChange={(value) => updateField(activeForm!.id, "inspectionStandard", value)}>
+                <SelectTrigger><SelectValue placeholder="选择检验标准" /></SelectTrigger>
+                <SelectContent>
+                  {BIOBURDEN_STANDARD_OPTIONS.map((opt) => (
+                    <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>培养基批号</Label>
+            <div className="grid grid-cols-3 gap-4">
+              {bioburdenMediumBatchNos.map((val, idx) => (
+                <Input
+                  key={idx}
+                  value={val}
+                  onChange={(e) => {
+                    const next = [...bioburdenMediumBatchNos];
+                    next[idx] = e.target.value;
+                    updateField(activeForm!.id, "mediumBatchNos", JSON.stringify(next));
+                  }}
+                  placeholder={`P00${idx + 1}`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium">检验内容</div>
+              <Button type="button" variant="outline" size="sm" onClick={addBioburdenRow}>
+                <Plus className="h-4 w-4 mr-1" />增加行
+              </Button>
+            </div>
+            <div className="overflow-hidden rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>检验项目</TableHead>
+                    <TableHead className="w-[180px] text-center">皘1</TableHead>
+                    <TableHead className="w-[180px] text-center">皘2</TableHead>
+                    <TableHead className="w-[180px] text-center">均値</TableHead>
+                    <TableHead className="w-[160px] text-center">结论</TableHead>
+                    <TableHead className="w-[80px] text-center">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {bioburdenRows.map((row, index) => (
+                    <TableRow key={`bioburden-row-${index}`}>
+                      <TableCell>
+                        <Input value={row.itemName} onChange={(e) => updateBioburdenRow(index, "itemName", e.target.value)} />
+                      </TableCell>
+                      <TableCell><Input value={row.plate1} onChange={(e) => updateBioburdenRow(index, "plate1", e.target.value)} /></TableCell>
+                      <TableCell><Input value={row.plate2} onChange={(e) => updateBioburdenRow(index, "plate2", e.target.value)} /></TableCell>
+                      <TableCell><Input value={row.average} readOnly className="bg-muted/40 text-center font-semibold" /></TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center gap-4 text-sm">
+                          <label className="flex items-center gap-2">
+                            <input type="radio" checked={row.conclusion === "qualified"} onChange={() => updateBioburdenRow(index, "conclusion", "qualified")} />
+                            合格
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input type="radio" checked={row.conclusion === "unqualified"} onChange={() => updateBioburdenRow(index, "conclusion", "unqualified")} />
+                            不合格
+                          </label>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button type="button" variant="ghost" size="icon" className="text-destructive" disabled={bioburdenRows.length <= 1} onClick={() => removeBioburdenRow(index)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>纸质报告</Label>
+              <div className="flex gap-2">
+                <Input value={currentValues.paperReportName || ""} readOnly placeholder="未上传纸质报告" />
+                <Button type="button" variant="outline" disabled={!currentValues.paperReportPath} onClick={() => currentValues.paperReportPath && window.open(currentValues.paperReportPath, "_blank")}>浏览</Button>
+                <Button type="button" onClick={() => bioburdenPaperInputRef.current?.click()}>上传</Button>
+                <input ref={bioburdenPaperInputRef} type="file" className="hidden" onChange={(e) => handleBioburdenPaperUpload(e.target.files)} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>结果判定 *</Label>
+              <div className="flex h-10 items-center gap-6 rounded-md border px-3 text-sm">
+                <label className="flex items-center gap-2">
+                  <input type="radio" checked={(currentValues.result || "qualified") === "qualified"} onChange={() => updateField(activeForm!.id, "result", "qualified")} />
+                  合格
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" checked={currentValues.result === "unqualified"} onChange={() => updateField(activeForm!.id, "result", "unqualified")} />
+                  不合格
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+            <div className="text-sm">保存时将弹出电子签名验证，不再单独在表单内签名</div>
+          </div>
+
+          <div className="flex justify-end gap-3 border-t pt-6">
+            <Button variant="outline" onClick={() => void handleSaveRecord(false)} disabled={createMutation.isPending || updateMutation.isPending}>
+              保存
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const renderSterilityEditor = () => (
+    <div className="space-y-6">
+      <Card>
+        <CardContent className="p-6 space-y-6">
+          <div>
+            <h2 className="text-2xl font-bold">无菌检验记录</h2>
+            <p className="text-sm text-muted-foreground">按初始污染菌检测记录同版式录入无菌检验数据</p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label>检验单号</Label>
+              <Input value={currentValues.docNo || ""} readOnly placeholder="自动生成无需填写" className="bg-muted/40" />
+            </div>
+            <div className="space-y-2">
+              <Label>检验日期 *</Label>
+              <Input type="date" value={currentValues.inspectionDate || ""} onChange={(e) => updateField(activeForm!.id, "inspectionDate", e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>检验员 *</Label>
+              <Select value={currentValues.inspector || undefined} onValueChange={(value) => updateField(activeForm!.id, "inspector", value)}>
+                <SelectTrigger><SelectValue placeholder="选择检验员" /></SelectTrigger>
+                <SelectContent>
+                  {inspectorOptions.map((name) => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="text-sm font-medium">产品信息</div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label>产品名称</Label>
+                <Input value={currentValues.productName || ""} onChange={(e) => updateField(activeForm!.id, "productName", e.target.value)} placeholder="输入产品名称" />
+              </div>
+              <div className="space-y-2">
+                <Label>产品编码</Label>
+                <Input value={currentValues.productCode || ""} onChange={(e) => updateField(activeForm!.id, "productCode", e.target.value)} placeholder="输入产品编码" />
+              </div>
+              <div className="space-y-2">
+                <Label>生产批号</Label>
+                <Input value={currentValues.batchNo || ""} onChange={(e) => updateField(activeForm!.id, "batchNo", e.target.value)} placeholder="输入生产批号" />
+              </div>
+              <div className="space-y-2">
+                <Label>入库数量</Label>
+                <Input value={currentValues.quantity || ""} onChange={(e) => updateField(activeForm!.id, "quantity", e.target.value)} placeholder="输入入库数量" />
+              </div>
+              <div className="space-y-2">
+                <Label>灰菌批号</Label>
+                <Input value={currentValues.sterilizationBatchNo || ""} onChange={(e) => updateField(activeForm!.id, "sterilizationBatchNo", e.target.value)} placeholder="输入灰菌批号" />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="text-sm font-medium">检验条件</div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label>内毒素限制</Label>
+                <Input value={currentValues.endotoxinLimit || ""} onChange={(e) => updateField(activeForm!.id, "endotoxinLimit", e.target.value)} placeholder="填写内毒素限制" />
+              </div>
+              <div className="space-y-2">
+                <Label>供试液制备</Label>
+                <Input value={currentValues.samplePreparation || ""} onChange={(e) => updateField(activeForm!.id, "samplePreparation", e.target.value)} placeholder="填写供试液制备" />
+              </div>
+              <div className="space-y-2">
+                <Label>检验依据</Label>
+                <Input value={currentValues.inspectionBasis || ""} onChange={(e) => updateField(activeForm!.id, "inspectionBasis", e.target.value)} placeholder="填写检验依据" />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium">检验内容</div>
+              <Button type="button" variant="outline" size="sm" onClick={addSterilityRow}>
+                <Plus className="h-4 w-4 mr-1" />增加行
+              </Button>
+            </div>
+            <div className="overflow-hidden rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[60px] text-center">#</TableHead>
+                    <TableHead>检验项目</TableHead>
+                    <TableHead className="w-[180px] text-center">茓1</TableHead>
+                    <TableHead className="w-[180px] text-center">茓2</TableHead>
+                    <TableHead className="w-[180px] text-center">均値</TableHead>
+                    <TableHead className="w-[160px] text-center">结论</TableHead>
+                    <TableHead className="w-[80px] text-center">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sterilityRows.map((row, index) => (
+                    <TableRow key={`sterility-row-${index}`}>
+                      <TableCell className="text-center text-muted-foreground">{index + 1}</TableCell>
+                      <TableCell>
+                        <Input value={row.itemName} onChange={(e) => updateSterilityRow(index, "itemName", e.target.value)} />
+                      </TableCell>
+                      <TableCell><Input value={row.colony1} onChange={(e) => updateSterilityRow(index, "colony1", e.target.value)} /></TableCell>
+                      <TableCell><Input value={row.colony2} onChange={(e) => updateSterilityRow(index, "colony2", e.target.value)} /></TableCell>
+                      <TableCell><Input value={row.average} readOnly className="bg-muted/40 text-center font-semibold" /></TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center gap-4 text-sm">
+                          <label className="flex items-center gap-2">
+                            <input type="radio" checked={row.conclusion === "qualified"} onChange={() => updateSterilityRow(index, "conclusion", "qualified")} />
+                            合格
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input type="radio" checked={row.conclusion === "unqualified"} onChange={() => updateSterilityRow(index, "conclusion", "unqualified")} />
+                            不合格
+                          </label>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Button type="button" variant="ghost" size="icon" className="text-destructive" disabled={sterilityRows.length <= 1} onClick={() => removeSterilityRow(index)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>纸质报告</Label>
+              <div className="flex gap-2">
+                <Input value={currentValues.paperReportName || ""} readOnly placeholder="未上传纸质报告" />
+                <Button type="button" variant="outline" disabled={!currentValues.paperReportPath} onClick={() => currentValues.paperReportPath && window.open(currentValues.paperReportPath, "_blank")}>浏览</Button>
+                <Button type="button" onClick={() => sterilityPaperInputRef.current?.click()}>上传</Button>
+                <input ref={sterilityPaperInputRef} type="file" className="hidden" onChange={(e) => handleSterilityPaperUpload(e.target.files)} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>判定结果 *</Label>
+              <div className="flex h-10 items-center gap-6 rounded-md border px-3 text-sm">
+                <label className="flex items-center gap-2">
+                  <input type="radio" checked={(currentValues.result || "qualified") === "qualified"} onChange={() => updateField(activeForm!.id, "result", "qualified")} />
+                  合格
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" checked={currentValues.result === "unqualified"} onChange={() => updateField(activeForm!.id, "result", "unqualified")} />
+                  不合格
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+            <div className="text-sm">保存时将弹出电子签名验证，不再单独在表单内签名</div>
+          </div>
+
+          <div className="flex justify-end gap-3 border-t pt-6">
+            <Button variant="outline" onClick={() => void handleSaveRecord(false)} disabled={createMutation.isPending || updateMutation.isPending}>
+              保存
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   return (
     <ERPLayout>
       <div className="space-y-6">
@@ -5350,6 +5943,10 @@ export default function LabPage() {
               renderAirflowEditor()
             ) : isEndotoxinPage ? (
               renderEndotoxinEditor()
+            ) : isBioburdenPage ? (
+              renderBioburdenEditor()
+            ) : isSterilityPage ? (
+              renderSterilityEditor()
             ) : (
               <>
                 <Card>

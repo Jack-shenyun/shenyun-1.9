@@ -905,10 +905,10 @@ export default function InspectionRequirementsPage() {
                         </TableCell>
                         <TableCell>
                           <Select
-                            value={item.labTestType || ""}
+                            value={item.labTestType || "none"}
                             onValueChange={(v) => {
                               const next = [...formItems];
-                              next[idx] = { ...next[idx], labTestType: v };
+                              next[idx] = { ...next[idx], labTestType: v === "none" ? "" : v };
                               setFormItems(next);
                             }}
                           >
@@ -916,7 +916,7 @@ export default function InspectionRequirementsPage() {
                               <SelectValue placeholder="无" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">无</SelectItem>
+                              <SelectItem value="none">无</SelectItem>
                               <SelectItem value="bioburden">初始污染菌</SelectItem>
                               <SelectItem value="sterility">无菌检验</SelectItem>
                             </SelectContent>
