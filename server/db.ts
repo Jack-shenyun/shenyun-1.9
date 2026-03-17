@@ -8596,6 +8596,7 @@ export type WorkflowCenterItem = {
     | "finance_receipt"
     | "finance_payable"
     | "quality_iqc"
+    | "quality_iqc_review"
     | "quality_oqc"
     | "material_requisition"
     | "warehouse_production_in"
@@ -8618,6 +8619,131 @@ export type WorkflowCenterItem = {
   runId?: number | null;
   todoMetaId?: string | null;
 };
+
+type QualityReviewerUser = { id: number; name: string } | null;
+
+function parseValidSignatureRecords(raw: unknown) {
+  try {
+    const parsed = JSON.parse(String(raw || "[]"));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item: any) =>
+        item &&
+        String(item.status || "valid") === "valid" &&
+        String(item.signatureType || "").trim().length > 0
+    );
+  } catch {
+    return [];
+  }
+}
+
+function hasValidSignatureType(
+  raw: unknown,
+  signatureType: "inspector" | "reviewer" | "approver"
+) {
+  return parseValidSignatureRecords(raw).some(
+    (item: any) => String(item.signatureType || "") === signatureType
+  );
+}
+
+async function getQualityDepartmentReviewerUser(
+  db: any
+): Promise<QualityReviewerUser> {
+  const qualityDepartmentRows: Array<{
+    id: number;
+    name: string | null;
+    managerId: number | null;
+  }> = await db
+    .select({
+      id: departments.id,
+      name: departments.name,
+      managerId: departments.managerId,
+    })
+    .from(departments)
+    .where(like(departments.name, "%质量%"))
+    .orderBy(
+      sql`CASE WHEN ${departments.name} = '质量部' THEN 0 ELSE 1 END`,
+      asc(departments.id)
+    );
+
+  const managerIds = Array.from(
+    new Set(
+      qualityDepartmentRows
+        .map((row) => Number(row.managerId || 0))
+        .filter((id) => id > 0)
+    )
+  );
+  if (managerIds.length > 0) {
+    const managerRows: Array<{ id: number; name: string | null }> = await db
+      .select({ id: users.id, name: users.name })
+      .from(users)
+      .where(inArray(users.id, managerIds))
+      .limit(1);
+    if (managerRows[0]) {
+      return {
+        id: Number(managerRows[0].id),
+        name: String(managerRows[0].name || ""),
+      };
+    }
+  }
+
+  const fallbackRows: Array<{ id: number; name: string | null }> = await db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .where(
+      and(
+        like(users.department, "%质量%"),
+        or(
+          like(users.position, "%负责人%"),
+          like(users.position, "%经理%"),
+          like(users.position, "%主管%"),
+          like(users.position, "%总监%")
+        )
+      )
+    )
+    .limit(1);
+
+  if (!fallbackRows[0]) return null;
+  return {
+    id: Number(fallbackRows[0].id),
+    name: String(fallbackRows[0].name || ""),
+  };
+}
+
+async function getQualityIqcExecutorUserIds(db: any) {
+  const reviewer = await getQualityDepartmentReviewerUser(db);
+  const preferredRows: Array<{ id: number }> = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(
+      and(
+        like(users.department, "%质量%"),
+        or(
+          like(users.position, "%检验%"),
+          like(users.position, "%质检%"),
+          like(users.position, "%QC%"),
+          like(users.position, "%IQC%")
+        )
+      )
+    );
+
+  const preferredIds = preferredRows
+    .map((row) => Number(row.id || 0))
+    .filter((id) => id > 0 && id !== Number(reviewer?.id || 0));
+  if (preferredIds.length > 0) return Array.from(new Set(preferredIds));
+
+  const fallbackRows: Array<{ id: number }> = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(like(users.department, "%质量%"));
+  return Array.from(
+    new Set(
+      fallbackRows
+        .map((row) => Number(row.id || 0))
+        .filter((id) => id > 0 && id !== Number(reviewer?.id || 0))
+    )
+  );
+}
 
 function parseDepartmentNames(raw: unknown): string[] {
   return String(raw ?? "")
@@ -9646,6 +9772,16 @@ async function resolveGoodsReceiptTodoRouting(
     }
   }
 
+  const executorUserIds = await getQualityIqcExecutorUserIds(db);
+  if (executorUserIds.length > 0) {
+    return {
+      mode: "fallback" as const,
+      matchesCurrentUser: executorUserIds.includes(
+        Number(params.operatorId || 0)
+      ),
+    };
+  }
+
   const userDepartments = parseDepartmentNames(params.operatorDepartment);
   return {
     mode: "fallback" as const,
@@ -10347,8 +10483,8 @@ async function getQualityWorkflowTodoItems(
   }
 ): Promise<WorkflowCenterItem[]> {
   await ensureGoodsReceiptsTable(db);
+  await ensureIqcInspectionsTable(db);
   const routing = await resolveGoodsReceiptTodoRouting(db, params);
-  if (!routing.matchesCurrentUser) return [];
 
   const receiptRows: Array<{
     id: number;
@@ -10372,6 +10508,57 @@ async function getQualityWorkflowTodoItems(
     .where(inArray(goodsReceipts.status, ["pending_inspection", "inspecting"]))
     .orderBy(desc(goodsReceipts.createdAt));
 
+  const receiptIds = receiptRows.map((row) => Number(row.id || 0)).filter((id) => id > 0);
+  const receiptItemRows =
+    receiptIds.length > 0
+      ? await db
+          .select({
+            id: goodsReceiptItems.id,
+            receiptId: goodsReceiptItems.receiptId,
+          })
+          .from(goodsReceiptItems)
+          .where(inArray(goodsReceiptItems.receiptId, receiptIds))
+      : [];
+  const receiptItemIds = receiptItemRows.map((row) => Number(row.id || 0)).filter((id) => id > 0);
+  const inspectionRows =
+    receiptItemIds.length > 0
+      ? await db
+          .select({
+            goodsReceiptItemId: iqcInspections.goodsReceiptItemId,
+            result: iqcInspections.result,
+            updatedAt: iqcInspections.updatedAt,
+            createdAt: iqcInspections.createdAt,
+            id: iqcInspections.id,
+          })
+          .from(iqcInspections)
+          .where(inArray(iqcInspections.goodsReceiptItemId, receiptItemIds))
+          .orderBy(
+            desc(iqcInspections.updatedAt),
+            desc(iqcInspections.createdAt),
+            desc(iqcInspections.id)
+          )
+      : [];
+
+  const finishedInspectionByItem = new Set<number>();
+  inspectionRows.forEach((row) => {
+    const itemId = Number(row.goodsReceiptItemId || 0);
+    if (
+      itemId > 0 &&
+      !finishedInspectionByItem.has(itemId) &&
+      String(row.result || "") !== "pending"
+    ) {
+      finishedInspectionByItem.add(itemId);
+    }
+  });
+  const pendingExecutionReceiptIds = new Set<number>();
+  receiptItemRows.forEach((row) => {
+    const itemId = Number(row.id || 0);
+    const receiptId = Number(row.receiptId || 0);
+    if (itemId > 0 && receiptId > 0 && !finishedInspectionByItem.has(itemId)) {
+      pendingExecutionReceiptIds.add(receiptId);
+    }
+  });
+
   const applicantIds = Array.from(
     new Set(
       receiptRows.map(row => Number(row.createdBy || 0)).filter(id => id > 0)
@@ -10388,30 +10575,59 @@ async function getQualityWorkflowTodoItems(
     applicantRows.map(user => [Number(user.id), String(user.name || "")])
   );
 
-  const iqcItems = receiptRows.slice(0, params.limit).map(row => ({
-    id: `quality-receipt-${row.id}`,
-    tab: "todo" as const,
-    sourceType: "quality_iqc" as const,
-    module: "质量部",
-    formType: "来料检验",
-    title: routing.mode === "notice" ? "到货通知待处理" : "到货待检验",
-    documentNo: String(row.receiptNo || `GR-${row.id}`),
-    targetName: String(row.supplierName || "-"),
-    applicantName: applicantMap.get(Number(row.createdBy || 0)) || "-",
-    currentStep:
-      routing.mode === "notice"
-        ? "到货通知待处理"
-        : row.status === "inspecting"
-          ? "来料检验中"
-          : "等待来料检验",
-    statusLabel: row.status === "inspecting" ? "处理中" : "待处理",
-    amountText: "",
-    createdAt: row.createdAt,
-    routePath: `/quality/iqc?receiptId=${row.id}`,
-    description: `${String(row.supplierName || "-")} · 采购单 ${String(row.purchaseOrderNo || "-")}`,
-    sourceId: Number(row.id || 0) || null,
-    sourceTable: "goods_receipts",
-  }));
+  const iqcItems = routing.matchesCurrentUser
+    ? receiptRows
+        .filter((row) => pendingExecutionReceiptIds.has(Number(row.id || 0)))
+        .slice(0, params.limit)
+        .map(row => ({
+          id: `quality-receipt-${row.id}`,
+          tab: "todo" as const,
+          sourceType: "quality_iqc" as const,
+          module: "质量部",
+          formType: "来料检验",
+          title: routing.mode === "notice" ? "到货通知待处理" : "到货待检验",
+          documentNo: String(row.receiptNo || `GR-${row.id}`),
+          targetName: String(row.supplierName || "-"),
+          applicantName: applicantMap.get(Number(row.createdBy || 0)) || "-",
+          currentStep:
+            routing.mode === "notice"
+              ? "到货通知待处理"
+              : row.status === "inspecting"
+                ? "来料检验中"
+                : "等待来料检验",
+          statusLabel: row.status === "inspecting" ? "处理中" : "待处理",
+          amountText: "",
+          createdAt: row.createdAt,
+          routePath: `/quality/iqc?receiptId=${row.id}`,
+          description: `${String(row.supplierName || "-")} · 采购单 ${String(row.purchaseOrderNo || "-")}`,
+          sourceId: Number(row.id || 0) || null,
+          sourceTable: "goods_receipts",
+        }))
+    : [];
+
+  const iqcReviewRows = await getPendingIqcReviewRows(db);
+  const iqcReviewItems = iqcReviewRows
+    .filter((row) => Number(row.reviewerId || 0) === Number(params.operatorId || 0))
+    .slice(0, params.limit)
+    .map((row) => ({
+      id: `quality-review-${row.id}`,
+      tab: "todo" as const,
+      sourceType: "quality_iqc_review" as const,
+      module: "质量部",
+      formType: "来料检验复核",
+      title: "来料检验待复核",
+      documentNo: String(row.inspectionNo || `IQC-${row.id}`),
+      targetName: String(row.productName || "-"),
+      applicantName: String(row.reviewerName || "-"),
+      currentStep: "来料检验复核",
+      statusLabel: "待复核",
+      amountText: "",
+      createdAt: row.updatedAt || row.createdAt,
+      routePath: `/quality/iqc?detailId=${row.id}&review=1`,
+      description: `${String(row.supplierName || "-")} · 采购单 ${String(row.purchaseOrderNo || "-")}`,
+      sourceId: Number(row.id || 0) || null,
+      sourceTable: "iqc_inspections",
+    }));
 
   const inspectedOqcBatchRows: Array<{ batchNo: string | null }> = await db
     .select({ batchNo: qualityInspections.batchNo })
@@ -10488,7 +10704,7 @@ async function getQualityWorkflowTodoItems(
       sourceTable: "production_warehouse_entries",
     }));
 
-  return [...iqcItems, ...oqcItems]
+  return [...iqcItems, ...iqcReviewItems, ...oqcItems]
     .sort((a, b) =>
       String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
     )
@@ -10675,6 +10891,7 @@ export async function deleteWorkflowCenterTodo(params: {
       "finance_receipt",
       "finance_payable",
       "workflow_approval",
+      "quality_iqc_review",
     ].includes(String(params.sourceType || "")) &&
     sourceId <= 0 &&
     !sourceTable &&
@@ -10698,6 +10915,9 @@ export async function deleteWorkflowCenterTodo(params: {
   if (params.sourceType === "quality_iqc") {
     await deleteGoodsReceipt(sourceId);
     return { success: true };
+  }
+  if (params.sourceType === "quality_iqc_review") {
+    throw new Error("来料检验复核待办不可直接删除，请完成复核");
   }
   if (
     params.sourceType === "quality_oqc" ||
@@ -11657,11 +11877,18 @@ export async function getDashboardStats(params?: {
       operatorIsCompanyAdmin: params.operatorIsCompanyAdmin,
       operatorDepartment: params.operatorDepartment,
     });
-    if (!collaborativeOnly && qualityRouting.matchesCurrentUser) {
-      const qualityTodoCount =
-        Number(iqcPendingCount || 0) + Number(oqcPendingCount || 0);
+    if (!collaborativeOnly) {
+      const executionTodoCount = qualityRouting.matchesCurrentUser
+        ? Number(iqcPendingCount || 0) + Number(oqcPendingCount || 0)
+        : 0;
+      const iqcReviewTodoCount = await countPendingIqcReviewItemsForUser(
+        Number(params.operatorId || 0),
+        db
+      );
+      const qualityTodoCount = executionTodoCount + Number(iqcReviewTodoCount || 0);
       myTodoCount += qualityTodoCount;
       if (
+        executionTodoCount > 0 &&
         qualityRouting.mode === "test_admin" &&
         workflowAdmin &&
         Number(params.operatorId || 0) === Number(workflowAdmin.id)
@@ -25662,6 +25889,10 @@ export async function ensureIqcInspectionsTable(
     { name: "reportMode", ddl: "VARCHAR(20) NULL" },
     { name: "supplierCode", ddl: "VARCHAR(50) NULL" },
     { name: "supplierName", ddl: "VARCHAR(200) NULL" },
+    { name: "reviewerId", ddl: "INT NULL" },
+    { name: "reviewerName", ddl: "VARCHAR(64) NULL" },
+    { name: "reviewStatus", ddl: "VARCHAR(20) NULL" },
+    { name: "reviewedAt", ddl: "TIMESTAMP NULL" },
   ];
   for (const col of iqcNewCols) {
     try {
@@ -25680,6 +25911,40 @@ export async function ensureIqcInspectionsTable(
   }
   await ensureIqcPendingUploadsTable(db);
   iqcInspectionsTableReady = true;
+}
+
+async function buildIqcReviewState(
+  db: any,
+  params: {
+    result?: unknown;
+    signatures?: unknown;
+    reviewerId?: unknown;
+    reviewerName?: unknown;
+  }
+) {
+  const fallbackReviewer = await getQualityDepartmentReviewerUser(db);
+  const reviewerId =
+    Number(params.reviewerId || 0) || Number(fallbackReviewer?.id || 0) || null;
+  const reviewerName =
+    String(params.reviewerName || "").trim() ||
+    String(fallbackReviewer?.name || "").trim() ||
+    null;
+  const hasReviewerSign = hasValidSignatureType(params.signatures, "reviewer");
+  const result = String(params.result || "pending");
+  const reviewStatus =
+    result === "pending"
+      ? null
+      : hasReviewerSign
+        ? "reviewed"
+        : reviewerId
+          ? "pending"
+          : null;
+  return {
+    reviewerId,
+    reviewerName,
+    reviewStatus,
+    reviewedAt: reviewStatus === "reviewed" ? new Date() : null,
+  };
 }
 
 export async function getIqcPendingUploads(inspectionNo: string) {
@@ -25882,6 +26147,9 @@ async function refreshGoodsReceiptInspectionStatus(
     .select({
       goodsReceiptItemId: iqcInspections.goodsReceiptItemId,
       result: iqcInspections.result,
+      reviewStatus: (iqcInspections as any).reviewStatus,
+      reviewerId: (iqcInspections as any).reviewerId,
+      signatures: iqcInspections.signatures,
       updatedAt: iqcInspections.updatedAt,
       createdAt: iqcInspections.createdAt,
       id: iqcInspections.id,
@@ -25912,11 +26180,30 @@ async function refreshGoodsReceiptInspectionStatus(
   const finishedResults = itemIds
     .map(itemId => resultByItem.get(itemId))
     .filter((result): result is string => !!result && result !== "pending");
+  const latestInspectionByItem = new Map<number, (typeof inspections)[number]>();
+  inspections.forEach((inspection) => {
+    const itemId = Number(inspection.goodsReceiptItemId || 0);
+    if (itemId > 0 && !latestInspectionByItem.has(itemId)) {
+      latestInspectionByItem.set(itemId, inspection);
+    }
+  });
+  const hasPendingReview = itemIds.some((itemId) => {
+    const latestInspection = latestInspectionByItem.get(itemId);
+    if (!latestInspection) return false;
+    const result = String(latestInspection.result || "pending");
+    if (result === "pending") return false;
+    const reviewerId = Number(latestInspection.reviewerId || 0);
+    const reviewStatus = String(latestInspection.reviewStatus || "");
+    const reviewed =
+      reviewStatus === "reviewed" ||
+      hasValidSignatureType(latestInspection.signatures, "reviewer");
+    return reviewerId > 0 && !reviewed;
+  });
 
   let nextStatus: "pending_inspection" | "inspecting" | "passed" | "failed" =
     "pending_inspection";
 
-  if (finishedResults.length >= totalCount) {
+  if (finishedResults.length >= totalCount && !hasPendingReview) {
     nextStatus = finishedResults.some(result => result === "failed")
       ? "failed"
       : "passed";
@@ -25958,6 +26245,98 @@ async function countPendingIqcItems(dbArg?: ReturnType<typeof drizzle> | null) {
     : (rows as any);
   const first = Array.from(rowList as any[])[0] as any;
   return Number(first?.count || 0);
+}
+
+async function getPendingIqcReviewRows(dbArg?: ReturnType<typeof drizzle> | null) {
+  const db = dbArg ?? (await getDb());
+  if (!db) return [] as Array<{
+    id: number;
+    inspectionNo: string | null;
+    goodsReceiptId: number | null;
+    goodsReceiptNo: string | null;
+    purchaseOrderNo: string | null;
+    productName: string | null;
+    supplierName: string | null;
+    reviewerId: number | null;
+    reviewerName: string | null;
+    reviewStatus: string | null;
+    result: string | null;
+    signatures: string | null;
+    updatedAt: Date | null;
+    createdAt: Date | null;
+  }>;
+  await ensureGoodsReceiptsTable(db);
+  await ensureIqcInspectionsTable(db);
+  const fallbackReviewer = await getQualityDepartmentReviewerUser(db);
+
+  const rows: Array<{
+    id: number;
+    inspectionNo: string | null;
+    goodsReceiptId: number | null;
+    goodsReceiptNo: string | null;
+    purchaseOrderNo: string | null;
+    productName: string | null;
+    supplierName: string | null;
+    reviewerId: number | null;
+    reviewerName: string | null;
+    reviewStatus: string | null;
+    result: string | null;
+    signatures: string | null;
+    updatedAt: Date | null;
+    createdAt: Date | null;
+  }> = await db
+    .select({
+      id: iqcInspections.id,
+      inspectionNo: iqcInspections.inspectionNo,
+      goodsReceiptId: iqcInspections.goodsReceiptId,
+      goodsReceiptNo: iqcInspections.goodsReceiptNo,
+      purchaseOrderNo: goodsReceipts.purchaseOrderNo,
+      productName: iqcInspections.productName,
+      supplierName: iqcInspections.supplierName,
+      reviewerId: (iqcInspections as any).reviewerId,
+      reviewerName: (iqcInspections as any).reviewerName,
+      reviewStatus: (iqcInspections as any).reviewStatus,
+      result: iqcInspections.result,
+      signatures: iqcInspections.signatures,
+      updatedAt: iqcInspections.updatedAt,
+      createdAt: iqcInspections.createdAt,
+    })
+    .from(iqcInspections)
+    .leftJoin(goodsReceipts, eq(iqcInspections.goodsReceiptId, goodsReceipts.id))
+    .where(ne(iqcInspections.result, "pending"))
+    .orderBy(desc(iqcInspections.updatedAt), desc(iqcInspections.createdAt), desc(iqcInspections.id));
+
+  return rows
+    .map((row) => {
+      const assignedReviewerId =
+        Number(row.reviewerId || 0) || Number(fallbackReviewer?.id || 0) || null;
+      const assignedReviewerName =
+        String(row.reviewerName || "").trim() ||
+        String(fallbackReviewer?.name || "").trim() ||
+        null;
+      const reviewed =
+        String(row.reviewStatus || "").trim() === "reviewed" ||
+        hasValidSignatureType(row.signatures, "reviewer");
+      return {
+        ...row,
+        reviewerId: assignedReviewerId,
+        reviewerName: assignedReviewerName,
+        reviewStatus: reviewed ? "reviewed" : "pending",
+      };
+    })
+    .filter(
+      (row) =>
+        Number(row.reviewerId || 0) > 0 &&
+        String(row.reviewStatus || "") !== "reviewed"
+    );
+}
+
+async function countPendingIqcReviewItemsForUser(
+  operatorId: number,
+  dbArg?: ReturnType<typeof drizzle> | null
+) {
+  const rows = await getPendingIqcReviewRows(dbArg);
+  return rows.filter((row) => Number(row.reviewerId || 0) === Number(operatorId || 0)).length;
 }
 
 async function countPendingOqcItems(dbArg?: ReturnType<typeof drizzle> | null) {
@@ -26053,7 +26432,17 @@ export async function createIqcInspection(data: {
   if (!db) throw new Error("数据库连接不可用");
   await ensureIqcInspectionsTable(db);
   const { items, ...iqcData } = data;
-  const [result] = await db.insert(iqcInspections).values(iqcData as any);
+  const reviewState = await buildIqcReviewState(db, {
+    result: iqcData.result,
+    signatures: iqcData.signatures,
+  });
+  const [result] = await db.insert(iqcInspections).values({
+    ...(iqcData as any),
+    reviewerId: reviewState.reviewerId,
+    reviewerName: reviewState.reviewerName,
+    reviewStatus: reviewState.reviewStatus,
+    reviewedAt: reviewState.reviewedAt,
+  } as any);
   const iqcId = (result as any).insertId;
   if (items && items.length > 0) {
     await db.insert(iqcInspectionItems).values(
@@ -26113,10 +26502,27 @@ export async function updateIqcInspection(
   if (!db) throw new Error("数据库连接不可用");
   await ensureIqcInspectionsTable(db);
   const { items, ...iqcData } = data;
+  const [current] = await db
+    .select()
+    .from(iqcInspections)
+    .where(eq(iqcInspections.id, id))
+    .limit(1);
+  const reviewState = await buildIqcReviewState(db, {
+    result: iqcData.result ?? current?.result,
+    signatures: iqcData.signatures ?? current?.signatures,
+    reviewerId: (current as any)?.reviewerId,
+    reviewerName: (current as any)?.reviewerName,
+  });
   if (Object.keys(iqcData).length > 0) {
     await db
       .update(iqcInspections)
-      .set(iqcData as any)
+      .set({
+        ...(iqcData as any),
+        reviewerId: reviewState.reviewerId,
+        reviewerName: reviewState.reviewerName,
+        reviewStatus: reviewState.reviewStatus,
+        reviewedAt: reviewState.reviewedAt,
+      } as any)
       .where(eq(iqcInspections.id, id));
   }
   if (items !== undefined) {

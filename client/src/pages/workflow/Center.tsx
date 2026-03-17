@@ -28,7 +28,7 @@ type WorkflowTab = "todo" | "created" | "processed" | "cc";
 type WorkflowCenterItem = {
   id: string;
   tab: WorkflowTab;
-  sourceType: "sales_order" | "purchase_order" | "expense_reimbursement" | "workflow_approval" | "finance_receipt" | "finance_payable" | "quality_iqc" | "quality_oqc" | "material_requisition" | "warehouse_production_in" | "operation_log";
+  sourceType: "sales_order" | "purchase_order" | "expense_reimbursement" | "workflow_approval" | "finance_receipt" | "finance_payable" | "quality_iqc" | "quality_iqc_review" | "quality_oqc" | "material_requisition" | "warehouse_production_in" | "operation_log";
   module: string;
   formType: string;
   title: string;
@@ -280,7 +280,7 @@ export default function WorkflowCenterPage() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {activeTab === "todo" && isAdmin && item.sourceType !== "operation_log" ? (
+                        {activeTab === "todo" && isAdmin && item.sourceType !== "operation_log" && item.sourceType !== "quality_iqc_review" ? (
                           <Button
                             type="button"
                             variant="outline"

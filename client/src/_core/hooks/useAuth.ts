@@ -1,4 +1,10 @@
-import { getLoginUrl, LOCAL_AUTH_USER_KEY } from "@/const";
+import {
+  clearLocalAuthState,
+  getLoginUrl,
+  LOCAL_AUTH_USER_KEY,
+  readLocalAuthUser,
+  writeRuntimeUserInfo,
+} from "@/const";
 import { trpc } from "@/lib/trpc";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
@@ -38,9 +44,7 @@ export function useAuth(options?: UseAuthOptions) {
       }
       throw error;
     } finally {
-      if (typeof window !== "undefined") {
-        localStorage.removeItem(LOCAL_AUTH_USER_KEY);
-      }
+      clearLocalAuthState();
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();
     }
@@ -49,19 +53,12 @@ export function useAuth(options?: UseAuthOptions) {
   const state = useMemo(() => {
     const localAuthUser =
       typeof window !== "undefined" && isLocalAuthMode
-        ? (() => {
-            try {
-              const raw = localStorage.getItem(LOCAL_AUTH_USER_KEY);
-              return raw ? JSON.parse(raw) : null;
-            } catch {
-              return null;
-            }
-          })()
+        ? readLocalAuthUser()
         : null;
     // 本地缓存只用于首屏兜底，后端一旦返回结果（即便是 null）就以服务端为准，避免串用户/串公司。
     const hasServerResolved = meQuery.data !== undefined || meQuery.error != null;
     const resolvedUser = hasServerResolved ? (meQuery.data ?? null) : (localAuthUser ?? null);
-    localStorage.setItem("manus-runtime-user-info", JSON.stringify(resolvedUser));
+    writeRuntimeUserInfo(resolvedUser);
     return {
       user: resolvedUser,
       loading: meQuery.isLoading || logoutMutation.isPending,
@@ -76,6 +73,18 @@ export function useAuth(options?: UseAuthOptions) {
     logoutMutation.error,
     logoutMutation.isPending,
   ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (meQuery.data === null) {
+      clearLocalAuthState();
+      return;
+    }
+    if (meQuery.data) {
+      localStorage.setItem(LOCAL_AUTH_USER_KEY, JSON.stringify(meQuery.data));
+      writeRuntimeUserInfo(meQuery.data);
+    }
+  }, [meQuery.data]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;

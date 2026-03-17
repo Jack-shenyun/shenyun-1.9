@@ -296,9 +296,9 @@ export default function GoodsReceiptPage() {
     const validLines = lines.filter((l) => Number(l.thisReceiptQty) > 0);
     if (validLines.length === 0) return toast.error("请填写本次到货数量");
     for (const l of validLines) {
-      const maxReceiptQty = roundToDigits(Number(l.pendingQty) * 1.1, 4);
+      const maxReceiptQty = roundToDigits(Number(l.pendingQty) * 2, 4);
       if (Number(l.thisReceiptQty) > maxReceiptQty) {
-        return toast.error(`${l.materialName} 的本次到货数量不能超过待收货数量的110%`);
+        return toast.error(`${l.materialName} 的本次到货数量不能超过待收货数量上浮100%后的上限`);
       }
     }
     setSubmitting(true);

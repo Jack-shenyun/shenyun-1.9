@@ -1269,7 +1269,7 @@ function ERPLayoutContent({
                           key={item.id ?? idx}
                           type="button"
                           onClick={() =>
-                            setLocation("/workflow/center?tab=todo")
+                            setLocation(item.routePath || "/workflow/center?tab=todo")
                           }
                           className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
                         >

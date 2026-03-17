@@ -3020,6 +3020,10 @@ export const iqcInspections = mysqlTable("iqc_inspections", {
   inspectionDate: date("inspectionDate"),
   inspectorId: int("inspectorId"),
   inspectorName: varchar("inspectorName", { length: 64 }),
+  reviewerId: int("reviewerId"),
+  reviewerName: varchar("reviewerName", { length: 64 }),
+  reviewStatus: varchar("reviewStatus", { length: 20 }),
+  reviewedAt: timestamp("reviewedAt"),
   result: mysqlEnum("result", [
     "pending",
     "passed",

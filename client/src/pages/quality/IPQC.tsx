@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import PrintPreviewButton from "@/components/PrintPreviewButton";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
-import { SignatureStatusCard, SignatureRecord } from "@/components/ElectronicSignature";
+import { SignatureRecord } from "@/components/ElectronicSignature";
 import { ClipboardList, FileCheck, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, RefreshCw, ArrowLeft, Save } from "lucide-react";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -121,9 +122,28 @@ function dbToDisplay(record: any): IPQCRecord {
   };
 }
 
+function getNextSignatureType(
+  signatures: SignatureRecord[],
+): SignatureRecord["signatureType"] | null {
+  const hasInspector = signatures.some((sig) => sig.signatureType === "inspector" && sig.status === "valid");
+  if (!hasInspector) return "inspector";
+  const hasReviewer = signatures.some((sig) => sig.signatureType === "reviewer" && sig.status === "valid");
+  if (!hasReviewer) return "reviewer";
+  return null;
+}
+
+function mergeSignatureRecords(
+  existing: SignatureRecord[],
+  nextSignature?: SignatureRecord | null,
+) {
+  if (!nextSignature) return existing;
+  return [...existing, nextSignature];
+}
+
 export default function IPQCPage() {
   const formPrintRef = useRef<HTMLDivElement>(null);
   const detailPrintRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuth();
   const { data: _dbData = [], isLoading, refetch } = trpc.qualityInspections.list.useQuery({ type: "IPQC" });
   const createMutation = trpc.qualityInspections.create.useMutation({
     onSuccess: () => { refetch(); toast.success("检验记录已创建"); setFormDialogOpen(false); },
@@ -152,7 +172,11 @@ export default function IPQCPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<IPQCRecord | null>(null);
   const [activeTab, setActiveTab] = useState("items");
+  const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
+  const [signatureDialogOpen, setSignatureDialogOpen] = useState(false);
+  const [signaturePassword, setSignaturePassword] = useState("");
   const { canDelete } = usePermission();
+  const verifyPasswordMutation = trpc.auth.verifyPassword.useMutation();
 
   const [formData, setFormData] = useState({
     productCode: "",
@@ -205,6 +229,7 @@ export default function IPQCPage() {
       remarks: "",
       inspectionItems: [...defaultInspectionItems],
     });
+    setSignatures([]);
     setFormDialogOpen(true);
   };
 
@@ -229,6 +254,7 @@ export default function IPQCPage() {
       remarks: record.remarks,
       inspectionItems: record.inspectionItems.length > 0 ? record.inspectionItems : [...defaultInspectionItems],
     });
+    setSignatures(record.signatures || []);
     setFormDialogOpen(true);
   };
 
@@ -258,12 +284,13 @@ export default function IPQCPage() {
     setRecordToDelete(null);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (extraSignature?: SignatureRecord | null) => {
     if (!formData.productName || !formData.batchNo || !formData.process) {
       toast.error("请填写必填字段");
       return;
     }
 
+    const mergedSignatures = mergeSignatureRecords(signatures, extraSignature);
     const extraData = {
       productCode: formData.productCode,
       process: formData.process,
@@ -273,7 +300,7 @@ export default function IPQCPage() {
       workstation: formData.workstation,
       remarks: formData.remarks,
       inspectionItems: formData.inspectionItems,
-      signatures: isEditing && selectedRecord ? (selectedRecord.signatures || []) : [],
+      signatures: mergedSignatures,
     };
 
     if (isEditing && selectedRecord) {
@@ -310,17 +337,56 @@ export default function IPQCPage() {
     }
   };
 
-  const handleSignComplete = (signature: SignatureRecord) => {
-    if (!selectedRecord) return;
-    setSelectedRecord((prev) =>
-      prev
+  function requestSubmitWithSignature() {
+    if (!formData.productName || !formData.batchNo || !formData.process) {
+      toast.error("请填写必填字段");
+      return;
+    }
+    const nextSignatureType = getNextSignatureType(signatures);
+    if (!nextSignatureType) {
+      handleSubmit();
+      return;
+    }
+    setSignaturePassword("");
+    setSignatureDialogOpen(true);
+  }
+
+  async function handleSignatureConfirm() {
+    if (!signaturePassword.trim()) {
+      toast.error("请输入密码");
+      return;
+    }
+    try {
+      await verifyPasswordMutation.mutateAsync({ password: signaturePassword });
+      const nextSignatureType = getNextSignatureType(signatures);
+      const currentUserName = String((user as any)?.name || formData.inspector || "当前用户");
+      const currentUserDepartment = String((user as any)?.department || "质量部");
+      const nextSignature = nextSignatureType
         ? {
-            ...prev,
-            signatures: [...(prev.signatures || []), signature],
+            id: Date.now(),
+            signatureType: nextSignatureType,
+            signatureAction: `IPQC检验${nextSignatureType === "inspector" ? "检验员" : "复核员"}签名`,
+            signerName: currentUserName,
+            signerTitle: nextSignatureType === "inspector" ? "质量检验员" : "质量复核员",
+            signerDepartment: currentUserDepartment,
+            signedAt: new Date().toISOString(),
+            signatureMeaning:
+              nextSignatureType === "inspector"
+                ? "本人确认已按照过程检验规程进行检验，检验结果真实、准确、完整。"
+                : "本人确认已复核过程检验记录，数据真实可靠，检验方法符合规定。",
+            status: "valid" as const,
           }
-        : null
-    );
-  };
+        : null;
+      setSignatureDialogOpen(false);
+      setSignaturePassword("");
+      if (nextSignature) {
+        setSignatures((prev) => mergeSignatureRecords(prev, nextSignature));
+      }
+      handleSubmit(nextSignature);
+    } catch (error: any) {
+      toast.error(error?.message || "密码校验失败");
+    }
+  }
 
   const updateInspectionItem = (index: number, field: keyof InspectionItem, value: string) => {
     const newItems = [...formData.inspectionItems];
@@ -437,9 +503,6 @@ export default function IPQCPage() {
                       <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                         检验项目
                       </TabsTrigger>
-                      <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                        电子签名
-                      </TabsTrigger>
                       <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                         备注
                       </TabsTrigger>
@@ -485,22 +548,6 @@ export default function IPQCPage() {
                       )}
                     </TabsContent>
 
-                    <TabsContent value="signatures" className="mt-5">
-                      {selectedRecord.sourceType === "production" ? (
-                        <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-                          <div className="text-sm">生产带入记录不在此维护电子签名</div>
-                        </div>
-                      ) : (
-                        <SignatureStatusCard
-                          documentType="IPQC"
-                          documentNo={selectedRecord.inspectionNo}
-                          documentId={selectedRecord.id as number}
-                          signatures={selectedRecord.signatures || []}
-                          onSignComplete={handleSignComplete}
-                        />
-                      )}
-                    </TabsContent>
-
                     <TabsContent value="notes" className="mt-5">
                       <div className="rounded-lg border bg-muted/10 p-4 text-sm whitespace-pre-wrap">
                         {selectedRecord.remarks || "暂无备注"}
@@ -537,7 +584,7 @@ export default function IPQCPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={handleSubmit}
+                  onClick={requestSubmitWithSignature}
                   disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   <Save className="w-3.5 h-3.5 mr-1.5" />
@@ -668,9 +715,6 @@ export default function IPQCPage() {
                       <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                         检验项目 {formData.inspectionItems.length > 0 && `(${formData.inspectionItems.length})`}
                       </TabsTrigger>
-                      <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                        电子签名
-                      </TabsTrigger>
                       <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                         备注
                       </TabsTrigger>
@@ -757,22 +801,6 @@ export default function IPQCPage() {
                             </TableBody>
                           </Table>
                         </div>
-                      )}
-                    </TabsContent>
-
-                    <TabsContent value="signatures" className="mt-5">
-                      {!isEditing || !selectedRecord ? (
-                        <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-                          <div className="text-sm">请先保存检验单，保存后可进行电子签名</div>
-                        </div>
-                      ) : (
-                        <SignatureStatusCard
-                          documentType="IPQC"
-                          documentNo={selectedRecord.inspectionNo}
-                          documentId={selectedRecord.id}
-                          signatures={selectedRecord.signatures || []}
-                          onSignComplete={handleSignComplete}
-                        />
                       )}
                     </TabsContent>
 
@@ -1116,9 +1144,6 @@ export default function IPQCPage() {
                         <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                           检验项目 {formData.inspectionItems.length > 0 && `(${formData.inspectionItems.length})`}
                         </TabsTrigger>
-                        <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                          电子签名
-                        </TabsTrigger>
                         <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                           备注
                         </TabsTrigger>
@@ -1208,22 +1233,6 @@ export default function IPQCPage() {
                         )}
                       </TabsContent>
 
-                      <TabsContent value="signatures" className="mt-5">
-                        {!isEditing || !selectedRecord ? (
-                          <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-                            <div className="text-sm">请先保存检验单，保存后可进行电子签名</div>
-                          </div>
-                        ) : (
-                          <SignatureStatusCard
-                            documentType="IPQC"
-                            documentNo={selectedRecord.inspectionNo}
-                            documentId={selectedRecord.id}
-                            signatures={selectedRecord.signatures || []}
-                            onSignComplete={handleSignComplete}
-                          />
-                        )}
-                      </TabsContent>
-
                       <TabsContent value="notes" className="mt-5">
                         <Textarea
                           value={formData.remarks}
@@ -1242,7 +1251,7 @@ export default function IPQCPage() {
                     取消
                   </Button>
                   <Button
-                    onClick={handleSubmit}
+                    onClick={requestSubmitWithSignature}
                     disabled={createMutation.isPending || updateMutation.isPending}
                   >
                     {isEditing ? "保存" : "创建"}
@@ -1323,18 +1332,6 @@ export default function IPQCPage() {
         </div>
       )}
 
-      {selectedRecord.sourceType !== "production" && (
-        <div>
-          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">电子签名</h3>
-          <SignatureStatusCard
-            documentType="IPQC"
-            documentNo={selectedRecord.inspectionNo}
-            documentId={selectedRecord.id as number}
-            signatures={selectedRecord.signatures || []}
-            onSignComplete={handleSignComplete}
-          />
-        </div>
-      )}
     </div>
 
     <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
@@ -1349,6 +1346,55 @@ export default function IPQCPage() {
   </DraggableDialogContent>
 </DraggableDialog>
 )}
+        <DraggableDialog open={signatureDialogOpen} onOpenChange={setSignatureDialogOpen}>
+          <DraggableDialogContent title="电子签名验证" className="max-w-md">
+            <div className="space-y-4 py-2">
+              <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">签名动作</span>
+                  <span className="font-medium">
+                    {getNextSignatureType(signatures) === "reviewer" ? "复核员签名" : "检验员签名"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">当前用户</span>
+                  <span className="font-medium">{String((user as any)?.name || formData.inspector || "-")}</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="text-sm text-muted-foreground">
+                  请输入当前登录密码后继续保存，本次电子签名会与保存动作一起落库。
+                </div>
+                <Input
+                  type="password"
+                  value={signaturePassword}
+                  onChange={(e) => setSignaturePassword(e.target.value)}
+                  placeholder="请输入当前用户密码"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSignatureConfirm();
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSignatureDialogOpen(false);
+                    setSignaturePassword("");
+                  }}
+                >
+                  取消
+                </Button>
+                <Button onClick={handleSignatureConfirm} disabled={verifyPasswordMutation.isPending}>
+                  {verifyPasswordMutation.isPending ? "验证中..." : "确认并保存"}
+                </Button>
+              </div>
+            </div>
+          </DraggableDialogContent>
+        </DraggableDialog>
         <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>

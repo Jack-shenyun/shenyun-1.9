@@ -6,12 +6,12 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import PrintPreviewButton from "@/components/PrintPreviewButton";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
-import { SignatureStatusCard, SignatureRecord } from "@/components/ElectronicSignature";
+import { SignatureRecord } from "@/components/ElectronicSignature";
 import { ATTACHMENT_ACCEPT } from "@shared/uploadPolicy";
 import {
   PackageSearch, Plus, Search, Edit2, Trash2, Eye, ChevronLeft, ChevronRight,
   X, ChevronDown, Paperclip, FileText, Upload, Check, XCircle, Save, ArrowLeft,
-  Calendar, User, Hash, ClipboardCheck, AlertTriangle, MoreHorizontal, RefreshCw, QrCode,
+  Calendar, User, Hash, ClipboardCheck, MoreHorizontal, RefreshCw, QrCode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -87,8 +87,19 @@ type FormData = {
   inspectionDate: string;
   inspectorId: number | null;
   inspectorName: string;
+  reviewerId: number | null;
+  reviewerName: string;
+  reviewStatus: string;
   result: string;
   remark: string;
+};
+
+type SubmitDraftContext = {
+  editId: number | null;
+  formData: FormData;
+  items: InspectionItemForm[];
+  attachments: AttachmentRow[];
+  signatures: SignatureRecord[];
 };
 
 const RESULT_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; color: string }> = {
@@ -142,6 +153,50 @@ function formatMeasuredDisplay(value: unknown, digits = 2) {
   return formatDisplayNumber(num, { maximumFractionDigits: Math.min(digits, 2) });
 }
 
+function formatQtyDisplay(value: unknown, unit?: string) {
+  if (value == null || value === "") return unit ? `- ${unit}` : "-";
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    return unit ? `${String(value)} ${unit}` : String(value);
+  }
+  const normalized = formatDisplayNumber(num, {
+    minimumFractionDigits: Number.isInteger(num) ? 0 : undefined,
+    maximumFractionDigits: 4,
+  });
+  return unit ? `${normalized} ${unit}` : normalized;
+}
+
+function getNextSignatureType(
+  signatures: SignatureRecord[],
+  reviewerRequired = true,
+): SignatureRecord["signatureType"] | null {
+  const hasInspectorSign = signatures.some(
+    (item) => item.signatureType === "inspector" && item.status === "valid"
+  );
+  const hasReviewerSign = signatures.some(
+    (item) => item.signatureType === "reviewer" && item.status === "valid"
+  );
+  if (!hasInspectorSign) return "inspector";
+  if (reviewerRequired && !hasReviewerSign) return "reviewer";
+  return null;
+}
+
+function mergeSignatureRecords(
+  existing: SignatureRecord[],
+  nextSignature?: SignatureRecord | null,
+) {
+  if (!nextSignature) return existing;
+  const next = existing.filter(
+    (item) =>
+      !(
+        item.signatureType === nextSignature.signatureType &&
+        item.status === "valid"
+      )
+  );
+  next.push(nextSignature);
+  return next;
+}
+
 function calcQualifiedQtyByState(
   receivedQtyRaw: string | number | undefined,
   sampleQtyRaw: string | number | undefined,
@@ -150,6 +205,100 @@ function calcQualifiedQtyByState(
   const sampleQty = parseFloat(String(sampleQtyRaw ?? "")) || 0;
   const qualifiedQty = receivedQty - sampleQty;
   return String(Math.max(qualifiedQty, 0));
+}
+
+function buildInspectionDraftFromRecord(record: any): SubmitDraftContext {
+  const formData: FormData = {
+    inspectionNo: record?.inspectionNo ?? "",
+    reportMode: record?.reportMode ?? "online",
+    goodsReceiptId: record?.goodsReceiptId ?? null,
+    goodsReceiptNo: record?.goodsReceiptNo ?? "",
+    goodsReceiptItemId: record?.goodsReceiptItemId ?? null,
+    productId: record?.productId ?? null,
+    productCode: record?.productCode ?? "",
+    productName: record?.productName ?? "",
+    specification: record?.specification ?? "",
+    supplierId: record?.supplierId ?? null,
+    supplierName: record?.supplierName ?? "",
+    supplierCode: record?.supplierCode ?? "",
+    batchNo: record?.batchNo ?? "",
+    sterilizationBatchNo: record?.sterilizationBatchNo ?? "",
+    receivedQty: record?.receivedQty ?? "",
+    sampleQty: record?.sampleQty ?? "",
+    qualifiedQty: record?.qualifiedQty ?? "",
+    unit: record?.unit ?? "",
+    inspectionRequirementId: record?.inspectionRequirementId ?? null,
+    inspectionDate: record?.inspectionDate
+      ? (typeof record.inspectionDate === "string"
+          ? record.inspectionDate.slice(0, 10)
+          : new Date(record.inspectionDate).toISOString().slice(0, 10))
+      : today(),
+    inspectorId: record?.inspectorId ?? null,
+    inspectorName: record?.inspectorName ?? "",
+    reviewerId: record?.reviewerId ?? null,
+    reviewerName: record?.reviewerName ?? "",
+    reviewStatus: record?.reviewStatus ?? "",
+    result: record?.result ?? "pending",
+    remark: record?.remark ?? "",
+  };
+
+  const items: InspectionItemForm[] = (record?.items ?? []).map((it: any) => {
+    const sampleValues =
+      typeof it?.sampleValues === "string" && it.sampleValues
+        ? JSON.parse(it.sampleValues)
+        : [it?.measuredValue ?? ""];
+    return {
+      key: newKey(),
+      requirementItemId: it?.requirementItemId,
+      itemName: it?.itemName ?? "",
+      itemType: it?.itemType ?? "qualitative",
+      standard: it?.standard ?? "",
+      minVal: it?.minVal ?? "",
+      maxVal: it?.maxVal ?? "",
+      unit: it?.unit ?? "",
+      sampleCount: sampleValues.length || 1,
+      sampleValues: sampleValues.length ? sampleValues : [""],
+      measuredValue: it?.measuredValue ?? "",
+      acceptedValues: it?.acceptedValues ?? "",
+      actualValue: it?.actualValue ?? "",
+      conclusion: it?.conclusion ?? "pending",
+      sortOrder: it?.sortOrder ?? 0,
+      remark: it?.remark ?? "",
+    };
+  });
+
+  let attachments: AttachmentRow[] = [emptyAttachment()];
+  try {
+    const parsedAttachments = record?.attachments ? JSON.parse(record.attachments) : [];
+    if (Array.isArray(parsedAttachments) && parsedAttachments.length > 0) {
+      attachments = parsedAttachments.map((item: any) => ({
+        key: newKey(),
+        fileType: item?.fileType ?? "",
+        recordNo: item?.recordNo ?? "",
+        recordName: item?.recordName ?? item?.fileName ?? "",
+        conclusion: item?.conclusion ?? "符合",
+        fileUrl: item?.fileUrl ?? item?.filePath ?? "",
+      }));
+    }
+  } catch {
+    attachments = [emptyAttachment()];
+  }
+
+  let signatures: SignatureRecord[] = [];
+  try {
+    const parsedSignatures = record?.signatures ? JSON.parse(record.signatures) : [];
+    signatures = Array.isArray(parsedSignatures) ? parsedSignatures : [];
+  } catch {
+    signatures = [];
+  }
+
+  return {
+    editId: Number(record?.id || 0) || null,
+    formData,
+    items,
+    attachments,
+    signatures,
+  };
 }
 
 // ==================== 状态流水线组件（Odoo 风格） ====================
@@ -197,6 +346,7 @@ function StatusPipeline({ current, onChange }: { current: string; onChange?: (v:
 // ==================== 主组件 ====================
 export default function IQCPage() {
   const { user } = useAuth();
+  const trpcUtils = trpc.useUtils();
   const detailPrintRef = useRef<HTMLDivElement>(null);
   const formPrintRef = useRef<HTMLDivElement>(null);
 
@@ -204,6 +354,7 @@ export default function IQCPage() {
   const [viewMode, setViewMode] = useState<"list" | "form" | "detail">("list");
   const [editId, setEditId] = useState<number | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [detailReviewMode, setDetailReviewMode] = useState(false);
 
   const [search, setSearch] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
@@ -225,7 +376,9 @@ export default function IQCPage() {
     supplierCode: "", batchNo: "", sterilizationBatchNo: "",
     receivedQty: "", sampleQty: "", qualifiedQty: "", unit: "",
     inspectionRequirementId: null, inspectionDate: today(),
-    inspectorId: null, inspectorName: "", result: "pending", remark: "",
+    inspectorId: null, inspectorName: "",
+    reviewerId: null, reviewerName: "", reviewStatus: "",
+    result: "pending", remark: "",
   });
   const [items, setItems] = useState<InspectionItemForm[]>([]);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([emptyAttachment()]);
@@ -237,6 +390,14 @@ export default function IQCPage() {
 
   // 电子签名
   const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
+  const [signatureDialogOpen, setSignatureDialogOpen] = useState(false);
+  const [signaturePassword, setSignaturePassword] = useState("");
+  const [pendingSubmitResult, setPendingSubmitResult] = useState<string | undefined>(undefined);
+  const pendingSignatureRef = useRef<SignatureRecord | null>(null);
+  const pendingSubmitContextRef = useRef<SubmitDraftContext | null>(null);
+  const pendingConfirmContextRef = useRef<SubmitDraftContext | null>(null);
+  const [resultConfirmOpen, setResultConfirmOpen] = useState(false);
+  const [pendingConfirmResult, setPendingConfirmResult] = useState<string | undefined>(undefined);
 
   // 当前 Tab
   const [activeTab, setActiveTab] = useState("items");
@@ -304,8 +465,43 @@ export default function IQCPage() {
   });
 
   const { data: allUsers = [] } = trpc.users.list.useQuery();
+  const { data: departmentList = [] } = trpc.departments.list.useQuery();
+  const verifyPasswordMutation = trpc.auth.verifyPassword.useMutation();
   const qualityUsers = (allUsers as any[]).filter((u: any) =>
     u.department && u.department.includes("质量")
+  );
+  const defaultQualityReviewer = useMemo(() => {
+    const departments = (departmentList as any[]).filter((item: any) =>
+      String(item?.name || "").includes("质量")
+    );
+    const qualityDepartment =
+      departments.find((item: any) => String(item?.name || "") === "质量部") ??
+      departments[0];
+    const managerId = Number(qualityDepartment?.managerId || 0);
+    if (managerId > 0) {
+      const manager = (allUsers as any[]).find(
+        (item: any) => Number(item?.id || 0) === managerId
+      );
+      if (manager) {
+        return {
+          id: Number(manager.id),
+          name: String(manager.name || ""),
+        };
+      }
+    }
+    const fallback = (allUsers as any[]).find(
+      (item: any) =>
+        String(item?.department || "").includes("质量") &&
+        /负责人|经理|主管|总监/.test(String(item?.position || ""))
+    );
+    if (!fallback) return null;
+    return {
+      id: Number(fallback.id || 0) || null,
+      name: String(fallback.name || ""),
+    };
+  }, [allUsers, departmentList]);
+  const isReviewerConfigured = Boolean(
+    Number(formData.reviewerId || 0) > 0 || String(formData.reviewerName || "").trim()
   );
 
   const { data: reqList = [] } = trpc.inspectionRequirements.list.useQuery({
@@ -318,65 +514,30 @@ export default function IQCPage() {
   );
 
   // 编辑时填充数据
+  function applyInspectionDraft(draft: SubmitDraftContext) {
+    setFormData(draft.formData);
+    setItems(draft.items);
+    setAttachments(draft.attachments.length ? draft.attachments : [emptyAttachment()]);
+    setSignatures(draft.signatures);
+    setQualifiedQtyTouched(true);
+  }
+
+  function buildCurrentSubmitContext(): SubmitDraftContext {
+    return {
+      editId,
+      formData: { ...formData },
+      items: items.map((item) => ({
+        ...item,
+        sampleValues: [...item.sampleValues],
+      })),
+      attachments: attachments.map((item) => ({ ...item })),
+      signatures: signatures.map((item) => ({ ...item })),
+    };
+  }
+
   useEffect(() => {
     if (editId && editData) {
-      const d = editData as any;
-      setFormData({
-        inspectionNo: d.inspectionNo,
-        reportMode: d.reportMode ?? "online",
-        goodsReceiptId: d.goodsReceiptId ?? null,
-        goodsReceiptNo: d.goodsReceiptNo ?? "",
-        goodsReceiptItemId: d.goodsReceiptItemId ?? null,
-        productId: d.productId ?? null,
-        productCode: d.productCode ?? "",
-        productName: d.productName ?? "",
-        specification: d.specification ?? "",
-        supplierId: d.supplierId ?? null,
-        supplierName: d.supplierName ?? "",
-        supplierCode: d.supplierCode ?? "",
-        batchNo: d.batchNo ?? "",
-        sterilizationBatchNo: d.sterilizationBatchNo ?? "",
-        receivedQty: d.receivedQty ?? "",
-        sampleQty: d.sampleQty ?? "",
-        qualifiedQty: d.qualifiedQty ?? "",
-        unit: d.unit ?? "",
-        inspectionRequirementId: d.inspectionRequirementId ?? null,
-        inspectionDate: d.inspectionDate ? (typeof d.inspectionDate === 'string' ? d.inspectionDate.slice(0, 10) : new Date(d.inspectionDate).toISOString().slice(0, 10)) : today(),
-        inspectorId: d.inspectorId ?? null,
-        inspectorName: d.inspectorName ?? "",
-        result: d.result ?? "pending",
-        remark: d.remark ?? "",
-      });
-      setQualifiedQtyTouched(true);
-      setItems((d.items ?? []).map((it: any) => {
-        const sv: string[] = it.sampleValues ? JSON.parse(it.sampleValues) : [it.measuredValue ?? ""];
-        return {
-          key: newKey(),
-          requirementItemId: it.requirementItemId,
-          itemName: it.itemName,
-          itemType: it.itemType,
-          standard: it.standard ?? "",
-          minVal: it.minVal ?? "",
-          maxVal: it.maxVal ?? "",
-          unit: it.unit ?? "",
-          sampleCount: sv.length || 1,
-          sampleValues: sv.length ? sv : [""],
-          measuredValue: it.measuredValue ?? "",
-          acceptedValues: it.acceptedValues ?? "",
-          actualValue: it.actualValue ?? "",
-          conclusion: it.conclusion ?? "pending",
-          sortOrder: it.sortOrder ?? 0,
-          remark: it.remark ?? "",
-        };
-      }));
-      try {
-        const att = d.attachments ? JSON.parse(d.attachments) : [];
-        setAttachments(att.length ? att.map((a: any) => ({ ...a, key: newKey() })) : [emptyAttachment()]);
-      } catch { setAttachments([emptyAttachment()]); }
-      try {
-        const sigs = d.signatures ? JSON.parse(d.signatures) : [];
-        setSignatures(Array.isArray(sigs) ? sigs : []);
-      } catch { setSignatures([]); }
+      applyInspectionDraft(buildInspectionDraftFromRecord(editData as any));
     }
   }, [editId, editData]);
 
@@ -392,6 +553,32 @@ export default function IQCPage() {
     const nextQuery = params.toString();
     window.history.replaceState({}, "", nextQuery ? `/quality/iqc?${nextQuery}` : "/quality/iqc");
   }, [linkedReceiptItemIds, pendingReceiptList, viewMode]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const detailTargetId = Number(params.get("detailId") || 0);
+    const targetId = Number(params.get("editId") || params.get("focusId") || 0);
+    const reviewMode = params.get("review") === "1";
+    if (detailTargetId && viewMode === "list") {
+      openDetail(detailTargetId, reviewMode);
+      params.delete("detailId");
+      params.delete("review");
+      const nextQuery = params.toString();
+      window.history.replaceState({}, "", nextQuery ? `/quality/iqc?${nextQuery}` : "/quality/iqc");
+      return;
+    }
+    if (!targetId || viewMode !== "list") return;
+    if (reviewMode) {
+      openDetail(targetId, true);
+    } else {
+      openEdit(targetId);
+    }
+    params.delete("editId");
+    params.delete("focusId");
+    params.delete("review");
+    const nextQuery = params.toString();
+    window.history.replaceState({}, "", nextQuery ? `/quality/iqc?${nextQuery}` : "/quality/iqc");
+  }, [viewMode]);
 
   useEffect(() => {
     const syncedRows = (attachmentPool as any[])
@@ -428,6 +615,18 @@ export default function IQCPage() {
       .then(setQrUploadDataUrl)
       .catch(() => setQrUploadDataUrl(""));
   }, [showQrUploadDialog, mobileUploadLink, formData.inspectionNo, formData.productName]);
+
+  useEffect(() => {
+    if (viewMode !== "form") return;
+    if (editId) return;
+    if (!defaultQualityReviewer) return;
+    if (formData.reviewerId || formData.reviewerName) return;
+    setFormData((prev) => ({
+      ...prev,
+      reviewerId: defaultQualityReviewer.id ?? null,
+      reviewerName: defaultQualityReviewer.name ?? "",
+    }));
+  }, [defaultQualityReviewer, editId, formData.reviewerId, formData.reviewerName, viewMode]);
 
   // 自动带出合格数量：默认=到货数量-抽样数量，可手动调整
   useEffect(() => {
@@ -487,27 +686,65 @@ export default function IQCPage() {
 
   // ==================== Mutations ====================
   const createMutation = trpc.iqcInspections.create.useMutation({
-    onSuccess: (data: any) => {
+    onSuccess: async (data: any) => {
+      if (pendingSignatureRef.current) {
+        setSignatures((prev) => mergeSignatureRecords(prev, pendingSignatureRef.current));
+        pendingSignatureRef.current = null;
+      }
+      pendingSubmitContextRef.current = null;
+      pendingConfirmContextRef.current = null;
       toast.success("来料检验单已创建");
-      refetch();
+      await Promise.all([
+        refetch(),
+        refetchPendingReceipts(),
+        trpcUtils.workflowCenter.list.invalidate(),
+        trpcUtils.iqcInspections.list.invalidate(),
+      ]);
       setEditId(data.id);
       if (formData.inspectionNo) {
         clearPendingUploadsMutation.mutate({ inspectionNo: formData.inspectionNo });
       }
       setSubmitting(false);
     },
-    onError: (e: any) => { toast.error("创建失败：" + e.message); setSubmitting(false); },
+    onError: (e: any) => {
+      pendingSignatureRef.current = null;
+      pendingSubmitContextRef.current = null;
+      pendingConfirmContextRef.current = null;
+      toast.error("创建失败：" + e.message);
+      setSubmitting(false);
+    },
   });
   const updateMutation = trpc.iqcInspections.update.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
+      if (pendingSignatureRef.current) {
+        setSignatures((prev) => mergeSignatureRecords(prev, pendingSignatureRef.current));
+        pendingSignatureRef.current = null;
+      }
+      pendingSubmitContextRef.current = null;
+      pendingConfirmContextRef.current = null;
       toast.success("已更新");
-      refetch();
+      await Promise.all([
+        refetch(),
+        refetchPendingReceipts(),
+        trpcUtils.workflowCenter.list.invalidate(),
+        trpcUtils.iqcInspections.list.invalidate(),
+        detailId
+          ? trpcUtils.iqcInspections.getById.invalidate({ id: detailId })
+          : Promise.resolve(),
+      ]);
+      setDetailReviewMode(false);
       if (formData.inspectionNo) {
         clearPendingUploadsMutation.mutate({ inspectionNo: formData.inspectionNo });
       }
       setSubmitting(false);
     },
-    onError: (e: any) => { toast.error("更新失败：" + e.message); setSubmitting(false); },
+    onError: (e: any) => {
+      pendingSignatureRef.current = null;
+      pendingSubmitContextRef.current = null;
+      pendingConfirmContextRef.current = null;
+      toast.error("更新失败：" + e.message);
+      setSubmitting(false);
+    },
   });
   const deleteMutation = trpc.iqcInspections.delete.useMutation({
     onSuccess: () => {
@@ -533,16 +770,6 @@ export default function IQCPage() {
   });
   const uploadAttachmentsMutation = trpc.iqcInspections.uploadAttachments.useMutation();
   const clearPendingUploadsMutation = trpc.iqcInspections.clearPendingUploads.useMutation();
-  const saveSignatureMutation = trpc.iqcInspections.saveSignature.useMutation({
-    onError: (e: any) => toast.error("签名保存失败：" + e.message),
-  });
-
-  const handleSignComplete = (signature: SignatureRecord) => {
-    setSignatures((prev) => [...prev, signature]);
-    if (editId) {
-      saveSignatureMutation.mutate({ id: editId, signature });
-    }
-  };
 
   const toBase64 = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -584,6 +811,9 @@ export default function IQCPage() {
       inspectionRequirementId: null, inspectionDate: today(),
       inspectorId: (user as any)?.id ?? null,
       inspectorName: (user as any)?.name ?? "",
+      reviewerId: defaultQualityReviewer?.id ?? null,
+      reviewerName: defaultQualityReviewer?.name ?? "",
+      reviewStatus: "",
       result: "pending", remark: "",
     });
     setItems([]);
@@ -597,13 +827,15 @@ export default function IQCPage() {
 
   function openEdit(id: number) {
     setEditId(id);
+    setDetailReviewMode(false);
     setLastAppliedReqId(null);
     setActiveTab("items");
     setViewMode("form");
   }
 
-  function openDetail(id: number) {
+  function openDetail(id: number, reviewMode = false) {
     setDetailId(id);
+    setDetailReviewMode(reviewMode);
     setViewMode("detail");
   }
 
@@ -611,6 +843,7 @@ export default function IQCPage() {
     setViewMode("list");
     setEditId(null);
     setDetailId(null);
+    setDetailReviewMode(false);
   }
 
   function openCreateFromReceiptItem(receipt: any, item: any) {
@@ -641,6 +874,9 @@ export default function IQCPage() {
       inspectionDate: today(),
       inspectorId: (user as any)?.id ?? null,
       inspectorName: (user as any)?.name ?? "",
+      reviewerId: defaultQualityReviewer?.id ?? null,
+      reviewerName: defaultQualityReviewer?.name ?? "",
+      reviewStatus: "",
       result: "pending",
       remark: "",
     });
@@ -706,22 +942,122 @@ export default function IQCPage() {
     });
   }
 
-  async function handleSubmit(overrideResult?: string) {
-    if (!formData.productName) { toast.error("请填写产品名称"); return; }
-    const receivedQtyNum = parseFloat(String(formData.receivedQty)) || 0;
-    const sampleQtyNum = parseFloat(String(formData.sampleQty)) || 0;
+  function validateBeforeSubmit(currentFormData: FormData = formData) {
+    if (!currentFormData.productName) { toast.error("请填写产品名称"); return; }
+    const receivedQtyNum = parseFloat(String(currentFormData.receivedQty)) || 0;
+    const sampleQtyNum = parseFloat(String(currentFormData.sampleQty)) || 0;
     if (sampleQtyNum > 0 && receivedQtyNum > 0 && sampleQtyNum > receivedQtyNum) {
       toast.error(`抄样数量（${sampleQtyNum}）不能超过到货数量（${receivedQtyNum}）`);
       return;
     }
+    return true;
+  }
+
+  function createSaveSignature(
+    signatureType: SignatureRecord["signatureType"],
+    currentFormData: FormData = formData,
+  ) {
+    const currentUserName = String((user as any)?.name || currentFormData.inspectorName || "当前用户");
+    const currentUserDepartment = String((user as any)?.department || "质量部");
+    return {
+      id: Date.now(),
+      signatureType,
+      signatureAction: `IQC检验${signatureType === "inspector" ? "检验员" : "复核员"}签名`,
+      signerName: currentUserName,
+      signerTitle: signatureType === "inspector" ? "质量检验员" : "质量复核员",
+      signerDepartment: currentUserDepartment,
+      signedAt: new Date().toISOString(),
+      signatureMeaning:
+        signatureType === "inspector"
+          ? "本人确认已按照检验规程对来料进行检验，检验结果真实、准确、完整。"
+          : "本人确认已复核检验记录，数据真实可靠，检验方法符合规定。",
+      status: "valid" as const,
+    };
+  }
+
+  function isReviewerRequiredForResult(resultValue?: string, currentFormData: FormData = formData) {
+    const reviewerConfigured = Boolean(
+      Number(currentFormData.reviewerId || 0) > 0 ||
+      String(currentFormData.reviewerName || "").trim()
+    );
+    return reviewerConfigured && String(resultValue || currentFormData.result || "pending") !== "pending";
+  }
+
+  function canCurrentUserSign(signatureType: SignatureRecord["signatureType"], currentFormData: FormData = formData) {
+    const currentUserId = Number((user as any)?.id || 0);
+    const currentUserName = String((user as any)?.name || "").trim();
+    if (String((user as any)?.role || "") === "admin") return true;
+    if (signatureType === "inspector") {
+      return (
+        (Number(currentFormData.inspectorId || 0) > 0 &&
+          Number(currentFormData.inspectorId || 0) === currentUserId) ||
+        (currentUserName && currentUserName === String(currentFormData.inspectorName || "").trim())
+      );
+    }
+    return (
+      (Number(currentFormData.reviewerId || 0) > 0 &&
+        Number(currentFormData.reviewerId || 0) === currentUserId) ||
+      (currentUserName && currentUserName === String(currentFormData.reviewerName || "").trim())
+    );
+  }
+
+  function requestSubmitWithSignature(
+    overrideResult?: string,
+    submitContext?: SubmitDraftContext,
+  ) {
+    const activeSubmitContext = submitContext ?? buildCurrentSubmitContext();
+    if (!validateBeforeSubmit(activeSubmitContext.formData)) return;
+    const nextSignatureType = getNextSignatureType(
+      activeSubmitContext.signatures,
+      isReviewerRequiredForResult(overrideResult, activeSubmitContext.formData)
+    );
+    pendingSubmitContextRef.current = activeSubmitContext;
+    if (!nextSignatureType) {
+      handleSubmit(overrideResult, null, activeSubmitContext);
+      return;
+    }
+    if (!canCurrentUserSign(nextSignatureType, activeSubmitContext.formData)) {
+      const signerName =
+        nextSignatureType === "reviewer"
+          ? String(activeSubmitContext.formData.reviewerName || "指定复核人")
+          : String(activeSubmitContext.formData.inspectorName || "指定检验人");
+      toast.error(`${signerName} 才能完成本次${nextSignatureType === "reviewer" ? "复核" : "检验"}签名`);
+      pendingSubmitContextRef.current = null;
+      return;
+    }
+    setPendingSubmitResult(overrideResult);
+    setSignaturePassword("");
+    setSignatureDialogOpen(true);
+  }
+
+  function openResultConfirm(
+    nextResult: "passed" | "failed" | "conditional_pass",
+    submitContext?: SubmitDraftContext,
+  ) {
+    pendingConfirmContextRef.current = submitContext ?? buildCurrentSubmitContext();
+    setPendingConfirmResult(nextResult);
+    setResultConfirmOpen(true);
+  }
+
+  async function handleSubmit(
+    overrideResult?: string,
+    extraSignature?: SignatureRecord | null,
+    submitContext?: SubmitDraftContext,
+  ) {
+    const activeSubmitContext = submitContext ?? pendingSubmitContextRef.current ?? buildCurrentSubmitContext();
+    if (!validateBeforeSubmit(activeSubmitContext.formData)) return;
     setSubmitting(true);
     try {
       let savedFilePaths: any[] = [];
       try {
-        const att = JSON.parse(JSON.stringify(attachments.filter((a) => a.fileUrl || a.recordName)));
+        const att = JSON.parse(JSON.stringify(activeSubmitContext.attachments.filter((a) => a.fileUrl || a.recordName)));
         savedFilePaths = att;
       } catch {}
-      if (uploadFiles.length > 0) {
+      const shouldUploadPendingFiles =
+        viewMode === "form" &&
+        activeSubmitContext.editId === editId &&
+        activeSubmitContext.formData.inspectionNo === formData.inspectionNo;
+      if (shouldUploadPendingFiles && uploadFiles.length > 0) {
         const filesPayload = await Promise.all(
           uploadFiles.map(async (uf) => ({
             name: uf.file.name,
@@ -738,20 +1074,37 @@ export default function IQCPage() {
         setUploadFiles([]);
       }
       const attJson = JSON.stringify(savedFilePaths);
-      const finalResult = overrideResult ?? formData.result;
+      const finalResult = overrideResult ?? activeSubmitContext.formData.result;
+      const mergedSignatures = mergeSignatureRecords(activeSubmitContext.signatures, extraSignature);
+      pendingSignatureRef.current = extraSignature ?? null;
       const payload = {
-        ...formData,
+        inspectionNo: activeSubmitContext.formData.inspectionNo,
+        reportMode: activeSubmitContext.formData.reportMode,
+        goodsReceiptNo: activeSubmitContext.formData.goodsReceiptNo,
+        productCode: activeSubmitContext.formData.productCode,
+        productName: activeSubmitContext.formData.productName,
+        specification: activeSubmitContext.formData.specification,
+        supplierName: activeSubmitContext.formData.supplierName,
+        supplierCode: activeSubmitContext.formData.supplierCode,
+        batchNo: activeSubmitContext.formData.batchNo,
+        sterilizationBatchNo: activeSubmitContext.formData.sterilizationBatchNo,
+        receivedQty: activeSubmitContext.formData.receivedQty,
+        sampleQty: activeSubmitContext.formData.sampleQty,
+        qualifiedQty: activeSubmitContext.formData.qualifiedQty,
+        unit: activeSubmitContext.formData.unit,
+        inspectionDate: activeSubmitContext.formData.inspectionDate,
+        inspectorName: activeSubmitContext.formData.inspectorName,
+        remark: activeSubmitContext.formData.remark,
         result: finalResult,
-        qualifiedQty: formData.qualifiedQty,
-        goodsReceiptId: formData.goodsReceiptId ?? undefined,
-        goodsReceiptItemId: formData.goodsReceiptItemId ?? undefined,
-        productId: formData.productId ?? undefined,
-        supplierId: formData.supplierId ?? undefined,
-        inspectionRequirementId: formData.inspectionRequirementId ?? undefined,
-        inspectorId: formData.inspectorId ?? undefined,
+        goodsReceiptId: activeSubmitContext.formData.goodsReceiptId ?? undefined,
+        goodsReceiptItemId: activeSubmitContext.formData.goodsReceiptItemId ?? undefined,
+        productId: activeSubmitContext.formData.productId ?? undefined,
+        supplierId: activeSubmitContext.formData.supplierId ?? undefined,
+        inspectionRequirementId: activeSubmitContext.formData.inspectionRequirementId ?? undefined,
+        inspectorId: activeSubmitContext.formData.inspectorId ?? undefined,
         attachments: attJson,
-        signatures: JSON.stringify(signatures),
-        items: items.map((it, idx) => ({
+        signatures: JSON.stringify(mergedSignatures),
+        items: activeSubmitContext.items.map((it, idx) => ({
           requirementItemId: it.requirementItemId,
           itemName: it.itemName,
           itemType: it.itemType,
@@ -768,14 +1121,39 @@ export default function IQCPage() {
           remark: it.remark || undefined,
         })),
       };
-      if (editId) {
-        updateMutation.mutate({ id: editId, ...payload });
+      if (activeSubmitContext.editId) {
+        updateMutation.mutate({ id: activeSubmitContext.editId, ...payload });
       } else {
         createMutation.mutate(payload);
       }
     } catch (err: any) {
+      pendingSignatureRef.current = null;
       toast.error("操作失败：" + (err?.message ?? "未知错误"));
       setSubmitting(false);
+    }
+  }
+
+  async function handleSignatureConfirm() {
+    if (!signaturePassword.trim()) {
+      toast.error("请输入密码");
+      return;
+    }
+    try {
+      await verifyPasswordMutation.mutateAsync({ password: signaturePassword });
+      const activeSubmitContext = pendingSubmitContextRef.current ?? buildCurrentSubmitContext();
+      const nextSignatureType = getNextSignatureType(
+        activeSubmitContext.signatures,
+        isReviewerRequiredForResult(pendingSubmitResult, activeSubmitContext.formData)
+      );
+      const nextSignature = nextSignatureType
+        ? createSaveSignature(nextSignatureType, activeSubmitContext.formData)
+        : null;
+      setSignatureDialogOpen(false);
+      setSignaturePassword("");
+      await handleSubmit(pendingSubmitResult, nextSignature, activeSubmitContext);
+      setPendingSubmitResult(undefined);
+    } catch (error: any) {
+      toast.error(error?.message || "密码校验失败");
     }
   }
 
@@ -990,9 +1368,9 @@ export default function IQCPage() {
                         <TableCell className="text-sm text-muted-foreground">{row.specification ?? "-"}</TableCell>
                         <TableCell className="text-sm">{row.supplierName ?? "-"}</TableCell>
                         <TableCell className="text-sm">{row.batchNo ?? "-"}</TableCell>
-                        <TableCell className="text-sm">{row.receivedQty ? `${parseFloat(row.receivedQty)} ${row.unit ?? ""}` : "-"}</TableCell>
-                        <TableCell className="text-sm">{row.sampleQty ? parseFloat(row.sampleQty) : "-"}</TableCell>
-                        <TableCell className="text-sm">{row.qualifiedQty ? parseFloat(row.qualifiedQty) : "-"}</TableCell>
+                        <TableCell className="text-sm">{formatQtyDisplay(row.receivedQty, row.unit ?? "")}</TableCell>
+                        <TableCell className="text-sm">{formatQtyDisplay(row.sampleQty)}</TableCell>
+                        <TableCell className="text-sm">{formatQtyDisplay(row.qualifiedQty)}</TableCell>
                         <TableCell className="text-sm">{row.inspectorName ?? "-"}</TableCell>
                         <TableCell className="text-sm">{row.inspectionDate ? formatDate(row.inspectionDate) : "-"}</TableCell>
                         <TableCell>
@@ -1109,8 +1487,6 @@ export default function IQCPage() {
   // ==================== 详情视图 ====================
   if (viewMode === "detail" && detailData) {
     const d = detailData as any;
-    let detailSigs: SignatureRecord[] = [];
-    try { detailSigs = d.signatures ? JSON.parse(d.signatures) : []; } catch {}
 
     return (
       <ERPLayout>
@@ -1130,6 +1506,25 @@ export default function IQCPage() {
                   title={`来料检验详情 - ${d.inspectionNo}`}
                   targetRef={detailPrintRef}
                 />
+                {detailReviewMode ? (
+                  <>
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                      onClick={() => openResultConfirm("passed", buildInspectionDraftFromRecord(d))}
+                    >
+                      <Check className="w-3.5 h-3.5" />合格
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="gap-1"
+                      onClick={() => openResultConfirm("failed", buildInspectionDraftFromRecord(d))}
+                    >
+                      <XCircle className="w-3.5 h-3.5" />不合格
+                    </Button>
+                  </>
+                ) : null}
                 <Button variant="outline" size="sm" onClick={() => openEdit(d.id)}>
                   <Edit2 className="w-3.5 h-3.5 mr-1.5" />编辑
                 </Button>
@@ -1180,9 +1575,9 @@ export default function IQCPage() {
                     <FieldRow label="规格型号" value={d.specification} />
                     <FieldRow label="批次号" value={d.batchNo} />
                     <FieldRow label="供应商" value={d.supplierName} />
-                    <FieldRow label="到货数量" value={d.receivedQty ? `${parseFloat(d.receivedQty)} ${d.unit ?? ""}` : "-"} />
-                    <FieldRow label="抽样数量" value={d.sampleQty} />
-                    <FieldRow label="合格数量" value={d.qualifiedQty} />
+                    <FieldRow label="到货数量" value={formatQtyDisplay(d.receivedQty, d.unit ?? "")} />
+                    <FieldRow label="抽样数量" value={formatQtyDisplay(d.sampleQty)} />
+                    <FieldRow label="合格数量" value={formatQtyDisplay(d.qualifiedQty)} />
                     <FieldRow label="检验员" value={d.inspectorName} />
                     <FieldRow label="检验日期" value={d.inspectionDate ? formatDate(d.inspectionDate) : "-"} />
                     <FieldRow label="填报方式" value={d.reportMode === "offline" ? "线下填写" : "线上填写"} />
@@ -1192,24 +1587,9 @@ export default function IQCPage() {
             </Card>
 
             <Card>
-              <CardContent className="p-5 md:p-6">
-                <Tabs defaultValue="items" className="w-full">
-                  <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
-                  <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                    检验项目
-                  </TabsTrigger>
-                  <TabsTrigger value="attachments" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                    附件资料
-                  </TabsTrigger>
-                  <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                    电子签名
-                  </TabsTrigger>
-                  <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                    备注
-                  </TabsTrigger>
-                </TabsList>
-
-                  <TabsContent value="items" className="mt-5">
+              <CardContent className="space-y-6 p-5 md:p-6">
+                <div>
+                  <div className="mb-3 text-sm font-medium">检验项目</div>
                   {d.items?.length > 0 ? (
                     <div className="overflow-hidden rounded-lg border">
                       <Table>
@@ -1262,9 +1642,10 @@ export default function IQCPage() {
                   ) : (
                     <div className="rounded-lg border border-dashed bg-muted/10 py-10 text-center text-muted-foreground">暂无检验项目</div>
                   )}
-                  </TabsContent>
+                </div>
 
-                  <TabsContent value="attachments" className="mt-5">
+                <div>
+                  <div className="mb-3 text-sm font-medium">附件资料</div>
                   {(() => {
                     try {
                       const atts = d.attachments ? JSON.parse(d.attachments) : [];
@@ -1272,42 +1653,31 @@ export default function IQCPage() {
                       return (
                         <div className="space-y-2">
                           {atts.map((att: any, idx: number) => (
-                            <div key={idx} className="flex items-center gap-3 p-2 rounded border bg-muted/20">
-                              <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />
+                            <div key={idx} className="flex items-center gap-3 rounded border bg-muted/20 p-2">
+                              <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
                               <span className="text-sm">{att.fileName || att.recordName || `附件 ${idx + 1}`}</span>
                               {att.filePath && (
-                                <a href={att.filePath} target="_blank" rel="noopener" className="text-xs text-primary hover:underline ml-auto">查看</a>
+                                <a href={att.filePath} target="_blank" rel="noopener" className="ml-auto text-xs text-primary hover:underline">查看</a>
                               )}
                             </div>
                           ))}
                         </div>
                       );
-                    } catch { return <div className="rounded-lg border border-dashed bg-muted/10 py-10 text-center text-muted-foreground">暂无附件</div>; }
+                    } catch {
+                      return <div className="rounded-lg border border-dashed bg-muted/10 py-10 text-center text-muted-foreground">暂无附件</div>;
+                    }
                   })()}
-                  </TabsContent>
+                </div>
 
-                  <TabsContent value="signatures" className="mt-5">
-                  {detailSigs.length > 0 ? (
-                    <SignatureStatusCard
-                      documentType="IQC"
-                      documentNo={d.inspectionNo}
-                      documentId={d.id}
-                      signatures={detailSigs}
-                    />
-                  ) : (
-                    <div className="rounded-lg border border-dashed bg-muted/10 py-10 text-center text-muted-foreground">暂无签名记录</div>
-                  )}
-                  </TabsContent>
-
-                  <TabsContent value="notes" className="mt-5">
-                    <div className="rounded-lg border bg-muted/10 p-4 text-sm whitespace-pre-wrap">{d.remark || "暂无备注"}</div>
-                  </TabsContent>
-                </Tabs>
+                <div>
+                  <div className="mb-3 text-sm font-medium">备注</div>
+                  <div className="rounded-lg border bg-muted/10 p-4 text-sm whitespace-pre-wrap">{d.remark || "暂无备注"}</div>
+                </div>
               </CardContent>
             </Card>
           </div>
         </div>
-        </div>
+      </div>
       </ERPLayout>
     );
   }
@@ -1335,7 +1705,7 @@ export default function IQCPage() {
               <Button
                 size="sm"
                 className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
-                onClick={() => handleSubmit("passed")}
+                onClick={() => openResultConfirm("passed")}
                 disabled={submitting}
               >
                 <Check className="w-3.5 h-3.5" />合格
@@ -1344,7 +1714,7 @@ export default function IQCPage() {
                 size="sm"
                 variant="destructive"
                 className="gap-1"
-                onClick={() => handleSubmit("failed")}
+                onClick={() => openResultConfirm("failed")}
                 disabled={submitting}
               >
                 <XCircle className="w-3.5 h-3.5" />不合格
@@ -1354,7 +1724,7 @@ export default function IQCPage() {
                 size="sm"
                 variant="outline"
                 className="gap-1"
-                onClick={() => handleSubmit()}
+                onClick={() => requestSubmitWithSignature()}
                 disabled={submitting}
               >
                 <Save className="w-3.5 h-3.5" />{submitting ? "保存中..." : "保存"}
@@ -1528,9 +1898,6 @@ export default function IQCPage() {
                 </TabsTrigger>
                 <TabsTrigger value="attachments" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                   附件资料
-                </TabsTrigger>
-                <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                  电子签名
                 </TabsTrigger>
                 <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                   备注
@@ -1782,27 +2149,8 @@ export default function IQCPage() {
                 )}
                   </TabsContent>
 
-              {/* 电子签名 Tab */}
-                  <TabsContent value="signatures" className="mt-5">
-                {!editId ? (
-                  <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-                    <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
-                    <div className="text-sm">请先保存检验单，保存后可进行电子签名</div>
-                    <div className="text-xs mt-1">符合 FDA 21 CFR Part 11 法规要求</div>
-                  </div>
-                ) : (
-                  <SignatureStatusCard
-                    documentType="IQC"
-                    documentNo={formData.inspectionNo}
-                    documentId={editId}
-                    signatures={signatures}
-                    onSignComplete={handleSignComplete}
-                  />
-                )}
-                  </TabsContent>
-
-              {/* 备注 Tab */}
-                  <TabsContent value="notes" className="mt-5">
+	              {/* 备注 Tab */}
+	                  <TabsContent value="notes" className="mt-5">
                 <Textarea
                   value={formData.remark}
                   onChange={(e) => setFormData((p) => ({ ...p, remark: e.target.value }))}
@@ -1866,7 +2214,7 @@ export default function IQCPage() {
                           <TableRow key={item.id} className={alreadyInspected ? 'opacity-50' : ''}>
                             <TableCell>{item.materialName}</TableCell>
                             <TableCell className="text-muted-foreground">{item.specification ?? "-"}</TableCell>
-                            <TableCell>{item.receivedQty} {item.unit}</TableCell>
+                            <TableCell>{formatQtyDisplay(item.receivedQty, item.unit)}</TableCell>
                             <TableCell>{item.batchNo ?? "-"}</TableCell>
                             <TableCell>
                               {alreadyInspected ? (
@@ -1910,6 +2258,106 @@ export default function IQCPage() {
           </div>
         </DraggableDialogContent>
       </DraggableDialog>
+
+      <DraggableDialog open={signatureDialogOpen} onOpenChange={setSignatureDialogOpen}>
+        <DraggableDialogContent title="电子签名验证" className="max-w-md">
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">检验单号</span>
+                <span className="font-medium">{formData.inspectionNo || "-"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">签名动作</span>
+                <span className="font-medium">
+                  {getNextSignatureType(signatures, isReviewerRequiredForResult(pendingSubmitResult)) === "reviewer" ? "复核员签名" : "检验员签名"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">当前用户</span>
+                <span className="font-medium">{String((user as any)?.name || formData.inspectorName || "-")}</span>
+              </div>
+              {getNextSignatureType(signatures, isReviewerRequiredForResult(pendingSubmitResult)) === "reviewer" && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">指定复核人</span>
+                  <span className="font-medium">{formData.reviewerName || "-"}</span>
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm text-muted-foreground">
+                请输入当前登录密码后继续保存，本次电子签名会与保存动作一起落库。
+              </div>
+              <Input
+                type="password"
+                value={signaturePassword}
+                onChange={(e) => setSignaturePassword(e.target.value)}
+                placeholder="请输入当前用户密码"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleSignatureConfirm();
+                  }
+                }}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSignatureDialogOpen(false);
+                  setSignaturePassword("");
+                  setPendingSubmitResult(undefined);
+                }}
+              >
+                取消
+              </Button>
+              <Button onClick={handleSignatureConfirm} disabled={verifyPasswordMutation.isPending}>
+                {verifyPasswordMutation.isPending ? "验证中..." : "确认并保存"}
+              </Button>
+            </div>
+          </div>
+        </DraggableDialogContent>
+      </DraggableDialog>
+
+      <AlertDialog open={resultConfirmOpen} onOpenChange={setResultConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认检验结果</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`确认将当前检验单判定为「${
+                pendingConfirmResult === "passed"
+                  ? "合格"
+                  : pendingConfirmResult === "failed"
+                    ? "不合格"
+                    : "条件合格"
+              }」吗？确认后需要输入当前登录密码完成电子签名。`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setPendingConfirmResult(undefined);
+                pendingConfirmContextRef.current = null;
+              }}
+            >
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const nextResult = pendingConfirmResult;
+                const nextContext = pendingConfirmContextRef.current ?? undefined;
+                setResultConfirmOpen(false);
+                setPendingConfirmResult(undefined);
+                pendingConfirmContextRef.current = null;
+                requestSubmitWithSignature(nextResult, nextContext);
+              }}
+            >
+              确认
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </ERPLayout>
   );
 }

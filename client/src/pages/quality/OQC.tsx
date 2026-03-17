@@ -7,7 +7,7 @@ import PrintPreviewButton from "@/components/PrintPreviewButton";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
-import { SignatureStatusCard, SignatureRecord } from "@/components/ElectronicSignature";
+import { SignatureRecord } from "@/components/ElectronicSignature";
 import { PackageCheck, FileCheck, ShieldCheck, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Link2, RefreshCw, ArrowLeft, Save, Paperclip } from "lucide-react";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -232,6 +232,24 @@ function formatDisplayQty(value: unknown, digits = 4) {
   const num = Number(value);
   if (!Number.isFinite(num)) return String(value);
   return formatDisplayNumber(num, { maximumFractionDigits: Math.min(digits, 2) });
+}
+
+function getNextSignatureType(
+  signatures: SignatureRecord[],
+): SignatureRecord["signatureType"] | null {
+  const hasInspector = signatures.some((sig) => sig.signatureType === "inspector" && sig.status === "valid");
+  if (!hasInspector) return "inspector";
+  const hasReviewer = signatures.some((sig) => sig.signatureType === "reviewer" && sig.status === "valid");
+  if (!hasReviewer) return "reviewer";
+  return null;
+}
+
+function mergeSignatureRecords(
+  existing: SignatureRecord[],
+  nextSignature?: SignatureRecord | null,
+) {
+  if (!nextSignature) return existing;
+  return [...existing, nextSignature];
 }
 
 function currentDateTimeLocal() {
@@ -871,6 +889,9 @@ export default function OQCPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<OQCRecord | null>(null);
   const [activeTab, setActiveTab] = useState("items");
+  const [signatures, setSignatures] = useState<SignatureRecord[]>([]);
+  const [signatureDialogOpen, setSignatureDialogOpen] = useState(false);
+  const [signaturePassword, setSignaturePassword] = useState("");
   const [listTab, setListTab] = useState("report");
   const [matchedRequirementId, setMatchedRequirementId] = useState<number | null>(null);
   const [lastAppliedRequirementId, setLastAppliedRequirementId] = useState<number | null>(null);
@@ -879,6 +900,7 @@ export default function OQCPage() {
   const [sterilitySourcePickerOpen, setSterilitySourcePickerOpen] = useState(false);
   const [activeItemIndex, setActiveItemIndex] = useState<number | null>(null);
   const { canDelete } = usePermission();
+  const verifyPasswordMutation = trpc.auth.verifyPassword.useMutation();
   const { data: matchedRequirementDetail } = trpc.inspectionRequirements.getById.useQuery(
     { id: matchedRequirementId! },
     { enabled: !!matchedRequirementId && formDialogOpen && !isEditing }
@@ -1151,6 +1173,7 @@ export default function OQCPage() {
       sterilityForm,
       releaseForm: normalizeReleaseForm({}, ""),
     });
+    setSignatures([]);
     setFormDialogOpen(true);
   };
 
@@ -1186,6 +1209,7 @@ export default function OQCPage() {
       sterilityForm: normalizeSterilityForm(record.sterilityForm || {}),
       releaseForm: normalizeReleaseForm(record.releaseForm || {}, record.quantity),
     });
+    setSignatures(record.signatures || []);
     setFormDialogOpen(true);
   };
 
@@ -1229,6 +1253,7 @@ export default function OQCPage() {
       sterilityForm,
       releaseForm: normalizeReleaseForm({}, record.quantity || ""),
     });
+    setSignatures([]);
     setFormDialogOpen(true);
   };
 
@@ -1313,7 +1338,7 @@ export default function OQCPage() {
     }));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (extraSignature?: SignatureRecord | null) => {
     if (!formData.productName || !formData.batchNo || (!formData.quantity && formData.specialFormType === "sterility") || (!formData.specialFormType && !formData.quantity)) {
       toast.error("请填写必填字段");
       return;
@@ -1331,6 +1356,7 @@ export default function OQCPage() {
         ? buildSterilityInspectionItems(sterilityForm.rows)
       : formData.inspectionItems;
     const result = bioburdenForm ? formData.result : formData.result;
+    const mergedSignatures = mergeSignatureRecords(signatures, extraSignature);
     const extraData = {
       warehouseEntryId: formData.warehouseEntryId || undefined,
       warehouseEntryNo: formData.warehouseEntryNo || undefined,
@@ -1345,7 +1371,7 @@ export default function OQCPage() {
       inspector: formData.inspector,
       remarks: formData.remarks,
       inspectionItems,
-      signatures: isEditing && selectedRecord ? (selectedRecord.signatures || []) : [],
+      signatures: mergedSignatures,
       specialFormType: formData.specialFormType,
       bioburdenForm,
       sterilityForm,
@@ -1396,17 +1422,112 @@ export default function OQCPage() {
     }
   };
 
-  const handleSignComplete = (signature: SignatureRecord) => {
-    if (!selectedRecord) return;
-    setSelectedRecord((prev) =>
-      prev
+  function requestSubmitWithSignature() {
+    if (!formData.productName || !formData.batchNo) {
+      toast.error("请填写必填字段");
+      return;
+    }
+    const nextSignatureType = getNextSignatureType(signatures);
+    if (!nextSignatureType) {
+      handleSubmit();
+      return;
+    }
+    setSignaturePassword("");
+    setSignatureDialogOpen(true);
+  }
+
+  async function handleSignatureConfirm() {
+    if (!signaturePassword.trim()) {
+      toast.error("请输入密码");
+      return;
+    }
+    try {
+      await verifyPasswordMutation.mutateAsync({ password: signaturePassword });
+      const nextSignatureType = getNextSignatureType(signatures);
+      const nextSignature = nextSignatureType
         ? {
-            ...prev,
-            signatures: [...(prev.signatures || []), signature],
+            id: Date.now(),
+            signatureType: nextSignatureType,
+            signatureAction: `OQC检验${nextSignatureType === "inspector" ? "检验员" : "复核员"}签名`,
+            signerName: currentUserName || formData.inspector || "当前用户",
+            signerTitle: nextSignatureType === "inspector" ? "质量检验员" : "质量复核员",
+            signerDepartment: String((user as any)?.department || "质量部"),
+            signedAt: new Date().toISOString(),
+            signatureMeaning:
+              nextSignatureType === "inspector"
+                ? "本人确认已按照成品检验规程进行检验，检验结果真实、准确、完整。"
+                : "本人确认已复核成品检验记录，数据真实可靠，检验方法符合规定。",
+            status: "valid" as const,
           }
-        : null
+        : null;
+      setSignatureDialogOpen(false);
+      setSignaturePassword("");
+      if (nextSignature) {
+        setSignatures((prev) => mergeSignatureRecords(prev, nextSignature));
+      }
+      handleSubmit(nextSignature);
+    } catch (error: any) {
+      toast.error(error?.message || "密码校验失败");
+    }
+  }
+
+  function renderSignatureVerifyDialog() {
+    return (
+      <DraggableDialog open={signatureDialogOpen} onOpenChange={setSignatureDialogOpen}>
+        <DraggableDialogContent title="电子签名验证" className="max-w-md">
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">检验单号</span>
+                <span className="font-medium">{selectedRecord?.inspectionNo || "保存后生成"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">签名动作</span>
+                <span className="font-medium">
+                  {getNextSignatureType(signatures) === "reviewer" ? "复核员签名" : "检验员签名"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">当前用户</span>
+                <span className="font-medium">{currentUserName || formData.inspector || "-"}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm text-muted-foreground">
+                请输入当前登录密码后继续保存，本次电子签名会与保存动作一起落库。
+              </div>
+              <Input
+                type="password"
+                value={signaturePassword}
+                onChange={(e) => setSignaturePassword(e.target.value)}
+                placeholder="请输入当前用户密码"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleSignatureConfirm();
+                  }
+                }}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSignatureDialogOpen(false);
+                  setSignaturePassword("");
+                }}
+              >
+                取消
+              </Button>
+              <Button onClick={handleSignatureConfirm} disabled={verifyPasswordMutation.isPending}>
+                {verifyPasswordMutation.isPending ? "验证中..." : "确认并保存"}
+              </Button>
+            </div>
+          </div>
+        </DraggableDialogContent>
+      </DraggableDialog>
     );
-  };
+  }
 
   const updateInspectionItem = (index: number, field: keyof InspectionItem, value: string) => {
     const newItems = [...formData.inspectionItems];
@@ -1833,31 +1954,17 @@ export default function OQCPage() {
                     </div>
                   </div>
 
-                  <SignatureStatusCard
-                    documentType="OQC"
-                    documentNo={selectedRecord.inspectionNo}
-                    documentId={selectedRecord.id}
-                    signatures={selectedRecord.signatures || []}
-                    onSignComplete={handleSignComplete}
-                    enabledTypes={["inspector", "reviewer"]}
-                  />
-
                   {selectedRecord.remarks ? (
                     <div className="space-y-2">
                       <Label>备注</Label>
                       <div className="rounded-lg border bg-muted/10 p-4 text-sm whitespace-pre-wrap">{selectedRecord.remarks}</div>
                     </div>
                   ) : null}
-
-                  {signCount >= 2 ? (
-                    <div className="rounded-lg border bg-green-50 p-4 text-sm text-green-700">
-                      该初始污染菌检测记录已完成二级电子签名，记录闭环。
-                    </div>
-                  ) : null}
                 </CardContent>
               </Card>
             </div>
           </div>
+          {renderSignatureVerifyDialog()}
         </div>
       </ERPLayout>
     );
@@ -1979,25 +2086,10 @@ export default function OQCPage() {
                     </div>
                   </div>
 
-                  <SignatureStatusCard
-                    documentType="OQC"
-                    documentNo={selectedRecord.inspectionNo}
-                    documentId={selectedRecord.id}
-                    signatures={selectedRecord.signatures || []}
-                    onSignComplete={handleSignComplete}
-                    enabledTypes={["inspector", "reviewer"]}
-                  />
-
                   {selectedRecord.remarks ? (
                     <div className="space-y-2">
                       <Label>备注</Label>
                       <div className="rounded-lg border bg-muted/10 p-4 text-sm whitespace-pre-wrap">{selectedRecord.remarks}</div>
-                    </div>
-                  ) : null}
-
-                  {signCount >= 2 ? (
-                    <div className="rounded-lg border bg-green-50 p-4 text-sm text-green-700">
-                      该无菌检验记录已完成二级电子签名，记录闭环。
                     </div>
                   ) : null}
                 </CardContent>
@@ -2076,9 +2168,6 @@ export default function OQCPage() {
                     <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
                       <TabsTrigger value="release" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                         放行记录
-                      </TabsTrigger>
-                      <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                        电子签名
                       </TabsTrigger>
                       <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                         备注
@@ -2175,16 +2264,6 @@ export default function OQCPage() {
                           </div>
                         </div>
                       </div>
-                    </TabsContent>
-
-                    <TabsContent value="signatures" className="mt-5">
-                      <SignatureStatusCard
-                        documentType="OQC"
-                        documentNo={selectedRecord.inspectionNo}
-                        documentId={selectedRecord.id}
-                        signatures={selectedRecord.signatures || []}
-                        onSignComplete={handleSignComplete}
-                      />
                     </TabsContent>
 
                     <TabsContent value="notes" className="mt-5">
@@ -2442,7 +2521,7 @@ export default function OQCPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={handleSubmit}
+                  onClick={requestSubmitWithSignature}
                   disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   <Save className="w-3.5 h-3.5 mr-1.5" />
@@ -2673,20 +2752,9 @@ export default function OQCPage() {
                     </div>
                   </div>
 
-                  {!isEditing || !selectedRecord ? (
-                    <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-                      <div className="text-sm">请先保存检验单，保存后可进行电子签名</div>
-                    </div>
-                  ) : (
-                    <SignatureStatusCard
-                      documentType="OQC"
-                      documentNo={selectedRecord.inspectionNo}
-                      documentId={selectedRecord.id}
-                      signatures={selectedRecord.signatures || []}
-                      onSignComplete={handleSignComplete}
-                      enabledTypes={["inspector", "reviewer"]}
-                    />
-                  )}
+                  <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+                    <div className="text-sm">保存时将弹出电子签名验证，不再单独在表单内签名</div>
+                  </div>
 
                   <div className="space-y-2">
                     <Label>备注</Label>
@@ -2727,7 +2795,7 @@ export default function OQCPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={handleSubmit}
+                  onClick={requestSubmitWithSignature}
                   disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   <Save className="w-3.5 h-3.5 mr-1.5" />
@@ -2951,20 +3019,9 @@ export default function OQCPage() {
                     </div>
                   </div>
 
-                  {!isEditing || !selectedRecord ? (
-                    <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-                      <div className="text-sm">请先保存检验单，保存后可进行电子签名</div>
-                    </div>
-                  ) : (
-                    <SignatureStatusCard
-                      documentType="OQC"
-                      documentNo={selectedRecord.inspectionNo}
-                      documentId={selectedRecord.id}
-                      signatures={selectedRecord.signatures || []}
-                      onSignComplete={handleSignComplete}
-                      enabledTypes={["inspector", "reviewer"]}
-                    />
-                  )}
+                  <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+                    <div className="text-sm">保存时将弹出电子签名验证，不再单独在表单内签名</div>
+                  </div>
 
                   <div className="space-y-2">
                     <Label>备注</Label>
@@ -3007,6 +3064,7 @@ export default function OQCPage() {
               setSterilitySourcePickerOpen(false);
             }}
           />
+          {renderSignatureVerifyDialog()}
         </div>
       </ERPLayout>
     );
@@ -3033,7 +3091,7 @@ export default function OQCPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={handleSubmit}
+                  onClick={requestSubmitWithSignature}
                   disabled={createMutation.isPending || updateMutation.isPending}
                 >
                   <Save className="w-3.5 h-3.5 mr-1.5" />
@@ -3235,9 +3293,6 @@ export default function OQCPage() {
                       </TabsTrigger>
                       <TabsTrigger value="release" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                         放行记录
-                      </TabsTrigger>
-                      <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                        电子签名
                       </TabsTrigger>
                       <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                         备注
@@ -3512,22 +3567,6 @@ export default function OQCPage() {
                           />
                         </div>
                       </div>
-                    </TabsContent>
-
-                    <TabsContent value="signatures" className="mt-5">
-                      {!isEditing || !selectedRecord ? (
-                        <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-                          <div className="text-sm">请先保存检验单，保存后可进行电子签名</div>
-                        </div>
-                      ) : (
-                        <SignatureStatusCard
-                          documentType="OQC"
-                          documentNo={selectedRecord.inspectionNo}
-                          documentId={selectedRecord.id}
-                          signatures={selectedRecord.signatures || []}
-                          onSignComplete={handleSignComplete}
-                        />
-                      )}
                     </TabsContent>
 
                     <TabsContent value="notes" className="mt-5">
@@ -3812,6 +3851,7 @@ export default function OQCPage() {
                 </div>
               </DraggableDialogContent>
             </DraggableDialog>
+            {renderSignatureVerifyDialog()}
           </div>
         </div>
       </ERPLayout>
@@ -4258,9 +4298,6 @@ export default function OQCPage() {
                         <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                           检验项目 {formData.inspectionItems.length > 0 && `(${formData.inspectionItems.length})`}
                         </TabsTrigger>
-                        <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
-                          电子签名
-                        </TabsTrigger>
                         <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                           备注
                         </TabsTrigger>
@@ -4357,22 +4394,6 @@ export default function OQCPage() {
                         )}
                       </TabsContent>
 
-                      <TabsContent value="signatures" className="mt-5">
-                        {!isEditing || !selectedRecord ? (
-                          <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-                            <div className="text-sm">请先保存检验单，保存后可进行电子签名</div>
-                          </div>
-                        ) : (
-                          <SignatureStatusCard
-                            documentType="OQC"
-                            documentNo={selectedRecord.inspectionNo}
-                            documentId={selectedRecord.id}
-                            signatures={selectedRecord.signatures || []}
-                            onSignComplete={handleSignComplete}
-                          />
-                        )}
-                      </TabsContent>
-
                       <TabsContent value="notes" className="mt-5">
                         <Textarea
                           value={formData.remarks}
@@ -4391,7 +4412,7 @@ export default function OQCPage() {
                     取消
                   </Button>
                   <Button
-                    onClick={handleSubmit}
+                    onClick={requestSubmitWithSignature}
                     disabled={createMutation.isPending || updateMutation.isPending}
                   >
                     {isEditing ? "保存" : "创建"}
@@ -4506,13 +4527,7 @@ export default function OQCPage() {
                       signatureImageUrl={selectedInspectorSignatureUrl}
                     />
                     {/* 电子签名状态 */}
-                    <SignatureStatusCard
-                      documentType="OQC"
-                      documentNo={selectedRecord.inspectionNo}
-                      documentId={selectedRecord.id}
-                      signatures={selectedRecord.signatures || []}
-                      onSignComplete={handleSignComplete}
-                    />
+                    <SignatureHistory signatures={selectedRecord.signatures || []} showTitle={false} />
                   </div>
                 </div>
 

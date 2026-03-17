@@ -11218,6 +11218,7 @@ export const appRouter = router({
             "finance_receipt",
             "finance_payable",
             "quality_iqc",
+            "quality_iqc_review",
             "quality_oqc",
             "material_requisition",
             "warehouse_production_in",
