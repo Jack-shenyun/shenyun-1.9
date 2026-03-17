@@ -66,6 +66,8 @@ export interface Equipment {
   responsible: string;
   inspectionRequirement?: string;
   maintenanceRequirement?: string;
+  inspectionTemplate?: string;
+  maintenanceTemplate?: string;
   status: "normal" | "maintenance" | "repair" | "scrapped";
   lastMaintenance: string;
   nextMaintenance: string;
@@ -315,6 +317,8 @@ export function normalizeEquipmentRecord(record: any): Equipment {
     responsible: String(record?.responsible || ""),
     inspectionRequirement: String(record?.inspectionRequirement || ""),
     maintenanceRequirement: String(record?.maintenanceRequirement || ""),
+    inspectionTemplate: record?.inspectionTemplate ? String(record.inspectionTemplate) : undefined,
+    maintenanceTemplate: record?.maintenanceTemplate ? String(record.maintenanceTemplate) : undefined,
     status: (record?.status || "normal") as Equipment["status"],
     lastMaintenance: record?.lastMaintenance
       ? (formatDateValue(record.lastMaintenance) || "")
@@ -397,6 +401,8 @@ export default function EquipmentPage() {
     responsible: "",
     inspectionRequirement: "",
     maintenanceRequirement: "",
+    inspectionTemplate: "",
+    maintenanceTemplate: "",
     status: "normal",
     lastMaintenance: "",
     nextMaintenance: "",
@@ -502,6 +508,8 @@ export default function EquipmentPage() {
       responsible: "",
       inspectionRequirement: "",
       maintenanceRequirement: "",
+      inspectionTemplate: "",
+      maintenanceTemplate: "",
       status: "normal",
       lastMaintenance: "",
       nextMaintenance: "",
@@ -514,8 +522,7 @@ export default function EquipmentPage() {
     });
     setDialogOpen(true);
   };
-
-  const handleEdit = (equipment: Equipment) => {
+  const handleEdit = (equipment: Equipment) => {{
     setEditingEquipment(equipment);
     setFormData({
       code: equipment.code,
@@ -532,6 +539,8 @@ export default function EquipmentPage() {
       responsible: equipment.responsible,
       inspectionRequirement: equipment.inspectionRequirement || "",
       maintenanceRequirement: equipment.maintenanceRequirement || "",
+      inspectionTemplate: equipment.inspectionTemplate || "",
+      maintenanceTemplate: equipment.maintenanceTemplate || "",
       status: equipment.status,
       lastMaintenance: equipment.lastMaintenance,
       nextMaintenance: equipment.nextMaintenance,
@@ -588,6 +597,8 @@ export default function EquipmentPage() {
           responsible: formData.responsible,
           inspectionRequirement: formData.inspectionRequirement,
           maintenanceRequirement: formData.maintenanceRequirement,
+          inspectionTemplate: formData.inspectionTemplate || undefined,
+          maintenanceTemplate: formData.maintenanceTemplate || undefined,
           status: formData.status as Equipment["status"],
           lastMaintenanceDate: formData.lastMaintenance || undefined,
           nextMaintenanceDate: formData.nextMaintenance || undefined,
@@ -617,6 +628,8 @@ export default function EquipmentPage() {
         responsible: formData.responsible,
         inspectionRequirement: formData.inspectionRequirement,
         maintenanceRequirement: formData.maintenanceRequirement,
+        inspectionTemplate: formData.inspectionTemplate || undefined,
+        maintenanceTemplate: formData.maintenanceTemplate || undefined,
         status: formData.status as Equipment["status"],
         lastMaintenanceDate: formData.lastMaintenance || undefined,
         nextMaintenanceDate: formData.nextMaintenance || undefined,

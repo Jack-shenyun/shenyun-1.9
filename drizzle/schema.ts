@@ -765,6 +765,8 @@ export const equipment = mysqlTable("equipment", {
   responsible: varchar("responsible", { length: 100 }), // 责任人
   inspectionRequirement: text("inspectionRequirement"), // 点检要求
   maintenanceRequirement: text("maintenanceRequirement"), // 保养要求
+  inspectionTemplate: text("inspectionTemplate"), // 点检项目模板(JSON)
+  maintenanceTemplate: text("maintenanceTemplate"), // 保养项目模板(JSON)
   status: mysqlEnum("status", ["normal", "maintenance", "repair", "scrapped"])
     .default("normal")
     .notNull(),

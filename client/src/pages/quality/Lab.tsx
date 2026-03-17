@@ -51,6 +51,7 @@ import {
   TestTube,
   Trash2,
   Upload,
+  Wrench,
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -114,6 +115,14 @@ const LAB_ICON_STYLE_MAP: Record<string, { bg: string; icon: string }> = {
   },
   "endotoxin-sop": {
     bg: "bg-gradient-to-br from-indigo-400 to-blue-500 shadow-indigo-100/90",
+    icon: "text-white",
+  },
+  "bioburden": {
+    bg: "bg-gradient-to-br from-lime-500 to-green-600 shadow-lime-200/80",
+    icon: "text-white",
+  },
+  "sterility": {
+    bg: "bg-gradient-to-br from-cyan-500 to-teal-600 shadow-cyan-200/80",
     icon: "text-white",
   },
 };
@@ -5820,6 +5829,19 @@ export default function LabPage() {
                         </button>
                       );
                     })}
+                    {/* 设备管理入口 */}
+                    <button
+                      type="button"
+                      onClick={() => setLocation("/production/equipment")}
+                      className="group flex w-full flex-col items-center text-center transition-transform hover:-translate-y-0.5"
+                    >
+                      <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg transition-transform group-hover:scale-[1.03] bg-gradient-to-br from-orange-500 to-red-500 shadow-orange-200/80">
+                        <Wrench className="h-7 w-7 text-white" />
+                      </div>
+                      <div className="w-full text-[13px] font-semibold leading-5 text-slate-800">
+                        设备管理
+                      </div>
+                    </button>
                   </div>
                 )}
               </CardContent>

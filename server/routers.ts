@@ -14307,6 +14307,8 @@ export const appRouter = router({
           calibrationCycle: z.string().optional(),
           lastCalibrationDate: z.string().optional(),
           nextCalibrationDate: z.string().optional(),
+          inspectionTemplate: z.string().optional(),
+          maintenanceTemplate: z.string().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -14381,6 +14383,8 @@ export const appRouter = router({
             calibrationCycle: z.string().optional(),
             lastCalibrationDate: z.string().optional(),
             nextCalibrationDate: z.string().optional(),
+            inspectionTemplate: z.string().optional(),
+            maintenanceTemplate: z.string().optional(),
           }),
         })
       )

@@ -21959,6 +21959,8 @@ async function ensureEquipmentSupportTables(
       { name: "calibrationCycle", ddl: "VARCHAR(50) NULL" },
       { name: "lastCalibrationDate", ddl: "DATE NULL" },
       { name: "nextCalibrationDate", ddl: "DATE NULL" },
+      { name: "inspectionTemplate", ddl: "TEXT NULL" },
+      { name: "maintenanceTemplate", ddl: "TEXT NULL" },
     ];
 
     for (const col of columns) {
