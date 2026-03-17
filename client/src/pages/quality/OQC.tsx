@@ -59,6 +59,8 @@ interface InspectionItem {
   sampleQty: number;
   result: string;
   conclusion: "qualified" | "unqualified" | "pending";
+  labTestType?: string;
+  labRecordId?: number;
   children?: InspectionItemChild[];
   records?: InspectionItemRecord[];
 }
@@ -194,6 +196,7 @@ const statusMap: Record<string, any> = {
   inspecting: { label: "检验中", variant: "default" as const, color: "text-blue-600" },
   qualified: { label: "合格", variant: "secondary" as const, color: "text-green-600" },
   unqualified: { label: "不合格", variant: "destructive" as const, color: "text-red-600" },
+  draft: { label: "草稿", variant: "outline" as const, color: "text-gray-400" },
 };
 
 const defaultInspectionItems: InspectionItem[] = [
@@ -781,6 +784,7 @@ function buildRequirementInspectionItems(items: any[]): InspectionItem[] {
       sampleQty: Number(item?.sampleQty || item?.samplingQty || 1),
       result: "",
       conclusion: "pending" as const,
+      labTestType: item?.labTestType ?? undefined,
       children: parsedRemark.children,
       records: [],
     };
@@ -877,6 +881,10 @@ export default function OQCPage() {
   const deleteMutation = trpc.qualityInspections.delete.useMutation({
     onSuccess: () => { refetch(); toast.success("检验记录已删除"); },
     onError: (e) => toast.error("删除失败", { description: e.message }),
+  });
+  const saveDraftMutation = trpc.qualityInspections.saveDraft.useMutation({
+    onSuccess: () => { refetch(); toast.success("草稿已保存"); setFormDialogOpen(false); },
+    onError: (e) => toast.error("草稿保存失败", { description: e.message }),
   });
   const inspectionData: OQCRecord[] = (_dbData as any[]).map(dbToDisplay);
   const [searchTerm, setSearchTerm] = useState("");
@@ -1474,27 +1482,11 @@ export default function OQCPage() {
   function renderSignatureVerifyDialog() {
     return (
       <DraggableDialog open={signatureDialogOpen} onOpenChange={setSignatureDialogOpen}>
-        <DraggableDialogContent title="电子签名验证" className="max-w-md">
+        <DraggableDialogContent title="电子签名验证" className="max-w-xs">
           <div className="space-y-4 py-2">
-            <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">检验单号</span>
-                <span className="font-medium">{selectedRecord?.inspectionNo || "保存后生成"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">签名动作</span>
-                <span className="font-medium">
-                  {getNextSignatureType(signatures) === "reviewer" ? "复核员签名" : "检验员签名"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">当前用户</span>
-                <span className="font-medium">{currentUserName || formData.inspector || "-"}</span>
-              </div>
-            </div>
             <div className="space-y-2">
               <div className="text-sm text-muted-foreground">
-                请输入当前登录密码后继续保存，本次电子签名会与保存动作一起落库。
+                请输入登录密码完成签名
               </div>
               <Input
                 type="password"
@@ -1828,13 +1820,52 @@ export default function OQCPage() {
     }
   };
 
-  // 统计
-  const pendingCount = currentListData.filter((r) => {
+  // 统计（排除草稿）
+  const statsListData = currentListData.filter((r) => (r.result as string) !== "draft");
+  const pendingCount = statsListData.filter((r) => {
     const status = getTabScopedStatus(r, listTab);
     return status === "pending" || status === "inspecting";
   }).length;
-  const qualifiedCount = currentListData.filter((r) => getTabScopedStatus(r, listTab) === "qualified").length;
-  const unqualifiedCount = currentListData.filter((r) => getTabScopedStatus(r, listTab) === "unqualified").length;
+  const qualifiedCount = statsListData.filter((r) => getTabScopedStatus(r, listTab) === "qualified").length;
+  const unqualifiedCount = statsListData.filter((r) => getTabScopedStatus(r, listTab) === "unqualified").length;
+
+  const handleSaveDraft = () => {
+    if (!formData.productName) {
+      toast.error("请填写产品名称");
+      return;
+    }
+    const extraData = {
+      warehouseEntryId: formData.warehouseEntryId || undefined,
+      warehouseEntryNo: formData.warehouseEntryNo || undefined,
+      productCode: formData.productCode,
+      sterilizationBatchNo: formData.sterilizationBatchNo || undefined,
+      quantity: formData.quantity,
+      unit: formData.unit,
+      samplingQty: formData.samplingQty,
+      rejectQty: formData.rejectQty,
+      sampleRetainQty: formData.sampleRetainQty,
+      result: formData.result,
+      inspector: formData.inspector,
+      remarks: formData.remarks,
+      inspectionItems: formData.inspectionItems,
+      signatures: [],
+      specialFormType: formData.specialFormType,
+    };
+    const year = new Date().getFullYear();
+    const mm = String(new Date().getMonth() + 1).padStart(2, "0");
+    const dd = String(new Date().getDate()).padStart(2, "0");
+    saveDraftMutation.mutate({
+      id: isEditing && selectedRecord ? Number(selectedRecord.id) : undefined,
+      inspectionNo: isEditing && selectedRecord ? selectedRecord.inspectionNo : `OQC-${year}-${mm}${dd}-${String(Date.now()).slice(-4)}`,
+      type: "OQC",
+      itemName: formData.productName,
+      batchNo: formData.batchNo || undefined,
+      relatedDocNo: formData.productCode || undefined,
+      inspectedQty: formData.quantity || undefined,
+      inspectionDate: formData.inspectionDate || undefined,
+      remark: JSON.stringify(extraData),
+    });
+  };
   const isBioburdenEditing = formData.specialFormType === "bioburden";
   const isSterilityEditing = formData.specialFormType === "sterility";
   const selectedBioburdenForm = selectedRecord?.specialFormType === "bioburden"
@@ -2520,6 +2551,14 @@ export default function OQCPage() {
                 />
                 <Button
                   size="sm"
+                  variant="ghost"
+                  onClick={handleSaveDraft}
+                  disabled={saveDraftMutation.isPending}
+                >
+                  {saveDraftMutation.isPending ? "保存中..." : "保存草稿"}
+                </Button>
+                <Button
+                  size="sm"
                   variant="outline"
                   onClick={requestSubmitWithSignature}
                   disabled={createMutation.isPending || updateMutation.isPending}
@@ -2792,6 +2831,14 @@ export default function OQCPage() {
                   title={isEditing && selectedRecord ? `无菌检验记录 - ${selectedRecord.inspectionNo}` : "无菌检验记录"}
                   targetRef={formPrintRef}
                 />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleSaveDraft}
+                  disabled={saveDraftMutation.isPending}
+                >
+                  {saveDraftMutation.isPending ? "保存中..." : "保存草稿"}
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -3090,6 +3137,14 @@ export default function OQCPage() {
                 />
                 <Button
                   size="sm"
+                  variant="ghost"
+                  onClick={handleSaveDraft}
+                  disabled={saveDraftMutation.isPending}
+                >
+                  {saveDraftMutation.isPending ? "保存中..." : "保存草稿"}
+                </Button>
+                <Button
+                  size="sm"
                   variant="outline"
                   onClick={requestSubmitWithSignature}
                   disabled={createMutation.isPending || updateMutation.isPending}
@@ -3370,9 +3425,30 @@ export default function OQCPage() {
                                     {item.records?.length || 0}
                                   </TableCell>
                                   <TableCell>
-                                    <Button variant="outline" size="sm" onClick={() => openItemRecordDialog(index)}>
-                                      录入记录
-                                    </Button>
+                                    <div className="flex flex-col gap-1">
+                                      {item.labTestType ? (
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                                          onClick={() => {
+                                            const labType = item.labTestType === "bioburden" ? "bioburden" : "sterility";
+                                            const params = new URLSearchParams({
+                                              sourceType: "oqc",
+                                              testType: labType,
+                                              itemName: item.name,
+                                            });
+                                            window.open(`/quality/lab?${params.toString()}`, "_blank");
+                                          }}
+                                        >
+                                          进入实验室
+                                        </Button>
+                                      ) : (
+                                        <Button variant="outline" size="sm" onClick={() => openItemRecordDialog(index)}>
+                                          录入记录
+                                        </Button>
+                                      )}
+                                    </div>
                                   </TableCell>
                                   <TableCell>
                                     <Button
@@ -3886,7 +3962,7 @@ export default function OQCPage() {
 
         {/* 统计卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">检验总数</p><p className="text-2xl font-bold">{currentListData.length}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">检验总数</p><p className="text-2xl font-bold">{statsListData.length}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">待检/检验中</p><p className="text-2xl font-bold text-amber-600">{pendingCount}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">合格</p><p className="text-2xl font-bold text-green-600">{qualifiedCount}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">不合格</p><p className="text-2xl font-bold text-red-600">{unqualifiedCount}</p></CardContent></Card>
@@ -3959,6 +4035,7 @@ export default function OQCPage() {
                 <SelectItem value="inspecting">检验中</SelectItem>
                 <SelectItem value="qualified">合格</SelectItem>
                 <SelectItem value="unqualified">不合格</SelectItem>
+                <SelectItem value="draft">草稿</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -4410,6 +4487,13 @@ export default function OQCPage() {
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setFormDialogOpen(false)}>
                     取消
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={handleSaveDraft}
+                    disabled={saveDraftMutation.isPending}
+                  >
+                    {saveDraftMutation.isPending ? "保存中..." : "保存草稿"}
                   </Button>
                   <Button
                     onClick={requestSubmitWithSignature}

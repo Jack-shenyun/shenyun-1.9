@@ -252,6 +252,8 @@ import {
   createLabRecord,
   updateLabRecord,
   deleteLabRecord,
+  getLabRecordsBySource,
+  completeLabRecordAndWriteBack,
   getAccountsReceivable,
   getAccountsReceivableById,
   createAccountsReceivable,
@@ -12887,6 +12889,32 @@ export const appRouter = router({
       .query(async ({ input }) => {
         return await getLabRecordById(input.id);
       }),
+    getBySource: protectedProcedure
+      .input(
+        z.object({
+          sourceType: z.string(),
+          sourceId: z.number(),
+          sourceItemId: z.number().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        return await getLabRecordsBySource(input);
+      }),
+    completeAndWriteBack: protectedProcedure
+      .input(
+        z.object({
+          labRecordId: z.number(),
+          conclusion: z.enum(["pass", "fail", "pending"]),
+          result: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return await completeLabRecordAndWriteBack(
+          input.labRecordId,
+          input.conclusion,
+          input.result
+        );
+      }),
     create: protectedProcedure
       .input(
         z.object({
@@ -12911,6 +12939,9 @@ export const appRouter = router({
             .enum(["pending", "testing", "completed", "reviewed"])
             .optional(),
           remark: z.string().optional(),
+          sourceType: z.string().optional(),
+          sourceId: z.number().optional(),
+          sourceItemId: z.number().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -12949,6 +12980,9 @@ export const appRouter = router({
               .enum(["pending", "testing", "completed", "reviewed"])
               .optional(),
             remark: z.string().optional(),
+            sourceType: z.string().optional(),
+            sourceId: z.number().optional(),
+            sourceItemId: z.number().optional(),
           }),
         })
       )
@@ -17514,6 +17548,7 @@ export const appRouter = router({
               acceptedValues: z.string().optional(),
               sortOrder: z.number().optional(),
               remark: z.string().optional(),
+              labTestType: z.string().optional(),
             })
           ),
         })
@@ -17550,11 +17585,12 @@ export const appRouter = router({
                 maxValue: z.string().optional(),
                 unit: z.string().optional(),
                 acceptedValues: z.string().optional(),
-                sortOrder: z.number().optional(),
-                remark: z.string().optional(),
-              })
-            )
-            .optional(),
+              sortOrder: z.number().optional(),
+              remark: z.string().optional(),
+              labTestType: z.string().optional(),
+            })
+          )
+          .optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -17637,6 +17673,8 @@ export const appRouter = router({
               conclusion: z.enum(["pass", "fail", "pending"]).optional(),
               sortOrder: z.number().optional(),
               remark: z.string().optional(),
+              labTestType: z.string().optional(),
+              labRecordId: z.number().optional(),
             })
           ),
         })
@@ -17679,12 +17717,14 @@ export const appRouter = router({
                 sampleValues: z.string().optional(),
                 acceptedValues: z.string().optional(),
                 actualValue: z.string().optional(),
-                conclusion: z.enum(["pass", "fail", "pending"]).optional(),
-                sortOrder: z.number().optional(),
-                remark: z.string().optional(),
-              })
-            )
-            .optional(),
+              conclusion: z.enum(["pass", "fail", "pending"]).optional(),
+              sortOrder: z.number().optional(),
+              remark: z.string().optional(),
+              labTestType: z.string().optional(),
+              labRecordId: z.number().optional(),
+            })
+          )
+          .optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {

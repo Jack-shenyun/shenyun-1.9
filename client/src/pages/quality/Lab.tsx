@@ -51,7 +51,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
@@ -366,6 +366,64 @@ const LAB_FORMS: LabFormConfig[] = [
       },
     ],
   },
+  {
+    id: "bioburden",
+    title: "初始污染菌检验记录",
+    shortTitle: "初始污染菌",
+    type: "检验",
+    description: "记录产品初始污染菌（生物负载）检验过程、结果及判定。",
+    icon: Microscope,
+    sections: [
+      {
+        id: "basic",
+        title: "基础信息",
+        fields: [
+          { id: "docNo", label: "检验单号", type: "text", placeholder: "自动生成" },
+          { id: "sampleName", label: "样品名称", type: "text", placeholder: "填写样品名称" },
+          { id: "batchNo", label: "批号", type: "text", placeholder: "填写批号" },
+          { id: "sampleQty", label: "取样数量", type: "text", placeholder: "填写取样数量" },
+          { id: "inspectionDate", label: "检验日期", type: "date" },
+          { id: "standard", label: "检验依据", type: "text", placeholder: "填写检验依据", colSpan: 2 },
+          { id: "inspector", label: "检验员", type: "text", placeholder: "填写检验员" },
+          { id: "reviewer", label: "复核人", type: "text", placeholder: "填写复核人" },
+          { id: "result", label: "检验结果", type: "text", placeholder: "填写检验结果（如：CFU/件）" },
+          { id: "acceptanceCriteria", label: "合格标准", type: "text", placeholder: "填写合格标准" },
+          { id: "finalResult", label: "结果判定", type: "text", placeholder: "pass/fail" },
+          { id: "remark", label: "备注", type: "textarea", placeholder: "填写备注", colSpan: 2 },
+        ],
+      },
+    ],
+  },
+  {
+    id: "sterility",
+    title: "无菌检验记录",
+    shortTitle: "无菌检验",
+    type: "检验",
+    description: "记录产品无菌检验过程、培养结果及合格判定。",
+    icon: TestTube,
+    sections: [
+      {
+        id: "basic",
+        title: "基础信息",
+        fields: [
+          { id: "docNo", label: "检验单号", type: "text", placeholder: "自动生成" },
+          { id: "sampleName", label: "样品名称", type: "text", placeholder: "填写样品名称" },
+          { id: "batchNo", label: "批号", type: "text", placeholder: "填写批号" },
+          { id: "sampleQty", label: "取样数量", type: "text", placeholder: "填写取样数量" },
+          { id: "inspectionDate", label: "检验日期", type: "date" },
+          { id: "standard", label: "检验依据", type: "text", placeholder: "填写检验依据", colSpan: 2 },
+          { id: "inspector", label: "检验员", type: "text", placeholder: "填写检验员" },
+          { id: "reviewer", label: "复核人", type: "text", placeholder: "填写复核人" },
+          { id: "cultureMethod", label: "培养方法", type: "text", placeholder: "薄膜过滤法/直接接种法" },
+          { id: "cultureTemp", label: "培养温度", type: "text", placeholder: "填写培养温度" },
+          { id: "cultureDays", label: "培养天数", type: "text", placeholder: "填写培养天数" },
+          { id: "result", label: "检验结果", type: "text", placeholder: "填写检验结果（合格/不合格）" },
+          { id: "finalResult", label: "结果判定", type: "text", placeholder: "pass/fail" },
+          { id: "remark", label: "备注", type: "textarea", placeholder: "填写备注", colSpan: 2 },
+        ],
+      },
+    ],
+  },
 ];
 
 const COMMON_FIELD_DEFAULTS: Record<string, string> = {
@@ -401,6 +459,9 @@ type LabRecordView = {
   formData: Record<string, string>;
   createdAt?: string;
   updatedAt?: string;
+  sourceType?: string;
+  sourceId?: number;
+  sourceItemId?: number;
 };
 
 type PwChemicalInspectionRow = {
@@ -1228,6 +1289,19 @@ function buildInitialState(form: LabFormConfig, recordNo = "") {
     next.signatures = "[]";
   }
 
+  if (form.id === "bioburden") {
+    next.finalResult = "pass";
+    next.inspectionDate = new Date().toISOString().split("T")[0];
+  }
+
+  if (form.id === "sterility") {
+    next.finalResult = "pass";
+    next.inspectionDate = new Date().toISOString().split("T")[0];
+    next.cultureMethod = "薄膜过滤法";
+    next.cultureTemp = "23℃和30℃";
+    next.cultureDays = "14";
+  }
+
   return next;
 }
 
@@ -1259,6 +1333,9 @@ function normalizeLabRecord(item: any): LabRecordView {
     formData: item?.formData && typeof item.formData === "object" ? item.formData as Record<string, string> : {},
     createdAt: item?.createdAt ? formatDateValue(item.createdAt) : "",
     updatedAt: item?.updatedAt ? formatDateValue(item.updatedAt) : "",
+    sourceType: item?.sourceType ?? undefined,
+    sourceId: item?.sourceId ? Number(item.sourceId) : undefined,
+    sourceItemId: item?.sourceItemId ? Number(item.sourceItemId) : undefined,
   };
 }
 
@@ -1491,6 +1568,25 @@ function buildRecordPayload(form: LabFormConfig, values: Record<string, string>,
     };
   }
 
+  if (form.id === "bioburden" || form.id === "sterility") {
+    return {
+      recordNo,
+      formId: form.id,
+      formTitle: form.title,
+      formType: form.type,
+      testType: form.shortTitle,
+      specification: values.standard || undefined,
+      result: values.result || undefined,
+      formData,
+      conclusion: (values.finalResult === "fail" ? "fail" : values.finalResult === "pass" ? "pass" : "pending") as "pass" | "fail" | "pending",
+      testDate: values.inspectionDate || undefined,
+      testerName: values.inspector || undefined,
+      reviewerName: values.reviewer || undefined,
+      status: normalizeStatus(values.status) as "pending" | "testing" | "completed" | "reviewed",
+      remark: values.remark || undefined,
+    };
+  }
+
   return {
     recordNo,
     formId: form.id,
@@ -1583,16 +1679,35 @@ function buildRecordViewState(form: LabFormConfig, record: LabRecordView) {
     next.signatures = record.formData.signatures || "[]";
   }
 
+  if (form.id === "bioburden" || form.id === "sterility") {
+    next.finalResult = record.formData.finalResult || (record.conclusion === "fail" ? "fail" : "pass");
+    next.inspector = record.formData.inspector || record.testerName || "";
+    next.reviewer = record.formData.reviewer || record.reviewerName || "";
+    next.inspectionDate = record.formData.inspectionDate || record.testDate || "";
+  }
+
   return next;
 }
 
 export default function LabPage() {
   const [location, setLocation] = useLocation();
-  const [formValues, setFormValues] = useState<Record<string, Record<string, string>>>({});
+  const [formValues, setFormValues] = useState<Record<string, Record<string, string>>>({}); 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [editingRecordId, setEditingRecordId] = useState<number | null>(null);
   const [pendingLoadRecordId, setPendingLoadRecordId] = useState<number | null>(null);
+  // URL 参数：来源信息（从 IQC/OQC 跳转过来时携带）
+  const urlParams = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search);
+    const sourceType = p.get("sourceType") || undefined;
+    const sourceId = p.get("sourceId") ? Number(p.get("sourceId")) : undefined;
+    const sourceItemId = p.get("sourceItemId") ? Number(p.get("sourceItemId")) : undefined;
+    const testType = p.get("testType") || undefined; // "bioburden" | "sterility"
+    const itemName = p.get("itemName") || undefined;
+    if (!sourceType) return null;
+    return { sourceType, sourceId, sourceItemId, testType, itemName };
+  }, []);
   const [viewingRecord, setViewingRecord] = useState<LabRecordView | null>(null);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [viewDialogMaximized, setViewDialogMaximized] = useState(false);
@@ -1607,6 +1722,7 @@ export default function LabPage() {
   const createMutation = trpc.labRecords.create.useMutation();
   const updateMutation = trpc.labRecords.update.useMutation();
   const deleteMutation = trpc.labRecords.delete.useMutation();
+  const completeAndWriteBackMutation = trpc.labRecords.completeAndWriteBack.useMutation();
   const records = useMemo(() => (rawRecords as any[]).map(normalizeLabRecord), [rawRecords]);
   const formRecords = useMemo(
     () => (activeForm ? records.filter((item) => item.formId === activeForm.id) : []),
@@ -1748,6 +1864,32 @@ export default function LabPage() {
         status: String(item.status || ""),
       }));
   }, [productionWarehouseEntriesData, endotoxinProductSpecMap]);
+
+  // URL 参数处理：当有 testType 参数时自动跳转到对应表单
+  const urlParamsHandledRef = useRef(false);
+  useEffect(() => {
+    if (!urlParams || urlParamsHandledRef.current) return;
+    if (isOverviewPage) {
+      // 如果当前在总览页，自动跳转到对应表单
+      const formId = urlParams.testType === "bioburden" ? "bioburden" : urlParams.testType === "sterility" ? "sterility" : null;
+      if (formId) {
+        urlParamsHandledRef.current = true;
+        setLocation(`/quality/lab/${formId}`);
+      }
+    } else if (activeForm && (activeForm.id === "bioburden" || activeForm.id === "sterility")) {
+      // 已在对应表单，自动填充样品名称
+      urlParamsHandledRef.current = true;
+      if (urlParams.itemName) {
+        setFormValues((prev) => ({
+          ...prev,
+          [activeForm.id]: {
+            ...(prev[activeForm.id] || buildInitialState(activeForm, buildLabRecordNo(activeForm.id, records))),
+            sampleName: urlParams.itemName || "",
+          },
+        }));
+      }
+    }
+  }, [urlParams, isOverviewPage, activeForm, records, setLocation]);
 
   useEffect(() => {
     if (!activeForm) {
@@ -2542,6 +2684,10 @@ export default function LabPage() {
       ...payload,
       status: nextStatus,
       conclusion: payload.conclusion,
+      // 来源信息：从 URL 参数中读取
+      ...(urlParams?.sourceType ? { sourceType: urlParams.sourceType } : {}),
+      ...(urlParams?.sourceId ? { sourceId: urlParams.sourceId } : {}),
+      ...(urlParams?.sourceItemId ? { sourceItemId: urlParams.sourceItemId } : {}),
     };
 
     if (!nextPayload.recordNo) {
@@ -2563,11 +2709,31 @@ export default function LabPage() {
         id: editingRecordId,
         data: nextPayload,
       });
-      toast.success(draft ? "草稿已保存" : "实验室记录已更新");
+      // 如果非草稿且有来源项目，自动回写结论
+      if (!draft && urlParams?.sourceItemId && nextPayload.conclusion !== "pending") {
+        await completeAndWriteBackMutation.mutateAsync({
+          labRecordId: editingRecordId,
+          conclusion: nextPayload.conclusion as "pass" | "fail" | "pending",
+          result: nextPayload.result,
+        });
+        toast.success("实验室记录已更新并回写至检验单");
+      } else {
+        toast.success(draft ? "草稿已保存" : "实验室记录已更新");
+      }
     } else {
       const newId = await createMutation.mutateAsync(nextPayload);
       setEditingRecordId(Number(newId));
-      toast.success(draft ? "草稿已创建" : "实验室记录已保存");
+      // 如果非草稿且有来源项目，自动回写结论
+      if (!draft && urlParams?.sourceItemId && nextPayload.conclusion !== "pending") {
+        await completeAndWriteBackMutation.mutateAsync({
+          labRecordId: Number(newId),
+          conclusion: nextPayload.conclusion as "pass" | "fail" | "pending",
+          result: nextPayload.result,
+        });
+        toast.success("实验室记录已保存并回写至检验单");
+      } else {
+        toast.success(draft ? "草稿已创建" : "实验室记录已保存");
+      }
     }
 
     await refetch();

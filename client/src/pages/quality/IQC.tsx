@@ -38,6 +38,7 @@ import { formatDate } from "@/lib/formatters";
 // ==================== 类型 ====================
 type InspectionItemForm = {
   key: string;
+  id?: number;
   requirementItemId?: number;
   itemName: string;
   itemType: "qualitative" | "quantitative";
@@ -53,6 +54,8 @@ type InspectionItemForm = {
   conclusion: "pass" | "fail" | "pending";
   sortOrder: number;
   remark: string;
+  labTestType?: string;
+  labRecordId?: number;
 };
 
 type AttachmentRow = {
@@ -250,6 +253,7 @@ function buildInspectionDraftFromRecord(record: any): SubmitDraftContext {
         : [it?.measuredValue ?? ""];
     return {
       key: newKey(),
+      id: it?.id ?? undefined,
       requirementItemId: it?.requirementItemId,
       itemName: it?.itemName ?? "",
       itemType: it?.itemType ?? "qualitative",
@@ -265,6 +269,8 @@ function buildInspectionDraftFromRecord(record: any): SubmitDraftContext {
       conclusion: it?.conclusion ?? "pending",
       sortOrder: it?.sortOrder ?? 0,
       remark: it?.remark ?? "",
+      labTestType: it?.labTestType ?? undefined,
+      labRecordId: it?.labRecordId ?? undefined,
     };
   });
 
@@ -1139,6 +1145,8 @@ export default function IQCPage() {
           conclusion: it.conclusion,
           sortOrder: idx,
           remark: it.remark || undefined,
+          labTestType: it.labTestType || undefined,
+          labRecordId: it.labRecordId || undefined,
         })),
       };
       if (activeSubmitContext.editId) {
@@ -1769,6 +1777,8 @@ export default function IQCPage() {
                       conclusion: it.conclusion,
                       sortOrder: idx,
                       remark: it.remark || undefined,
+                      labTestType: it.labTestType || undefined,
+                      labRecordId: it.labRecordId || undefined,
                     })),
                   });
                 }}
@@ -2027,6 +2037,38 @@ export default function IQCPage() {
                                   />
                                 </TableCell>
                                 <TableCell>
+                                  {item.labTestType ? (
+                                    <div className="flex flex-col gap-1">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-xs gap-1 text-blue-600 border-blue-300 hover:bg-blue-50"
+                                        onClick={() => {
+                                          const labType = item.labTestType === "bioburden" ? "bioburden" : "sterility";
+                                          const iqcId = editId;
+                                          const params = new URLSearchParams({
+                                            sourceType: "iqc",
+                                            ...(iqcId ? { sourceId: String(iqcId) } : {}),
+                                            ...(item.id ? { sourceItemId: String(item.id) } : {}),
+                                            testType: labType,
+                                            itemName: item.itemName,
+                                          });
+                                          window.open(`/quality/lab?${params.toString()}`, "_blank");
+                                        }}
+                                      >
+                                        进入实验室
+                                      </Button>
+                                      {item.labRecordId && (
+                                        <span className="text-xs text-muted-foreground">已关联记录#{item.labRecordId}</span>
+                                      )}
+                                      {item.conclusion !== "pending" && (
+                                        <Badge variant={item.conclusion === "pass" ? "default" : "destructive"} className="text-xs w-fit">
+                                          {item.conclusion === "pass" ? "实验合格" : "实验不合格"}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  ) : (
                                   <div className="flex items-center gap-1 flex-wrap">
                                     {item.itemType === "qualitative" ? (
                                       Array.from({ length: item.sampleCount }).map((_, si) => (
@@ -2078,6 +2120,7 @@ export default function IQCPage() {
                                       </>
                                     )}
                                   </div>
+                                  )}
                                 </TableCell>
                                 <TableCell className="pl-4">
                                   <Select

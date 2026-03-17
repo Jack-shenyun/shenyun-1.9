@@ -2159,6 +2159,9 @@ export const labRecords = mysqlTable("lab_records", {
     .default("pending")
     .notNull(),
   remark: text("remark"),
+  sourceType: varchar("sourceType", { length: 20 }),
+  sourceId: int("sourceId"),
+  sourceItemId: int("sourceItemId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -2983,6 +2986,7 @@ export const inspectionRequirementItems = mysqlTable(
     acceptedValues: varchar("acceptedValues", { length: 500 }),
     sortOrder: int("sortOrder").default(0),
     remark: text("remark"),
+    labTestType: varchar("labTestType", { length: 50 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   }
 );
@@ -3067,6 +3071,8 @@ export const iqcInspectionItems = mysqlTable("iqc_inspection_items", {
     .notNull(),
   sortOrder: int("sortOrder").default(0),
   remark: text("remark"),
+  labTestType: varchar("labTestType", { length: 50 }),
+  labRecordId: int("labRecordId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type IqcInspectionItem = typeof iqcInspectionItems.$inferSelect;

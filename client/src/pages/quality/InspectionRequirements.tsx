@@ -48,6 +48,7 @@ type RequirementItem = {
   acceptedValues: string;
   sortOrder: number;
   remark: string;
+  labTestType: string;
   children: RequirementChildItem[];
 };
 
@@ -130,7 +131,7 @@ function emptyItem(): RequirementItem {
   return {
     key: newKey(), itemName: "", itemType: "qualitative",
     standard: "", minVal: "", maxVal: "", unit: "",
-    acceptedValues: "", sortOrder: 0, remark: "", children: [],
+    acceptedValues: "", sortOrder: 0, remark: "", labTestType: "", children: [],
   };
 }
 
@@ -241,6 +242,7 @@ export default function InspectionRequirementsPage() {
               acceptedValues: it.acceptedValues ?? "",
               sortOrder: it.sortOrder ?? 0,
               remark: parsedRemark.note,
+              labTestType: it.labTestType ?? "",
               children: parsedRemark.children,
             } as RequirementItem;
           })
@@ -303,13 +305,14 @@ export default function InspectionRequirementsPage() {
             minVal: it.minVal ?? "",
             maxVal: it.maxVal ?? "",
             unit: it.unit ?? "",
-            acceptedValues: it.acceptedValues ?? "",
-            sortOrder: it.sortOrder ?? 0,
-            remark: parsedRemark.note,
-            children: parsedRemark.children,
-          } as RequirementItem;
-        })
-      : [emptyItem()];
+              acceptedValues: it.acceptedValues ?? "",
+              sortOrder: it.sortOrder ?? 0,
+              remark: parsedRemark.note,
+              labTestType: it.labTestType ?? "",
+              children: parsedRemark.children,
+            } as RequirementItem;
+          })
+        : [emptyItem()];
     setItems(mappedItems);
   }, [editDetail, editId, showForm]);
 
@@ -346,6 +349,7 @@ export default function InspectionRequirementsPage() {
         acceptedValues: it.acceptedValues || undefined,
         sortOrder: idx,
         remark: buildRequirementItemRemark(it),
+        labTestType: it.labTestType || undefined,
       })),
     };
     if (editId) {
@@ -780,7 +784,7 @@ export default function InspectionRequirementsPage() {
                 </Button>
               </div>
               <div className="border rounded-lg overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
-                <Table className={`table-fixed ${formData.type === "OQC" ? "min-w-[1420px]" : "min-w-[1280px]"}`}>
+                <Table className={`table-fixed ${formData.type === "OQC" ? "min-w-[1560px]" : "min-w-[1420px]"}`}>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-10">#</TableHead>
@@ -791,6 +795,7 @@ export default function InspectionRequirementsPage() {
                       <TableHead className="w-[96px]">最大值</TableHead>
                       <TableHead className="w-[88px]">单位</TableHead>
                       <TableHead className="w-[300px]">合格判定值</TableHead>
+                      <TableHead className="w-[140px]">实验室检验</TableHead>
                       {formData.type === "OQC" && <TableHead className="w-[140px]">二级明细</TableHead>}
                       <TableHead className="w-10"></TableHead>
                     </TableRow>
@@ -897,6 +902,25 @@ export default function InspectionRequirementsPage() {
                             className="h-8 text-sm"
                             disabled={item.itemType !== "qualitative"}
                           />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={item.labTestType || ""}
+                            onValueChange={(v) => {
+                              const next = [...formItems];
+                              next[idx] = { ...next[idx], labTestType: v };
+                              setFormItems(next);
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue placeholder="无" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">无</SelectItem>
+                              <SelectItem value="bioburden">初始污染菌</SelectItem>
+                              <SelectItem value="sterility">无菌检验</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         {formData.type === "OQC" && (
                           <TableCell>

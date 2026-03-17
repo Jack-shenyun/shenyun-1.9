@@ -81,6 +81,8 @@ const statusMap: Record<string, any> = {
   inspecting: { label: "检验中", variant: "default" as const, color: "text-blue-600" },
   qualified: { label: "合格", variant: "secondary" as const, color: "text-green-600" },
   unqualified: { label: "不合格", variant: "destructive" as const, color: "text-red-600" },
+  conditional: { label: "条件合格", variant: "outline" as const, color: "text-yellow-600" },
+  draft: { label: "草稿", variant: "outline" as const, color: "text-gray-400" },
 };
 
 const inspectionTypeMap: Record<string, any> = {
@@ -156,6 +158,10 @@ export default function IPQCPage() {
   const deleteMutation = trpc.qualityInspections.delete.useMutation({
     onSuccess: () => { refetch(); toast.success("检验记录已删除"); },
     onError: (e) => toast.error("删除失败", { description: e.message }),
+  });
+  const saveDraftMutation = trpc.qualityInspections.saveDraft.useMutation({
+    onSuccess: () => { refetch(); toast.success("草稿已保存"); },
+    onError: (e) => toast.error("草稿保存失败", { description: e.message }),
   });
 
   const data: IPQCRecord[] = useMemo(
@@ -409,12 +415,44 @@ export default function IPQCPage() {
     setFormData({ ...formData, inspectionItems: newItems });
   };
 
-  // 统计信息
+  // 统计信息（排除草稿）
+  const statsData = data.filter((r) => (r.result as string) !== "draft");
   const stats = {
-    total: data.length,
-    pending: data.filter((r) => r.result === "pending").length,
-    qualified: data.filter((r) => r.result === "qualified").length,
-    unqualified: data.filter((r) => r.result === "unqualified").length,
+    total: statsData.length,
+    pending: statsData.filter((r) => r.result === "pending").length,
+    qualified: statsData.filter((r) => r.result === "qualified").length,
+    unqualified: statsData.filter((r) => r.result === "unqualified").length,
+  };
+
+  const handleSaveDraft = () => {
+    if (!formData.productName) {
+      toast.error("请填写产品名称");
+      return;
+    }
+    const extraData = {
+      productCode: formData.productCode,
+      process: formData.process,
+      inspectionType: formData.inspectionType,
+      result: formData.result,
+      inspector: formData.inspector,
+      workstation: formData.workstation,
+      remarks: formData.remarks,
+      inspectionItems: formData.inspectionItems,
+      signatures: [],
+    };
+    const year = new Date().getFullYear();
+    const mm = String(new Date().getMonth() + 1).padStart(2, "0");
+    const dd = String(new Date().getDate()).padStart(2, "0");
+    saveDraftMutation.mutate({
+      id: isEditing && selectedRecord ? Number(selectedRecord.id) : undefined,
+      inspectionNo: isEditing && selectedRecord ? selectedRecord.inspectionNo : `IPQC-${year}-${mm}${dd}-${String(Date.now()).slice(-4)}`,
+      type: "IPQC",
+      itemName: formData.productName,
+      batchNo: formData.batchNo || undefined,
+      relatedDocNo: formData.productCode || undefined,
+      inspectionDate: formData.inspectionDate || undefined,
+      remark: JSON.stringify(extraData),
+    });
   };
   const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
@@ -581,6 +619,14 @@ export default function IPQCPage() {
                   title={isEditing && selectedRecord ? `过程检验表单 - ${selectedRecord.inspectionNo}` : "新建过程检验"}
                   targetRef={formPrintRef}
                 />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleSaveDraft}
+                  disabled={saveDraftMutation.isPending}
+                >
+                  {saveDraftMutation.isPending ? "保存中..." : "保存草稿"}
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -900,6 +946,7 @@ export default function IPQCPage() {
               <SelectItem value="inspecting">检验中</SelectItem>
               <SelectItem value="qualified">合格</SelectItem>
               <SelectItem value="unqualified">不合格</SelectItem>
+              <SelectItem value="draft">草稿</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -1251,6 +1298,13 @@ export default function IPQCPage() {
                     取消
                   </Button>
                   <Button
+                    variant="ghost"
+                    onClick={handleSaveDraft}
+                    disabled={saveDraftMutation.isPending}
+                  >
+                    {saveDraftMutation.isPending ? "保存中..." : "保存草稿"}
+                  </Button>
+                  <Button
                     onClick={requestSubmitWithSignature}
                     disabled={createMutation.isPending || updateMutation.isPending}
                   >
@@ -1347,23 +1401,11 @@ export default function IPQCPage() {
 </DraggableDialog>
 )}
         <DraggableDialog open={signatureDialogOpen} onOpenChange={setSignatureDialogOpen}>
-          <DraggableDialogContent title="电子签名验证" className="max-w-md">
+          <DraggableDialogContent title="电子签名验证" className="max-w-xs">
             <div className="space-y-4 py-2">
-              <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">签名动作</span>
-                  <span className="font-medium">
-                    {getNextSignatureType(signatures) === "reviewer" ? "复核员签名" : "检验员签名"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">当前用户</span>
-                  <span className="font-medium">{String((user as any)?.name || formData.inspector || "-")}</span>
-                </div>
-              </div>
               <div className="space-y-2">
                 <div className="text-sm text-muted-foreground">
-                  请输入当前登录密码后继续保存，本次电子签名会与保存动作一起落库。
+                  请输入登录密码完成签名
                 </div>
                 <Input
                   type="password"

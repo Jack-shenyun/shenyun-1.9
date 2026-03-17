@@ -7406,13 +7406,16 @@ export async function getQualityInspections(params?: {
     );
   }
 
-  if (params?.result) {
+  if (params?.result && params.result !== "all") {
     conditions.push(
       eq(
         qualityInspections.result,
-        params.result as "qualified" | "unqualified" | "conditional"
+        params.result as "qualified" | "unqualified" | "conditional" | "draft" as any
       )
     );
+  } else if (!params?.result || params.result === "all") {
+    // 全部状态时排除草稿
+    conditions.push(ne(qualityInspections.result, "draft" as any));
   }
 
   if (conditions.length > 0) {
@@ -19627,6 +19630,9 @@ async function ensureLabRecordsExtendedColumns(
     { name: "formData", def: "JSON NULL" },
     { name: "testerName", def: "VARCHAR(100) NULL" },
     { name: "reviewerName", def: "VARCHAR(100) NULL" },
+    { name: "sourceType", def: "VARCHAR(50) NULL" },
+    { name: "sourceId", def: "INT NULL" },
+    { name: "sourceItemId", def: "INT NULL" },
   ];
 
   try {
@@ -20317,6 +20323,61 @@ export async function deleteLabRecord(id: number, deletedBy?: number) {
     sourceTable: "lab_records",
     deletedBy,
   });
+}
+
+// ==================== 实验室记录关联查询与回写 ====================
+
+export async function getLabRecordsBySource(params: {
+  sourceType: string;
+  sourceId: number;
+  sourceItemId?: number;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureLabRecordsExtendedColumns(db);
+  const conditions = [
+    eq(labRecords.sourceType as any, params.sourceType),
+    eq(labRecords.sourceId as any, params.sourceId),
+  ];
+  if (params.sourceItemId !== undefined) {
+    conditions.push(eq(labRecords.sourceItemId as any, params.sourceItemId));
+  }
+  return await db
+    .select()
+    .from(labRecords)
+    .where(and(...conditions))
+    .orderBy(desc(labRecords.createdAt));
+}
+
+export async function completeLabRecordAndWriteBack(
+  labRecordId: number,
+  conclusion: "pass" | "fail" | "pending",
+  result?: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("数据库连接不可用");
+  await ensureLabRecordsExtendedColumns(db);
+  // 更新实验室记录状态
+  await db
+    .update(labRecords)
+    .set({ status: "completed", conclusion, result } as any)
+    .where(eq(labRecords.id, labRecordId));
+  // 查询实验室记录，获取 sourceType/sourceId/sourceItemId
+  const [labRecord] = await db
+    .select()
+    .from(labRecords)
+    .where(eq(labRecords.id, labRecordId))
+    .limit(1);
+  if (!labRecord) return { success: true };
+  const { sourceType, sourceId, sourceItemId } = labRecord as any;
+  // 回写到 IQC 检验项目
+  if (sourceType === "iqc" && sourceItemId) {
+    await db
+      .update(iqcInspectionItems)
+      .set({ conclusion, labRecordId } as any)
+      .where(eq(iqcInspectionItems.id, sourceItemId));
+  }
+  return { success: true };
 }
 
 // ==================== 应收账款 CRUD ====================
@@ -25624,6 +25685,7 @@ export async function ensureInspectionRequirementsTable(
     { name: "standardRequirement", ddl: "standardRequirement TEXT NULL" },
     { name: "standardBasis", ddl: "standardBasis TEXT NULL" },
     { name: "inspectionRequirement", ddl: "inspectionRequirement TEXT NULL" },
+    { name: "labTestType", ddl: "labTestType VARCHAR(50) NULL" },
   ]);
   inspectionRequirementsTableReady = true;
 }
@@ -25700,6 +25762,7 @@ export async function createInspectionRequirement(data: {
     acceptedValues?: string;
     sortOrder?: number;
     remark?: string;
+    labTestType?: string;
   }>;
 }) {
   const db = await getDb();
@@ -25751,10 +25814,11 @@ export async function updateInspectionRequirement(
       minValue?: string;
       maxValue?: string;
       unit?: string;
-      acceptedValues?: string;
-      sortOrder?: number;
-      remark?: string;
-    }>;
+        acceptedValues?: string;
+    sortOrder?: number;
+    remark?: string;
+    labTestType?: string;
+  }>;
   }
 ) {
   const db = await getDb();
@@ -25904,6 +25968,27 @@ export async function ensureIqcInspectionsTable(
       if (!/Duplicate column name|already exists|1060/i.test(msg)) {
         console.warn(
           `[DB] Could not add column ${col.name} to iqc_inspections:`,
+          msg
+        );
+      }
+    }
+  }
+  // 动态添加 iqc_inspection_items 新字段
+  const iqcItemNewCols = [
+    { name: "sampleValues", ddl: "sampleValues TEXT NULL" },
+    { name: "labTestType", ddl: "labTestType VARCHAR(50) NULL" },
+    { name: "labRecordId", ddl: "labRecordId INT NULL" },
+  ];
+  for (const col of iqcItemNewCols) {
+    try {
+      await db.execute(
+        sql.raw(`ALTER TABLE iqc_inspection_items ADD COLUMN ${col.ddl}`)
+      );
+    } catch (err) {
+      const msg = String((err as any)?.message ?? "");
+      if (!/Duplicate column name|already exists|1060/i.test(msg)) {
+        console.warn(
+          `[DB] Could not add column ${col.name} to iqc_inspection_items:`,
           msg
         );
       }
@@ -26430,6 +26515,8 @@ export async function createIqcInspection(data: {
     conclusion?: string;
     sortOrder?: number;
     remark?: string;
+    labTestType?: string;
+    labRecordId?: number;
   }>;
 }) {
   const db = await getDb();
@@ -26495,11 +26582,13 @@ export async function updateIqcInspection(
       measuredValue?: string;
       sampleValues?: string;
       acceptedValues?: string;
-      actualValue?: string;
-      conclusion?: string;
-      sortOrder?: number;
-      remark?: string;
-    }>;
+    actualValue?: string;
+    conclusion?: string;
+    sortOrder?: number;
+    remark?: string;
+    labTestType?: string;
+    labRecordId?: number;
+  }>;
   }
 ) {
   const db = await getDb();
