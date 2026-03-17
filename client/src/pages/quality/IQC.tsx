@@ -2249,49 +2249,25 @@ export default function IQCPage() {
       </DraggableDialog>
 
       <DraggableDialog open={signatureDialogOpen} onOpenChange={setSignatureDialogOpen}>
-        <DraggableDialogContent title="电子签名验证" className="max-w-md">
-          <div className="space-y-4 py-2">
-            <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">检验单号</span>
-                <span className="font-medium">{formData.inspectionNo || "-"}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">签名动作</span>
-                <span className="font-medium">
-                  {getNextSignatureType(signatures, isReviewerRequiredForResult(pendingSubmitResult)) === "reviewer" ? "复核员签名" : "检验员签名"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">当前用户</span>
-                <span className="font-medium">{String((user as any)?.name || formData.inspectorName || "-")}</span>
-              </div>
-              {getNextSignatureType(signatures, isReviewerRequiredForResult(pendingSubmitResult)) === "reviewer" && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">指定复核人</span>
-                  <span className="font-medium">{formData.reviewerName || "-"}</span>
-                </div>
-              )}
-            </div>
-            <div className="space-y-2">
-              <div className="text-sm text-muted-foreground">
-                请输入当前登录密码后继续保存，本次电子签名会与保存动作一起落库。
-              </div>
-              <Input
-                type="password"
-                value={signaturePassword}
-                onChange={(e) => setSignaturePassword(e.target.value)}
-                placeholder="请输入当前用户密码"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleSignatureConfirm();
-                  }
-                }}
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
+        <DraggableDialogContent title="电子签名" className="max-w-xs">
+          <div className="space-y-3 py-1">
+            <p className="text-sm text-muted-foreground">请输入登录密码完成签名</p>
+            <Input
+              type="password"
+              value={signaturePassword}
+              onChange={(e) => setSignaturePassword(e.target.value)}
+              placeholder="密码"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSignatureConfirm();
+                }
+              }}
+            />
+            <div className="flex justify-end gap-2">
               <Button
+                size="sm"
                 variant="outline"
                 onClick={() => {
                   setSignatureDialogOpen(false);
@@ -2301,8 +2277,8 @@ export default function IQCPage() {
               >
                 取消
               </Button>
-              <Button onClick={handleSignatureConfirm} disabled={verifyPasswordMutation.isPending}>
-                {verifyPasswordMutation.isPending ? "验证中..." : "确认并保存"}
+              <Button size="sm" onClick={handleSignatureConfirm} disabled={verifyPasswordMutation.isPending}>
+                {verifyPasswordMutation.isPending ? "验证中..." : "确认"}
               </Button>
             </div>
           </div>
