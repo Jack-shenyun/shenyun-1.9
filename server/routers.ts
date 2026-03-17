@@ -17549,6 +17549,7 @@ export const appRouter = router({
               sortOrder: z.number().optional(),
               remark: z.string().optional(),
               labTestType: z.string().optional(),
+              boundEquipmentIds: z.string().optional(),
             })
           ),
         })
@@ -17588,6 +17589,7 @@ export const appRouter = router({
               sortOrder: z.number().optional(),
               remark: z.string().optional(),
               labTestType: z.string().optional(),
+              boundEquipmentIds: z.string().optional(),
             })
           )
           .optional(),
@@ -17674,6 +17676,7 @@ export const appRouter = router({
               sortOrder: z.number().optional(),
               remark: z.string().optional(),
               labTestType: z.string().optional(),
+              boundEquipmentIds: z.string().optional(),
               labRecordId: z.number().optional(),
             })
           ),
@@ -17721,6 +17724,7 @@ export const appRouter = router({
               sortOrder: z.number().optional(),
               remark: z.string().optional(),
               labTestType: z.string().optional(),
+              boundEquipmentIds: z.string().optional(),
               labRecordId: z.number().optional(),
             })
           )

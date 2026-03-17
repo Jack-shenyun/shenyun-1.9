@@ -53,6 +53,7 @@ type RequirementItem = {
   sortOrder: number;
   remark: string;
   labTestType: string;
+  boundEquipmentIds: number[];
   children: RequirementChildItem[];
 };
 
@@ -135,7 +136,7 @@ function emptyItem(): RequirementItem {
   return {
     key: newKey(), itemName: "", itemType: "qualitative",
     standard: "", minVal: "", maxVal: "", unit: "",
-    acceptedValues: "", sortOrder: 0, remark: "", labTestType: "", children: [],
+    acceptedValues: "", sortOrder: 0, remark: "", labTestType: "", boundEquipmentIds: [], children: [],
   };
 }
 
@@ -167,6 +168,33 @@ export default function InspectionRequirementsPage() {
   // 产品列表
   const { data: rawProducts = [] } = trpc.products.list.useQuery({});
   const products = rawProducts as any[];
+
+  // 设备多选弹窗
+  const [showEquipmentPicker, setShowEquipmentPicker] = useState(false);
+  const [equipmentPickerItemIdx, setEquipmentPickerItemIdx] = useState<number | null>(null);
+  const [equipmentPickerSearch, setEquipmentPickerSearch] = useState("");
+  const [equipmentPickerSelected, setEquipmentPickerSelected] = useState<number[]>([]);
+  const { data: rawEquipmentList = [] } = trpc.equipment.list.useQuery({ limit: 500 });
+  const equipmentList = rawEquipmentList as any[];
+  const filteredEquipmentList = equipmentPickerSearch
+    ? equipmentList.filter((e: any) => e.name?.includes(equipmentPickerSearch) || e.code?.includes(equipmentPickerSearch))
+    : equipmentList;
+
+  function openEquipmentPicker(idx: number) {
+    setEquipmentPickerItemIdx(idx);
+    setEquipmentPickerSelected([...(formItems[idx]?.boundEquipmentIds ?? [])]);
+    setEquipmentPickerSearch("");
+    setShowEquipmentPicker(true);
+  }
+
+  function confirmEquipmentPicker() {
+    if (equipmentPickerItemIdx === null) return;
+    const next = [...formItems];
+    next[equipmentPickerItemIdx] = { ...next[equipmentPickerItemIdx], boundEquipmentIds: [...equipmentPickerSelected] };
+    setFormItems(next);
+    setShowEquipmentPicker(false);
+    setEquipmentPickerItemIdx(null);
+  }
 
   // 明细弹窗
   const [detailDialogId, setDetailDialogId] = useState<number | null>(null);
@@ -253,6 +281,7 @@ export default function InspectionRequirementsPage() {
               sortOrder: it.sortOrder ?? 0,
               remark: parsedRemark.note,
               labTestType: it.labTestType ?? "",
+              boundEquipmentIds: (() => { try { return JSON.parse(it.boundEquipmentIds || "[]"); } catch { return []; } })(),
               children: parsedRemark.children,
             } as RequirementItem;
           })
@@ -319,6 +348,7 @@ export default function InspectionRequirementsPage() {
               sortOrder: it.sortOrder ?? 0,
               remark: parsedRemark.note,
               labTestType: it.labTestType ?? "",
+              boundEquipmentIds: (() => { try { return JSON.parse(it.boundEquipmentIds || "[]"); } catch { return []; } })(),
               children: parsedRemark.children,
             } as RequirementItem;
           })
@@ -360,6 +390,7 @@ export default function InspectionRequirementsPage() {
         sortOrder: idx,
         remark: buildRequirementItemRemark(it),
         labTestType: it.labTestType || undefined,
+        boundEquipmentIds: it.boundEquipmentIds?.length ? JSON.stringify(it.boundEquipmentIds) : undefined,
       })),
     };
     if (editId) {
@@ -609,6 +640,83 @@ export default function InspectionRequirementsPage() {
         </Tabs>
       </div>
 
+      {/* 设备多选弹窗 */}
+      <Dialog open={showEquipmentPicker} onOpenChange={(open) => { if (!open) setShowEquipmentPicker(false); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>选择绑定设备</DialogTitle>
+          </DialogHeader>
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="搜索设备名称、编号..."
+              value={equipmentPickerSearch}
+              onChange={(e) => setEquipmentPickerSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto border rounded-md">
+            {filteredEquipmentList.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">暂无设备数据</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10"></TableHead>
+                    <TableHead>设备编号</TableHead>
+                    <TableHead>设备名称</TableHead>
+                    <TableHead>型号规格</TableHead>
+                    <TableHead>位置</TableHead>
+                    <TableHead>状态</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredEquipmentList.map((eq: any) => {
+                    const checked = equipmentPickerSelected.includes(eq.id);
+                    return (
+                      <TableRow
+                        key={eq.id}
+                        className="cursor-pointer hover:bg-muted/40"
+                        onClick={() => {
+                          setEquipmentPickerSelected((prev) =>
+                            checked ? prev.filter((id) => id !== eq.id) : [...prev, eq.id]
+                          );
+                        }}
+                      >
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {}}
+                            className="h-4 w-4 cursor-pointer"
+                          />
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">{eq.code ?? "-"}</TableCell>
+                        <TableCell className="font-medium">{eq.name}</TableCell>
+                        <TableCell className="text-muted-foreground">{eq.model ?? "-"}</TableCell>
+                        <TableCell className="text-muted-foreground">{eq.location ?? "-"}</TableCell>
+                        <TableCell>
+                          <Badge variant={eq.status === "normal" ? "default" : "secondary"}>
+                            {eq.status === "normal" ? "正常" : eq.status === "maintenance" ? "保养" : eq.status === "repair" ? "维修" : "报废"}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          {equipmentPickerSelected.length > 0 && (
+            <p className="mt-2 text-sm text-muted-foreground">已选 {equipmentPickerSelected.length} 台设备</p>
+          )}
+          <div className="mt-3 flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowEquipmentPicker(false)}>取消</Button>
+            <Button onClick={confirmEquipmentPicker}>确定</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* 检验项目明细弹窗 */}
       <Dialog open={!!detailDialogId} onOpenChange={(open) => { if (!open) { setDetailDialogId(null); setDetailDialogReq(null); } }}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
@@ -842,7 +950,7 @@ export default function InspectionRequirementsPage() {
                       <TableHead className="w-[96px]">最大值</TableHead>
                       <TableHead className="w-[88px]">单位</TableHead>
                       <TableHead className="w-[300px]">合格判定值</TableHead>
-                      <TableHead className="w-[140px]">实验室检验</TableHead>
+                      <TableHead className="w-[160px]">绑定设备</TableHead>
                       {formData.type === "OQC" && <TableHead className="w-[140px]">二级明细</TableHead>}
                       <TableHead className="w-10"></TableHead>
                     </TableRow>
@@ -951,23 +1059,25 @@ export default function InspectionRequirementsPage() {
                           />
                         </TableCell>
                         <TableCell>
-                          <Select
-                            value={item.labTestType || "none"}
-                            onValueChange={(v) => {
-                              const next = [...formItems];
-                              next[idx] = { ...next[idx], labTestType: v === "none" ? "" : v };
-                              setFormItems(next);
-                            }}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 w-full justify-start text-sm font-normal"
+                            onClick={() => openEquipmentPicker(idx)}
                           >
-                            <SelectTrigger className="h-8 text-sm">
-                              <SelectValue placeholder="无" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">无</SelectItem>
-                              <SelectItem value="bioburden">初始污染菌</SelectItem>
-                              <SelectItem value="sterility">无菌检验</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            {(item.boundEquipmentIds?.length ?? 0) > 0
+                              ? (
+                                <span className="truncate">
+                                  {item.boundEquipmentIds.map((id) => {
+                                    const eq = equipmentList.find((e: any) => e.id === id);
+                                    return eq ? (eq.code ? `${eq.code} ${eq.name}` : eq.name) : `#${id}`;
+                                  }).join("、")}
+                                </span>
+                              )
+                              : <span className="text-muted-foreground">点击选择设备</span>
+                            }
+                          </Button>
                         </TableCell>
                         {formData.type === "OQC" && (
                           <TableCell>

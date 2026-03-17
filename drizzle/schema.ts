@@ -2987,6 +2987,7 @@ export const inspectionRequirementItems = mysqlTable(
     sortOrder: int("sortOrder").default(0),
     remark: text("remark"),
     labTestType: varchar("labTestType", { length: 50 }),
+    boundEquipmentIds: text("boundEquipmentIds"), // JSON array of equipment IDs
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   }
 );

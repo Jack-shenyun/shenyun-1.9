@@ -25686,6 +25686,7 @@ export async function ensureInspectionRequirementsTable(
     { name: "standardBasis", ddl: "standardBasis TEXT NULL" },
     { name: "inspectionRequirement", ddl: "inspectionRequirement TEXT NULL" },
     { name: "labTestType", ddl: "labTestType VARCHAR(50) NULL" },
+    { name: "boundEquipmentIds", ddl: "boundEquipmentIds TEXT NULL" },
   ]);
   inspectionRequirementsTableReady = true;
 }
@@ -25763,6 +25764,7 @@ export async function createInspectionRequirement(data: {
     sortOrder?: number;
     remark?: string;
     labTestType?: string;
+    boundEquipmentIds?: string;
   }>;
 }) {
   const db = await getDb();
@@ -25818,6 +25820,7 @@ export async function updateInspectionRequirement(
     sortOrder?: number;
     remark?: string;
     labTestType?: string;
+    boundEquipmentIds?: string;
   }>;
   }
 ) {
