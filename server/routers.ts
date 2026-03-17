@@ -8151,6 +8151,46 @@ export const appRouter = router({
         await deleteQualityInspection(input.id);
         return { success: true };
       }),
+    saveDraft: protectedProcedure
+      .input(
+        z.object({
+          id: z.number().optional(),
+          inspectionNo: z.string(),
+          type: z.enum(["IQC", "IPQC", "OQC"]),
+          relatedDocNo: z.string().optional(),
+          itemName: z.string(),
+          batchNo: z.string().optional(),
+          productionOrderId: z.number().optional(),
+          productionOrderNo: z.string().optional(),
+          sterilizationOrderId: z.number().optional(),
+          sterilizationOrderNo: z.string().optional(),
+          sampleQty: z.string().optional(),
+          inspectedQty: z.string().optional(),
+          qualifiedQty: z.string().optional(),
+          unqualifiedQty: z.string().optional(),
+          inspectorId: z.number().optional(),
+          inspectionDate: z.string().optional(),
+          remark: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const { id, inspectionDate, ...rest } = input;
+        const draftData = {
+          ...rest,
+          result: "draft" as any,
+          inspectionDate: inspectionDate ? new Date(inspectionDate) : undefined,
+        };
+        if (id) {
+          await updateQualityInspection(id, draftData);
+          return { id };
+        } else {
+          const newId = await createQualityInspection({
+            ...draftData,
+            inspectorId: input.inspectorId || ctx.user?.id,
+          });
+          return { id: newId };
+        }
+      }),
   }),
 
   // ==================== BOM 物料清单 ====================
@@ -12696,10 +12736,10 @@ export const appRouter = router({
             closeDate: z.string().optional(),
             status: z
               .enum([
-                "open",
+                "draft",
+                "reported",
                 "investigating",
-                "correcting",
-                "verifying",
+                "resolved",
                 "closed",
               ])
               .optional(),
@@ -12773,7 +12813,7 @@ export const appRouter = router({
           samplingDate: z.string().optional(),
           expiryDate: z.string().optional(),
           status: z
-            .enum(["stored", "testing", "used", "expired", "destroyed"])
+            .enum(["draft", "stored", "retained", "testing", "used", "expired", "destroyed"])
             .optional(),
           remark: z.string().optional(),
         })
@@ -12799,7 +12839,7 @@ export const appRouter = router({
             storageLocation: z.string().optional(),
             storageCondition: z.string().optional(),
             status: z
-              .enum(["stored", "testing", "used", "expired", "destroyed"])
+              .enum(["draft", "stored", "retained", "testing", "used", "expired", "destroyed"])
               .optional(),
             remark: z.string().optional(),
           }),

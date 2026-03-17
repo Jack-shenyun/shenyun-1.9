@@ -697,7 +697,7 @@ export const qualityInspections = mysqlTable("quality_inspections", {
   inspectedQty: decimal("inspectedQty", { precision: 12, scale: 4 }), // 检验数量
   qualifiedQty: decimal("qualifiedQty", { precision: 12, scale: 4 }), // 合格数量
   unqualifiedQty: decimal("unqualifiedQty", { precision: 12, scale: 4 }), // 不合格数量
-  result: mysqlEnum("result", ["qualified", "unqualified", "conditional"]), // 检验结论
+  result: mysqlEnum("result", ["qualified", "unqualified", "conditional", "draft"]), // 检验结论
   inspectorId: int("inspectorId"),
   inspectionDate: date("inspectionDate"),
   remark: text("remark"),
@@ -2069,13 +2069,13 @@ export const qualityIncidents = mysqlTable("quality_incidents", {
   reportDate: date("reportDate"),
   closeDate: date("closeDate"),
   status: mysqlEnum("status", [
-    "open",
+    "draft",
+    "reported",
     "investigating",
-    "correcting",
-    "verifying",
+    "resolved",
     "closed",
   ])
-    .default("open")
+    .default("reported")
     .notNull(),
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -2110,7 +2110,9 @@ export const samples = mysqlTable("samples", {
   expiryDate: date("expiryDate"),
   samplerId: int("samplerId"),
   status: mysqlEnum("status", [
+    "draft",
     "stored",
+    "retained",
     "testing",
     "used",
     "expired",

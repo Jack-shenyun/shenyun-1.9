@@ -76,6 +76,8 @@ interface SampleRecord {
 }
 
 const statusMap: Record<string, any> = {
+  draft: { label: "草稿", variant: "outline" as const },
+  stored: { label: "已入库", variant: "secondary" as const },
   retained: { label: "留样中", variant: "default" as const },
   testing: { label: "检验中", variant: "secondary" as const },
   expired: { label: "已过期", variant: "destructive" as const },
@@ -262,15 +264,16 @@ export default function SamplesPage() {
     return date.toISOString().split("T")[0];
   };
 
-  const retainedCount = samples.filter((s: any) => s.status === "retained").length;
-  const nearExpiryCount = samples.filter((s: any) => {
+  const nonDraftSamples = samples.filter((s: any) => s.status !== "draft");
+  const retainedCount = nonDraftSamples.filter((s: any) => s.status === "retained").length;
+  const nearExpiryCount = nonDraftSamples.filter((s: any) => {
     if (s.status !== "retained") return false;
     const expiry = new Date(s.expiryDate);
     const today = new Date();
     const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     return diffDays <= 90 && diffDays > 0;
   }).length;
-  const expiredCount = samples.filter((s: any) => s.status === "expired").length;
+  const expiredCount = nonDraftSamples.filter((s: any) => s.status === "expired").length;
   const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
       <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
@@ -309,7 +312,7 @@ export default function SamplesPage() {
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">留样总数</p>
-              <p className="text-2xl font-bold">{samples.length}</p>
+              <p className="text-2xl font-bold">{nonDraftSamples.length}</p>
             </CardContent>
           </Card>
           <Card>
@@ -355,6 +358,7 @@ export default function SamplesPage() {
                   <SelectItem value="testing">检验中</SelectItem>
                   <SelectItem value="expired">已过期</SelectItem>
                   <SelectItem value="destroyed">已销毁</SelectItem>
+                  <SelectItem value="draft">草稿</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -656,6 +660,31 @@ export default function SamplesPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 取消
+              </Button>
+              <Button variant="ghost" onClick={() => {
+                if (!formData.productName || !formData.batchNo) { toast.error("请填写必填项"); return; }
+                const draftData = {
+                  productName: formData.productName,
+                  productCode: formData.productCode || undefined,
+                  batchNo: formData.batchNo,
+                  quantity: formData.quantity || undefined,
+                  unit: formData.unit || undefined,
+                  location: formData.location || undefined,
+                  retainDate: formData.retainDate || undefined,
+                  expiryDate: formData.expiryDate || undefined,
+                  retainPeriod: formData.retainPeriod,
+                  retainBy: formData.retainBy || undefined,
+                  status: "draft" as any,
+                  observationRecords: formData.observationRecords || undefined,
+                  remarks: formData.remarks || undefined,
+                };
+                if (editingSample) {
+                  updateMutation.mutate({ id: editingSample.id, data: draftData }, { onSuccess: () => setDialogOpen(false) });
+                } else {
+                  createMutation.mutate(draftData, { onSuccess: () => setDialogOpen(false) });
+                }
+              }}>
+                保存草稿
               </Button>
               <Button onClick={handleSubmit}>
                 {editingSample ? "保存修改" : "创建留样"}

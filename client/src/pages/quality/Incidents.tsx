@@ -75,11 +75,12 @@ interface IncidentRecord {
   correctiveAction: string;
   preventiveAction: string;
   resolveDate: string;
-  status: "reported" | "investigating" | "resolved" | "closed";
+  status: "draft" | "reported" | "investigating" | "resolved" | "closed";
   remarks: string;
 }
 
 const statusMap: Record<string, any> = {
+  draft: { label: "草稿", variant: "outline" as const },
   reported: { label: "已上报", variant: "outline" as const },
   investigating: { label: "调查中", variant: "default" as const },
   resolved: { label: "已解决", variant: "secondary" as const },
@@ -281,9 +282,10 @@ export default function IncidentsPage() {
     setDialogOpen(false);
   };
 
-  const closedCount = incidents.filter((i: any) => i.status === "closed").length;
-  const processingCount = incidents.filter((i: any) => i.status === "reported" || i.status === "investigating").length;
-  const severeCount = incidents.filter((i: any) => i.severity === "high").length;
+  const nonDraftIncidents = incidents.filter((i: any) => i.status !== "draft");
+  const closedCount = nonDraftIncidents.filter((i: any) => i.status === "closed").length;
+  const processingCount = nonDraftIncidents.filter((i: any) => i.status === "reported" || i.status === "investigating").length;
+  const severeCount = nonDraftIncidents.filter((i: any) => i.severity === "high").length;
 
   const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
 
@@ -329,7 +331,7 @@ export default function IncidentsPage() {
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">本年事件</p>
-              <p className="text-2xl font-bold">{incidents.length}</p>
+              <p className="text-2xl font-bold">{nonDraftIncidents.length}</p>
             </CardContent>
           </Card>
           <Card>
@@ -375,6 +377,7 @@ export default function IncidentsPage() {
                   <SelectItem value="investigating">调查中</SelectItem>
                   <SelectItem value="resolved">已解决</SelectItem>
                   <SelectItem value="closed">已关闭</SelectItem>
+                  <SelectItem value="draft">草稿</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -702,6 +705,35 @@ export default function IncidentsPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 取消
+              </Button>
+              <Button variant="ghost" onClick={() => {
+                if (!formData.productName) { toast.error("请填写产品名称"); return; }
+                const submitData = {
+                  productName: formData.productName,
+                  productCode: formData.productCode || undefined,
+                  batchNo: formData.batchNo || undefined,
+                  incidentType: formData.incidentType || undefined,
+                  severity: formData.severity as any,
+                  reportDate: formData.reportDate || undefined,
+                  reportedBy: formData.reportedBy || undefined,
+                  description: formData.description,
+                  affectedQuantity: formData.affectedQuantity || undefined,
+                  location: formData.location || undefined,
+                  investigator: formData.investigator || undefined,
+                  rootCause: formData.rootCause || undefined,
+                  correctiveAction: formData.correctiveAction || undefined,
+                  preventiveAction: formData.preventiveAction || undefined,
+                  resolveDate: formData.resolveDate || undefined,
+                  status: "draft" as any,
+                  remarks: formData.remarks || undefined,
+                };
+                if (editingIncident) {
+                  updateMutation.mutate({ id: editingIncident.id, data: submitData }, { onSuccess: () => setDialogOpen(false) });
+                } else {
+                  createMutation.mutate({ ...submitData, incidentNo: formData.incidentNo || undefined, title: formData.productName, type: "nonconformance" as any }, { onSuccess: () => setDialogOpen(false) });
+                }
+              }}>
+                保存草稿
               </Button>
               <Button onClick={handleSubmit}>
                 {editingIncident ? "保存修改" : "上报事件"}
