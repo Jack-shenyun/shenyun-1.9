@@ -46,7 +46,7 @@ export interface SignatureRecord {
 
 // 签名面板属性
 interface SignaturePanelProps {
-  documentType: "IQC" | "IPQC" | "OQC";
+  documentType: "IQC" | "IPQC" | "OQC" | "LAB";
   documentNo: string;
   documentId: number;
   signatureType: "inspector" | "reviewer" | "approver";
@@ -61,16 +61,19 @@ const signatureMeaningMap = {
     IQC: "本人确认已按照检验规程对来料进行检验，检验结果真实、准确、完整。",
     IPQC: "本人确认已按照过程检验规程进行检验，检验结果真实、准确、完整。",
     OQC: "本人确认已按照成品检验规程进行检验，检验结果真实、准确、完整。",
+    LAB: "本人确认已按照实验室检验规程完成检验，检验结果真实、准确、完整。",
   },
   reviewer: {
     IQC: "本人确认已复核检验记录，数据真实可靠，检验方法符合规定。",
     IPQC: "本人确认已复核过程检验记录，数据真实可靠，检验方法符合规定。",
     OQC: "本人确认已复核成品检验记录，数据真实可靠，检验方法符合规定。",
+    LAB: "本人确认已复核实验室检验记录，数据真实可靠，检验方法符合规定。",
   },
   approver: {
     IQC: "本人批准该来料检验报告，同意检验结论。",
     IPQC: "本人批准该过程检验报告，同意检验结论。",
     OQC: "本人批准该成品检验报告，产品符合放行条件。",
+    LAB: "本人批准该实验室检验记录，同意检验结论并确认记录闭环。",
   },
 };
 
@@ -335,11 +338,12 @@ export function SignatureHistory({
  * 签名状态卡片组件
  */
 interface SignatureStatusCardProps {
-  documentType: "IQC" | "IPQC" | "OQC";
+  documentType: "IQC" | "IPQC" | "OQC" | "LAB";
   documentNo: string;
   documentId: number;
   signatures: SignatureRecord[];
   onSignComplete?: (signature: SignatureRecord) => void;
+  enabledTypes?: Array<"inspector" | "reviewer" | "approver">;
 }
 
 export function SignatureStatusCard({
@@ -348,6 +352,7 @@ export function SignatureStatusCard({
   documentId,
   signatures,
   onSignComplete,
+  enabledTypes = ["inspector", "reviewer"],
 }: SignatureStatusCardProps) {
   const hasInspectorSign = signatures.some(
     (s) => s.signatureType === "inspector" && s.status === "valid"
@@ -367,6 +372,22 @@ export function SignatureStatusCard({
     );
   };
 
+  const enabledSignatureTypes = enabledTypes.filter((type, index, array) => array.indexOf(type) === index);
+  const signatureStateMap = {
+    inspector: hasInspectorSign,
+    reviewer: hasReviewerSign,
+    approver: hasApproverSign,
+  } as const;
+  const completedCount = enabledSignatureTypes.filter((type) => signatureStateMap[type]).length;
+  const getSignatureDisabled = (type: "inspector" | "reviewer" | "approver") => {
+    const currentIndex = enabledSignatureTypes.indexOf(type);
+    if (currentIndex === -1) return true;
+    if (signatureStateMap[type]) return true;
+    if (currentIndex === 0) return false;
+    const previousType = enabledSignatureTypes[currentIndex - 1];
+    return !signatureStateMap[previousType];
+  };
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -382,43 +403,33 @@ export function SignatureStatusCard({
         {/* 签名进度 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {getStatusIcon(hasInspectorSign)}
-            <div className="h-px w-8 bg-muted-foreground/30" />
-            {getStatusIcon(hasReviewerSign)}
-            <div className="h-px w-8 bg-muted-foreground/30" />
-            {getStatusIcon(hasApproverSign)}
+            {enabledSignatureTypes.map((type, index) => (
+              <div key={type} className="flex items-center gap-3">
+                {getStatusIcon(signatureStateMap[type])}
+                {index < enabledSignatureTypes.length - 1 && (
+                  <div className="h-px w-8 bg-muted-foreground/30" />
+                )}
+              </div>
+            ))}
           </div>
           <div className="text-sm text-muted-foreground">
-            {[hasInspectorSign, hasReviewerSign, hasApproverSign].filter(Boolean).length}/3
+            {completedCount}/{enabledSignatureTypes.length}
           </div>
         </div>
 
         {/* 签名按钮 */}
         <div className="flex flex-wrap gap-2">
-          <SignaturePanel
-            documentType={documentType}
-            documentNo={documentNo}
-            documentId={documentId}
-            signatureType="inspector"
-            onSignComplete={onSignComplete}
-            disabled={hasInspectorSign}
-          />
-          <SignaturePanel
-            documentType={documentType}
-            documentNo={documentNo}
-            documentId={documentId}
-            signatureType="reviewer"
-            onSignComplete={onSignComplete}
-            disabled={!hasInspectorSign || hasReviewerSign}
-          />
-          <SignaturePanel
-            documentType={documentType}
-            documentNo={documentNo}
-            documentId={documentId}
-            signatureType="approver"
-            onSignComplete={onSignComplete}
-            disabled={!hasReviewerSign || hasApproverSign}
-          />
+          {enabledSignatureTypes.map((type) => (
+            <SignaturePanel
+              key={type}
+              documentType={documentType}
+              documentNo={documentNo}
+              documentId={documentId}
+              signatureType={type}
+              onSignComplete={onSignComplete}
+              disabled={getSignatureDisabled(type)}
+            />
+          ))}
         </div>
 
         <Separator />

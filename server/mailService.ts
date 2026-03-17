@@ -450,6 +450,18 @@ function getAiClient(): { client: OpenAI; model: string } {
   };
 }
 
+function htmlToPlainTextPreserveLayout(html: string | null | undefined): string {
+  const source = String(html || "");
+  if (!source.trim()) return "";
+  return source
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/\s*(p|div|li|tr|h[1-6])\s*>/gi, "\n")
+    .replace(/<\s*li[^>]*>/gi, "- ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // ==================== AI 翻译 ====================
 
 export async function translateEmail(emailId: number, targetLang = "中文"): Promise<string> {
@@ -459,7 +471,8 @@ export async function translateEmail(emailId: number, targetLang = "中文"): Pr
   const [email] = await db.select().from(emails).where(eq(emails.id, emailId));
   if (!email) throw new Error("邮件不存在");
 
-  const content = email.bodyText || email.bodyHtml?.replace(/<[^>]+>/g, "") || "";
+  const content =
+    email.bodyText || htmlToPlainTextPreserveLayout(email.bodyHtml) || "";
   if (!content.trim()) return "(邮件正文为空)";
 
   const { client, model } = getAiClient();
@@ -468,7 +481,12 @@ export async function translateEmail(emailId: number, targetLang = "中文"): Pr
     messages: [
       {
         role: "system",
-        content: `你是一个专业的商务邮件翻译助手。请将以下邮件内容翻译成${targetLang}，保持原文的格式和语气，只输出翻译结果，不要添加任何解释。`,
+        content: `你是一个专业的商务邮件翻译助手。请将以下邮件内容翻译成${targetLang}，并严格保留原文排版结构。
+要求：
+1. 保留原有段落、空行、换行、编号、项目符号、称呼、签名和引用层级
+2. 如果原文有列表、条款、缩进或分段，请在译文中按相同结构呈现
+3. 不要合并段落，不要重写格式，不要自行补充说明
+4. 只输出翻译结果`,
       },
       { role: "user", content: content.substring(0, 4000) },
     ],

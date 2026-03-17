@@ -58,11 +58,13 @@ export function useAuth(options?: UseAuthOptions) {
             }
           })()
         : null;
-    const resolvedUser = meQuery.data ?? localAuthUser ?? null;
+    // 本地缓存只用于首屏兜底，后端一旦返回结果（即便是 null）就以服务端为准，避免串用户/串公司。
+    const hasServerResolved = meQuery.data !== undefined || meQuery.error != null;
+    const resolvedUser = hasServerResolved ? (meQuery.data ?? null) : (localAuthUser ?? null);
     localStorage.setItem("manus-runtime-user-info", JSON.stringify(resolvedUser));
     return {
       user: resolvedUser,
-      loading: (isLocalAuthMode ? false : meQuery.isLoading) || logoutMutation.isPending,
+      loading: meQuery.isLoading || logoutMutation.isPending,
       error: meQuery.error ?? logoutMutation.error ?? null,
       isAuthenticated: Boolean(resolvedUser),
     };

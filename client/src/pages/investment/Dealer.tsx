@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import {
   Store,
   Plus,
@@ -92,6 +93,8 @@ export default function DealerPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [formDialogMaximized, setFormDialogMaximized] = useState(false);
+  const [viewDialogMaximized, setViewDialogMaximized] = useState(false);
   const [editingDealer, setEditingDealer] = useState<Dealer | null>(null);
   const [viewingDealer, setViewingDealer] = useState<Dealer | null>(null);
   const { canDelete } = usePermission();
@@ -241,7 +244,7 @@ export default function DealerPage() {
             </div>
             <div>
               <h2 className="text-xl font-bold tracking-tight">首营管理</h2>
-              <p className="text-sm text-muted-foreground">管理经销商的首次引入流程和资质审核</p>
+              <p className="text-sm text-muted-foreground">管理经销商首次引入和基础资质，授权书与协议请在对应子页面维护</p>
             </div>
           </div>
           <Button onClick={handleAdd}>
@@ -379,15 +382,25 @@ export default function DealerPage() {
         </Card>
 
         {/* 新建/编辑对话框 */}
-        <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DraggableDialogContent>
+        <DraggableDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          defaultWidth={960}
+          defaultHeight={760}
+          isMaximized={formDialogMaximized}
+          onMaximizedChange={setFormDialogMaximized}
+        >
+          <DraggableDialogContent isMaximized={formDialogMaximized}>
             <DialogHeader>
               <DialogTitle>{editingDealer ? "编辑经销商" : "新增经销商"}</DialogTitle>
               <DialogDescription>
                 {editingDealer ? "修改经销商信息" : "录入新经销商的基本信息和资质"}
               </DialogDescription>
+              {!editingDealer && formData.dealerNo && (
+                <p className="text-sm text-muted-foreground">经销商编号：{formData.dealerNo}</p>
+              )}
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            <div className="space-y-6 py-4">
               {/* 基本信息 */}
               <div className="text-sm font-medium text-muted-foreground">基本信息</div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -469,8 +482,10 @@ export default function DealerPage() {
                 />
               </div>
 
+              <Separator />
+
               {/* 资质信息 */}
-              <div className="text-sm font-medium text-muted-foreground mt-4">资质信息</div>
+              <div className="text-sm font-medium text-muted-foreground">资质信息</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>营业执照号</Label>
@@ -509,8 +524,10 @@ export default function DealerPage() {
                 </div>
               </div>
 
+              <Separator />
+
               {/* 合同信息 */}
-              <div className="text-sm font-medium text-muted-foreground mt-4">合同信息</div>
+              <div className="text-sm font-medium text-muted-foreground">合同信息</div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>合同编号</Label>
@@ -594,6 +611,8 @@ export default function DealerPage() {
                 </div>
               </div>
 
+              <Separator />
+
               <div className="space-y-2">
                 <Label>备注</Label>
                 <Textarea
@@ -616,8 +635,15 @@ export default function DealerPage() {
         </DraggableDialog>
 
 {/* 查看详情对话框 */}
-<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-  <DraggableDialogContent>
+<DraggableDialog
+  open={viewDialogOpen}
+  onOpenChange={setViewDialogOpen}
+  defaultWidth={920}
+  defaultHeight={760}
+  isMaximized={viewDialogMaximized}
+  onMaximizedChange={setViewDialogMaximized}
+>
+  <DraggableDialogContent isMaximized={viewDialogMaximized}>
     {viewingDealer && (
       <div className="space-y-6">
         {/* 标准头部 */}

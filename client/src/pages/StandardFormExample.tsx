@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import ERPLayout from "@/components/ERPLayout";
+import { formatDisplayNumber } from "@/lib/formatters";
 import {
   MobileFormDialog,
   MobileFormSection,
@@ -241,7 +242,7 @@ export default function StandardFormExamplePage() {
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     <span className="text-sm font-semibold text-gray-700">
-                      ¥{row.amount.toLocaleString()}
+                      ¥{formatDisplayNumber(row.amount)}
                     </span>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -420,7 +421,7 @@ export default function StandardFormExamplePage() {
                       />
                     </TableCell>
                     <TableCell className="text-right font-medium text-sm">
-                      ¥{line.amount.toLocaleString()}
+                      ¥{formatDisplayNumber(line.amount)}
                     </TableCell>
                     <TableCell className="text-center sticky right-0 bg-white">
                       <Button
@@ -446,7 +447,7 @@ export default function StandardFormExamplePage() {
             <div className="flex items-center justify-end gap-2 px-1 py-1">
               <span className="text-sm text-muted-foreground">合计金额：</span>
               <span className="text-base font-bold text-primary">
-                ¥{totalAmount.toLocaleString()}
+                ¥{formatDisplayNumber(totalAmount)}
               </span>
             </div>
           )}

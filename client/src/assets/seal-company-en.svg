@@ -1,0 +1,49 @@
+<svg width="760" height="360" viewBox="0 0 760 360" xmlns="http://www.w3.org/2000/svg">
+  <rect x="30" y="30" width="700" height="300" rx="12" ry="12"
+        stroke="#E11D1D" stroke-width="8" fill="none"/>
+
+  <rect x="52" y="52" width="656" height="256" rx="8" ry="8"
+        stroke="#E11D1D" stroke-width="2.5" fill="none"/>
+
+  <text x="380" y="108"
+        font-size="28"
+        text-anchor="middle"
+        fill="#E11D1D"
+        font-family="Times New Roman, serif"
+        font-weight="bold"
+        letter-spacing="1">
+    SUZHOU SHENYUN MEDICAL
+  </text>
+
+  <text x="380" y="145"
+        font-size="28"
+        text-anchor="middle"
+        fill="#E11D1D"
+        font-family="Times New Roman, serif"
+        font-weight="bold"
+        letter-spacing="1">
+    EQUIPMENT CO., LTD.
+  </text>
+
+  <text x="380" y="188"
+        font-size="16"
+        text-anchor="middle"
+        fill="#E11D1D"
+        font-family="Arial, sans-serif"
+        letter-spacing="3">
+    OFFICIAL COMPANY SEAL
+  </text>
+
+  <line x1="165" y1="212" x2="595" y2="212"
+        stroke="#E11D1D" stroke-width="2.5"/>
+
+  <text x="380" y="270"
+        font-size="32"
+        text-anchor="middle"
+        fill="#E11D1D"
+        font-family="Arial, sans-serif"
+        font-weight="bold"
+        letter-spacing="1.5">
+    AUTHORIZED CONTRACT SEAL
+  </text>
+</svg>

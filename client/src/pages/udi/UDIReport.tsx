@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -245,48 +246,57 @@ export default function UDIReportPage() {
 
       {/* 新建弹窗 */}
       <DraggableDialog open={formOpen} onOpenChange={setFormOpen}>
-        <DraggableDialogContent className="max-w-lg">
+        <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>新建上报记录</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5 col-span-2">
+          <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-1">
+            <div className="grid grid-cols-4 gap-4">
+              <div className="space-y-2 col-span-2">
                 <Label>产品名称 <span className="text-red-500">*</span></Label>
                 <Input value={form.productName} onChange={e => setForm(p => ({ ...p, productName: e.target.value }))} placeholder="产品名称" />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>UDI-DI <span className="text-red-500">*</span></Label>
                 <Input value={form.udiDi} onChange={e => setForm(p => ({ ...p, udiDi: e.target.value }))} placeholder="UDI-DI编码" />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>生产批号</Label>
                 <Input value={form.batchNo} onChange={e => setForm(p => ({ ...p, batchNo: e.target.value }))} placeholder="批号" />
               </div>
-              <div className="space-y-1.5">
-                <Label>上报平台</Label>
-                <Select value={form.platform} onValueChange={v => setForm(p => ({ ...p, platform: v as any }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="NMPA">国家药监局（NMPA）</SelectItem>
-                    <SelectItem value="FDA">FDA（美国）</SelectItem>
-                    <SelectItem value="EUDAMED">EUDAMED（欧盟）</SelectItem>
-                  </SelectContent>
-                </Select>
+            </div>
+            <div className="border-t pt-4 space-y-4">
+              <h3 className="text-sm font-semibold text-muted-foreground">上报信息</h3>
+              <div className="grid grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label>上报平台</Label>
+                  <Select value={form.platform} onValueChange={v => setForm(p => ({ ...p, platform: v as any }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NMPA">国家药监局（NMPA）</SelectItem>
+                      <SelectItem value="FDA">FDA（美国）</SelectItem>
+                      <SelectItem value="EUDAMED">EUDAMED（欧盟）</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>上报类型</Label>
+                  <Select value={form.reportType} onValueChange={v => setForm(p => ({ ...p, reportType: v as any }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">新增上报</SelectItem>
+                      <SelectItem value="update">变更上报</SelectItem>
+                      <SelectItem value="cancel">注销上报</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label>经办人</Label>
+                  <Input value={form.operator} onChange={e => setForm(p => ({ ...p, operator: e.target.value }))} placeholder="经办人姓名" />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>上报类型</Label>
-                <Select value={form.reportType} onValueChange={v => setForm(p => ({ ...p, reportType: v as any }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="new">新增上报</SelectItem>
-                    <SelectItem value="update">变更上报</SelectItem>
-                    <SelectItem value="cancel">注销上报</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5 col-span-2">
-                <Label>经办人</Label>
-                <Input value={form.operator} onChange={e => setForm(p => ({ ...p, operator: e.target.value }))} placeholder="经办人姓名" />
-              </div>
+            </div>
+            <div className="space-y-2 border-t pt-4">
+              <Label>备注</Label>
+              <Textarea value={form.remark} onChange={e => setForm(p => ({ ...p, remark: e.target.value }))} rows={3} placeholder="补充上报说明" />
             </div>
           </div>
           <DialogFooter>
@@ -298,9 +308,9 @@ export default function UDIReportPage() {
 
       {/* 详情弹窗 */}
       <DraggableDialog open={viewOpen} onOpenChange={setViewOpen}>
-        <DraggableDialogContent className="max-w-md">
+        <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
           {selected && (
-            <div className="space-y-4">
+            <div className="space-y-4 py-4">
               <div className="border-b pb-3">
                 <h2 className="text-lg font-semibold">上报记录详情</h2>
                 <div className="flex items-center gap-2 mt-1">
@@ -310,22 +320,33 @@ export default function UDIReportPage() {
                   </Badge>
                 </div>
               </div>
-              <div className="max-h-[55vh] overflow-y-auto space-y-1">
-                <FieldRow label="产品名称">{selected.productName}</FieldRow>
-                <FieldRow label="UDI-DI">
-                  <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{selected.udiDi}</span>
-                </FieldRow>
-                <FieldRow label="生产批号">{selected.batchNo}</FieldRow>
-                <FieldRow label="上报平台">
-                  <Badge variant="outline" className={`text-xs ${platformMap[selected.platform].color}`}>
-                    {platformMap[selected.platform].label}
-                  </Badge>
-                </FieldRow>
-                <FieldRow label="上报类型">{reportTypeMap[selected.reportType]}</FieldRow>
-                <FieldRow label="经办人">{selected.operator}</FieldRow>
-                <FieldRow label="提交时间">{selected.submittedAt ?? "未提交"}</FieldRow>
-                <FieldRow label="受理时间">{selected.acceptedAt ?? "-"}</FieldRow>
-                {selected.remark && <FieldRow label="备注">{selected.remark}</FieldRow>}
+              <div className="max-h-[65vh] overflow-y-auto space-y-4 pr-1">
+                <div>
+                  <h3 className="text-sm font-semibold text-muted-foreground mb-2">基础信息</h3>
+                  <FieldRow label="产品名称">{selected.productName}</FieldRow>
+                  <FieldRow label="生产批号">{selected.batchNo}</FieldRow>
+                  <FieldRow label="经办人">{selected.operator}</FieldRow>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-muted-foreground mb-2">UDI与上报</h3>
+                  <FieldRow label="UDI-DI">
+                    <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{selected.udiDi}</span>
+                  </FieldRow>
+                  <FieldRow label="上报平台">
+                    <Badge variant="outline" className={`text-xs ${platformMap[selected.platform].color}`}>
+                      {platformMap[selected.platform].label}
+                    </Badge>
+                  </FieldRow>
+                  <FieldRow label="上报类型">{reportTypeMap[selected.reportType]}</FieldRow>
+                  <FieldRow label="提交时间">{selected.submittedAt ?? "未提交"}</FieldRow>
+                  <FieldRow label="受理时间">{selected.acceptedAt ?? "-"}</FieldRow>
+                </div>
+                {selected.remark && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-muted-foreground mb-2">备注</h3>
+                    <p className="text-sm">{selected.remark}</p>
+                  </div>
+                )}
               </div>
               <div className="flex justify-end pt-3 border-t">
                 <Button variant="outline" size="sm" onClick={() => setViewOpen(false)}>关闭</Button>

@@ -47,6 +47,10 @@ interface DraftDrawerProps {
   onDelete: (item: DraftItem) => void;
   /** 是否正在加载 */
   loading?: boolean;
+  /** 按钮样式 */
+  variant?: "default" | "outline" | "secondary" | "destructive" | "ghost" | "link";
+  /** 按钮尺寸 */
+  size?: "default" | "sm" | "lg" | "icon";
 }
 
 function formatTime(date?: string | Date): string {
@@ -72,6 +76,8 @@ export default function DraftDrawer({
   onEdit,
   onDelete,
   loading = false,
+  variant = "outline",
+  size = "sm",
 }: DraftDrawerProps) {
   const [open, setOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DraftItem | null>(null);
@@ -92,8 +98,8 @@ export default function DraftDrawer({
   return (
     <>
       <Button
-        variant="outline"
-        size="sm"
+        variant={variant}
+        size={size}
         onClick={() => setOpen(true)}
         className="relative"
       >

@@ -1,4 +1,5 @@
 import { formatDate, formatDateTime } from "@/lib/formatters";
+import { getCompanyMenuIds, readActiveCompany, writeActiveCompany } from "@/lib/activeCompany";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ import {
   FileText,
   ArrowRight,
   MessageCircle,
+  Mail,
   MoreHorizontal,
   Network,
   ExternalLink,
@@ -35,17 +37,21 @@ import {
 } from "@/components/ui/popover";
 import { getLoginUrl } from "@/const";
 import shenyunLogo from "@/assets/2ac420a999cddd5f145a62155f78b13e.png";
+import { useCompanyBranding } from "@/hooks/useCompanyBranding";
 
 const DEPARTMENT_MENU_ACCESS: Record<string, string[]> = {
-  管理部: ["admin", "settings", "common"],
+  管理部: ["admin", "settings", "batch-management", "common"],
   招商部: ["investment", "common"],
-  销售部: ["sales", "common"],
+  销售部: ["sales", "batch-management", "common"],
   研发部: ["rd", "common"],
-  生产部: ["production", "common"],
-  质量部: ["quality", "common"],
+  生产部: ["production", "udi", "batch-management", "common"],
+  质量部: ["quality", "batch-management", "common"],
   采购部: ["purchase", "common"],
-  仓库管理: ["warehouse", "common"],
-  财务部: ["finance", "common"],
+  仓库管理: ["warehouse", "batch-management", "common"],
+  财务部: ["finance", "batch-management", "common"],
+  法规事务部: ["batch-management", "common"],
+  法规部: ["batch-management", "common"],
+  法规负责人: ["batch-management", "common"],
 };
 
 function parseDepartments(raw: unknown): string[] {
@@ -55,6 +61,26 @@ function parseDepartments(raw: unknown): string[] {
     .split(/[,\uFF0C;；/、|\s]+/)
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function getWorkbenchPathPrefix(path: string): string {
+  if (path.startsWith("/admin/file-manager")) return "/admin/file-manager";
+  if (path.startsWith("/boss/")) return "/boss/";
+  if (path.startsWith("/admin/")) return "/admin/";
+  if (path.startsWith("/investment/")) return "/investment/";
+  if (path.startsWith("/sales/")) return "/sales/";
+  if (path.startsWith("/rd/")) return "/rd/";
+  if (path.startsWith("/production/")) return "/production/";
+  if (path.startsWith("/quality/")) return "/quality/";
+  if (path.startsWith("/purchase/")) return "/purchase/";
+  if (path.startsWith("/warehouse/")) return "/warehouse/";
+  if (path.startsWith("/finance/")) return "/finance/";
+  if (path.startsWith("/settings/")) return "/settings/";
+  if (path.startsWith("/mail")) return "/mail";
+  if (path.startsWith("/website")) return "/website";
+  if (path.startsWith("/leads/")) return "/leads/";
+  if (path.startsWith("/ra/")) return "/ra/";
+  return path;
 }
 
 // Odoo 风格 SVG 图标 - 每个模块一个精美渐变图标
@@ -147,6 +173,55 @@ const APP_ICONS: Record<string, React.FC<{ className?: string }>> = {
       <path d="M39 42L41 44L45 40" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   ),
+  "operations-dashboard": ({ className }) => (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="url(#ops_bg)"/>
+      <defs>
+        <linearGradient id="ops_bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#5b86e5"/>
+          <stop offset="1" stopColor="#36d1dc"/>
+        </linearGradient>
+      </defs>
+      <path d="M18 42L28 30L35 36L46 22" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.9"/>
+      <path d="M42 22H46V26" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.8"/>
+      <rect x="18" y="18" width="28" height="28" rx="8" stroke="white" strokeWidth="2.2" strokeOpacity="0.45"/>
+      <circle cx="24" cy="42" r="2.8" fill="white" fillOpacity="0.95"/>
+      <circle cx="35" cy="36" r="2.8" fill="white" fillOpacity="0.85"/>
+      <circle cx="46" cy="22" r="2.8" fill="white" fillOpacity="0.95"/>
+    </svg>
+  ),
+  "inventory-board": ({ className }) => (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="url(#inv_bg)"/>
+      <defs>
+        <linearGradient id="inv_bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#14B8A6"/>
+          <stop offset="1" stopColor="#06B6D4"/>
+        </linearGradient>
+      </defs>
+      <rect x="16" y="18" width="14" height="12" rx="3" fill="white" fillOpacity="0.95"/>
+      <rect x="34" y="18" width="14" height="12" rx="3" fill="white" fillOpacity="0.85"/>
+      <rect x="16" y="34" width="14" height="12" rx="3" fill="white" fillOpacity="0.85"/>
+      <rect x="34" y="34" width="14" height="12" rx="3" fill="white" fillOpacity="0.95"/>
+      <path d="M30 24H34M23 30V34M41 30V34M30 40H34" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeOpacity="0.85"/>
+    </svg>
+  ),
+  udi: ({ className }) => (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="url(#udi_bg)"/>
+      <defs>
+        <linearGradient id="udi_bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#36C9FF"/>
+          <stop offset="1" stopColor="#3764FF"/>
+        </linearGradient>
+      </defs>
+      <rect x="18" y="16" width="28" height="32" rx="6" fill="white" fillOpacity="0.92"/>
+      <path d="M24 24H40" stroke="url(#udi_bg)" strokeWidth="2.5" strokeLinecap="round"/>
+      <path d="M24 31H28M32 31H40" stroke="url(#udi_bg)" strokeWidth="2.5" strokeLinecap="round"/>
+      <path d="M24 38H26M30 38H34M38 38H40" stroke="url(#udi_bg)" strokeWidth="2.5" strokeLinecap="round"/>
+      <rect x="24" y="42" width="16" height="2.8" rx="1.4" fill="url(#udi_bg)"/>
+    </svg>
+  ),
   quality: ({ className }) => (
     <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect width="64" height="64" rx="14" fill="url(#quality_bg)"/>
@@ -157,6 +232,19 @@ const APP_ICONS: Record<string, React.FC<{ className?: string }>> = {
         </linearGradient>
       </defs>
       <path d="M32 14L36.5 24H48L38.5 30.5L42 42L32 35.5L22 42L25.5 30.5L16 24H27.5L32 14Z" fill="white" fillOpacity="0.9"/>
+    </svg>
+  ),
+  "whatsapp-workbench": ({ className }) => (
+    <svg className={className} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="url(#wa_bg)"/>
+      <defs>
+        <linearGradient id="wa_bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#2AD66C"/>
+          <stop offset="1" stopColor="#149E55"/>
+        </linearGradient>
+      </defs>
+      <path d="M32 17C23.716 17 17 23.492 17 31.5C17 34.534 17.963 37.35 19.607 39.681L18 47L25.66 45.057C27.628 45.98 29.834 46.5 32 46.5C40.284 46.5 47 40.008 47 32C47 23.992 40.284 17 32 17Z" fill="white" fillOpacity="0.92"/>
+      <path d="M27.4 26.7C26.9 25.6 26.35 25.58 25.88 25.56C25.49 25.55 25.05 25.55 24.61 25.55C24.17 25.55 23.45 25.72 22.84 26.39C22.23 27.07 20.5 28.64 20.5 31.84C20.5 35.03 22.89 38.12 23.23 38.58C23.56 39.03 27.94 45.94 34.9 48.63C40.68 50.87 41.86 50.43 43.12 50.32C44.39 50.2 47.18 48.76 47.73 47.19C48.28 45.62 48.28 44.27 48.12 44C47.95 43.73 47.5 43.56 46.83 43.22C46.16 42.88 42.85 41.26 42.24 41.04C41.63 40.81 41.19 40.7 40.74 41.37C40.3 42.03 39 43.56 38.61 44.01C38.22 44.46 37.83 44.51 37.16 44.17C36.49 43.83 34.34 43.13 31.79 40.87C29.81 39.12 28.47 36.95 28.08 36.28C27.69 35.6 28.04 35.24 28.37 34.9C28.67 34.6 29.04 34.11 29.38 33.72C29.71 33.33 29.82 33.05 30.05 32.6C30.27 32.15 30.16 31.76 29.99 31.42C29.82 31.08 28.5 27.79 27.4 26.7Z" fill="url(#wa_bg)"/>
     </svg>
   ),
   purchase: ({ className }) => (
@@ -292,66 +380,84 @@ const DefaultIcon: React.FC<{ className?: string; color: string }> = ({ classNam
 export default function Dashboard() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
+  const { companyDisplayName, companyShortName } = useCompanyBranding();
   const { data: stats } = trpc.dashboard.stats.useQuery(undefined, {
     refetchInterval: 60_000,
   });
   const [recentVisits, setRecentVisits] = useState<RecentVisitItem[]>([]);
   const [appSearch, setAppSearch] = useState("");
 
-  // 协同公司
-  const { data: myCompanies = [] } = trpc.companies.myCompanies.useQuery();
-  const [activeCompanyId, setActiveCompanyId] = useState<number | null>(() => {
-    const saved = localStorage.getItem("erp-active-company-id");
-    return saved ? Number(saved) : null;
-  });
-  const activeCompany = (myCompanies as any[]).find((c: any) => c.id === activeCompanyId) ?? null;
-
-  const handleSwitchCompany = (companyId: number | null) => {
-    setActiveCompanyId(companyId);
-    if (companyId === null) {
-      localStorage.removeItem("erp-active-company-id");
-    } else {
-      localStorage.setItem("erp-active-company-id", String(companyId));
-    }
-    // 重新加载页面以刷新菜单
-    window.location.reload();
-  };
-
   const userRole = String((user as any)?.role ?? "user");
   const userDepartments = useMemo(() => parseDepartments((user as any)?.department), [user]);
   const configuredVisibleAppIds = useMemo(() => parseVisibleAppIds((user as any)?.visibleApps), [user]);
+  const { data: accessibleCompanies = [] } = trpc.companies.myCompanies.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
+  const activeCompany = useMemo(() => {
+    const storedCompany = readActiveCompany();
+    const activeCompanyId = Number(storedCompany?.id || 0);
+    if (activeCompanyId <= 0 || !Array.isArray(accessibleCompanies) || accessibleCompanies.length === 0) {
+      return storedCompany;
+    }
+    const matchedCompany = accessibleCompanies.find((item: any) => Number(item?.id || 0) === activeCompanyId);
+    return matchedCompany ? { ...storedCompany, ...matchedCompany } : storedCompany;
+  }, [accessibleCompanies, user]);
+  const companyMenuIds = useMemo(() => getCompanyMenuIds(activeCompany?.modules), [activeCompany]);
+  const activeCompanyId = Number(activeCompany?.id || 0);
+  const currentCompanyId = Number((user as any)?.companyId || 0);
+  const homeCompanyId = Number((user as any)?.homeCompanyId || currentCompanyId || 0);
+  const isCrossCompanyContext = activeCompanyId > 0 && homeCompanyId > 0 && activeCompanyId !== homeCompanyId;
+  const isCompanyAdmin = Boolean((user as any)?.isCompanyAdmin);
+  const scopedCompanyMenuIds = isCrossCompanyContext ? companyMenuIds : null;
+  const effectiveConfiguredVisibleAppIds = configuredVisibleAppIds;
+  const { data: dashboardAccessData } = trpc.dashboard.access.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
+  const allowedDashboardIds = useMemo(
+    () => new Set(dashboardAccessData?.allowedDashboardIds ?? []),
+    [dashboardAccessData],
+  );
 
-  const allowedMenuIds = useMemo(() => {
-    if (userRole === "admin") return new Set(WORKBENCH_APP_ENTRIES.map((item) => item.menuId));
-    const ids = new Set<string>();
-    for (const dept of userDepartments) {
-      const menuIds = DEPARTMENT_MENU_ACCESS[dept] ?? [];
-      for (const menuId of menuIds) ids.add(menuId);
+  const defaultMenuIds = useMemo(() => {
+    const ids = isCompanyAdmin || userRole === "admin"
+      ? new Set(WORKBENCH_APP_ENTRIES.map((item) => item.menuId))
+      : new Set<string>();
+    if (!isCompanyAdmin && userRole !== "admin") {
+      for (const dept of userDepartments) {
+        const menuIds = DEPARTMENT_MENU_ACCESS[dept] ?? [];
+        for (const menuId of menuIds) ids.add(menuId);
+      }
+    }
+    if (scopedCompanyMenuIds && scopedCompanyMenuIds.size > 0) {
+      return new Set(Array.from(ids).filter((menuId) => scopedCompanyMenuIds.has(menuId)));
     }
     return ids;
-  }, [userDepartments, userRole]);
-
-  // 协同公司可见菜单 ID
-  const COMPANY_MENU_IDS = new Set(["dashboard", "purchase", "sales", "finance", "warehouse", "products", "settings"]);
+  }, [isCompanyAdmin, scopedCompanyMenuIds, userDepartments, userRole]);
 
   const visibleApps = useMemo(() => {
-    const isPartnerCompany = activeCompany && activeCompany.id !== 3;
-    
-    if (isPartnerCompany) {
-      return WORKBENCH_APP_ENTRIES.filter((item) => COMPANY_MENU_IDS.has(item.menuId));
-    }
+    const hasBossAccess = isCompanyAdmin || userRole === "admin" || allowedDashboardIds.has("boss_dashboard");
+    const configuredIds = effectiveConfiguredVisibleAppIds.length > 0
+      ? new Set(effectiveConfiguredVisibleAppIds)
+      : null;
+    const sourceApps = configuredIds
+      ? WORKBENCH_APP_ENTRIES.filter((item) => configuredIds.has(item.id))
+      : WORKBENCH_APP_ENTRIES.filter((item) => defaultMenuIds.has(item.menuId) || (item.id === "operations-dashboard" && hasBossAccess));
 
-    if (configuredVisibleAppIds.length > 0) {
-      return WORKBENCH_APP_ENTRIES.filter((item) => configuredVisibleAppIds.includes(item.id));
-    }
-    return WORKBENCH_APP_ENTRIES.filter((item) => allowedMenuIds.has(item.menuId));
-  }, [allowedMenuIds, configuredVisibleAppIds, activeCompany]);
+    return sourceApps.filter((item) => {
+      if (item.id === "operations-dashboard") return hasBossAccess;
+      return true;
+    });
+  }, [allowedDashboardIds, defaultMenuIds, effectiveConfiguredVisibleAppIds, isCompanyAdmin, scopedCompanyMenuIds, userRole]);
 
   const filteredApps = useMemo(() => {
     const keyword = appSearch.trim().toLowerCase();
     if (!keyword) return visibleApps;
     return visibleApps.filter((item) => item.label.toLowerCase().includes(keyword));
   }, [appSearch, visibleApps]);
+  const hasMailCollaboration = useMemo(
+    () => visibleApps.some((item) => item.id === "mail-collaboration"),
+    [visibleApps],
+  );
 
   const handleAppClick = (item: (typeof WORKBENCH_APP_ENTRIES)[number]) => {
     if (item.path) {
@@ -362,8 +468,9 @@ export default function Dashboard() {
   };
 
   const MENU_PATH_PREFIXES: Record<string, string[]> = {
+    dashboard: ["/boss/dashboard"],
     admin: ["/admin/"],
-    common: [],
+    common: ["/mail", "/whatsapp", "/website", "/leads/", "/ra/", "/admin/file-manager"],
     investment: ["/investment/"],
     sales: ["/sales/"],
     rd: ["/rd/"],
@@ -376,13 +483,17 @@ export default function Dashboard() {
   };
 
   const allowedRecentPrefixes = useMemo(() => {
-    const sourceMenuIds = configuredVisibleAppIds.length > 0
-      ? visibleApps.map((item) => item.menuId)
-      : userRole === "admin"
-        ? Object.keys(MENU_PATH_PREFIXES)
-        : Array.from(allowedMenuIds);
+    if (effectiveConfiguredVisibleAppIds.length > 0) {
+      return Array.from(new Set(visibleApps.map((item) => getWorkbenchPathPrefix(item.path))));
+    }
+    const sourceMenuIds = Array.from(defaultMenuIds);
     return Array.from(new Set(sourceMenuIds)).flatMap((menuId) => MENU_PATH_PREFIXES[menuId] ?? []);
-  }, [allowedMenuIds, configuredVisibleAppIds, userRole, visibleApps]);
+  }, [defaultMenuIds, effectiveConfiguredVisibleAppIds, visibleApps]);
+
+  useEffect(() => {
+    if (!activeCompany || Number(activeCompany.id || 0) <= 0) return;
+    writeActiveCompany(activeCompany);
+  }, [activeCompany]);
 
   useEffect(() => {
     const syncRecent = () => {
@@ -402,10 +513,23 @@ export default function Dashboard() {
     myProcessed: Number((stats as any)?.workflowCounters?.myProcessed ?? 0),
     ccToMe: Number((stats as any)?.workflowCounters?.ccToMe ?? 0),
   };
+  const workflowScopeKey = [
+    Number((user as any)?.id || 0),
+    Number((user as any)?.companyId || 0),
+    Number((user as any)?.homeCompanyId || 0),
+    String((user as any)?.role || ""),
+  ].join(":");
 
   const { data: todoData } = trpc.workflowCenter.list.useQuery(
-    { tab: "todo", limit: 5 },
-    { refetchInterval: 60_000 }
+    { tab: "todo", limit: 5, scopeKey: workflowScopeKey },
+    {
+      enabled: Number((user as any)?.id || 0) > 0,
+      refetchInterval: 60_000,
+      refetchOnMount: "always",
+      refetchOnReconnect: "always",
+      refetchOnWindowFocus: true,
+      staleTime: 0,
+    }
   );
   // workflowCenter.list 返回的是对象，其中包含 items 数组
   const todoItems: any[] = Array.isArray(todoData)
@@ -436,66 +560,19 @@ export default function Dashboard() {
         }}
       >
         {/* 左侧 Logo */}
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => { window.location.href = getLoginUrl(); }}
+          className="flex items-center gap-2 transition-opacity hover:opacity-80"
+          title="返回登录页"
+        >
           <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
-          <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
-          
-          {/* 协同公司切换器 */}
-          {(myCompanies as any[]).length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={`flex items-center gap-1.5 h-7 rounded-full px-2.5 text-xs font-medium transition-colors border ${
-                    activeCompany
-                      ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
-                      : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  <Network className="h-3 w-3" />
-                  <span className="hidden sm:block max-w-[100px] truncate">
-                    {activeCompany ? activeCompany.shortName || activeCompany.name : "神韵主公司"}
-                  </span>
-                  <ChevronRight className="h-3 w-3 rotate-90" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56 rounded-xl shadow-xl border-0 p-1">
-                <div className="px-3 py-1.5 text-xs text-muted-foreground font-medium">切换公司</div>
-                <DropdownMenuItem
-                  onClick={() => handleSwitchCompany(null)}
-                  className={`rounded-lg text-sm cursor-pointer gap-2 ${
-                    !activeCompany ? "bg-blue-50 text-blue-700" : ""
-                  }`}
-                >
-                  <div className="h-5 w-5 rounded bg-gradient-to-br from-teal-500 to-blue-600 flex items-center justify-center">
-                    <span className="text-[9px] text-white font-bold">神</span>
-                  </div>
-                  神韵医疗（主公司）
-                  {!activeCompany && <CheckCircle2 className="h-3.5 w-3.5 ml-auto text-blue-600" />}
-                </DropdownMenuItem>
-                {(myCompanies as any[]).map((company: any) => (
-                  <DropdownMenuItem
-                    key={company.id}
-                    onClick={() => handleSwitchCompany(company.id)}
-                    className={`rounded-lg text-sm cursor-pointer gap-2 ${
-                      activeCompanyId === company.id ? "bg-blue-50 text-blue-700" : ""
-                    }`}
-                  >
-                    <div className="h-5 w-5 rounded flex items-center justify-center" style={{ background: company.color || "#6366f1" }}>
-                      <span className="text-[9px] text-white font-bold">{(company.shortName || company.name).charAt(0)}</span>
-                    </div>
-                    <span className="truncate flex-1">{company.name}</span>
-                    {activeCompanyId === company.id && <CheckCircle2 className="h-3.5 w-3.5 ml-auto text-blue-600" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
+          <span className="text-sm font-semibold text-slate-700 hidden sm:block">{companyShortName}</span>
+        </button>
 
         {/* 右侧操作区 */}
         <div className="flex items-center gap-1">
-          {/* WhatsApp：手机端折叠到更多菜单 */}
+          {/* 顶部快捷入口 */}
           <div className="hidden sm:flex items-center gap-1">
             <button
               type="button"
@@ -505,8 +582,18 @@ export default function Dashboard() {
             >
               <MessageCircle className="h-4 w-4" />
             </button>
+            {hasMailCollaboration && (
+              <button
+                type="button"
+                onClick={() => navigate("/mail")}
+                title="邮件协同"
+                className="flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-slate-100 text-slate-600"
+              >
+                <Mail className="h-4 w-4" />
+              </button>
+            )}
           </div>
-          {/* 手机端：更多菜单（折叠WhatsApp） */}
+          {/* 手机端：更多菜单（折叠快捷入口） */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -521,6 +608,12 @@ export default function Dashboard() {
                 <MessageCircle className="h-4 w-4 text-green-500" />
                 WhatsApp
               </DropdownMenuItem>
+              {hasMailCollaboration && (
+                <DropdownMenuItem onClick={() => navigate("/mail")} className="rounded-lg text-sm cursor-pointer gap-2">
+                  <Mail className="h-4 w-4 text-blue-500" />
+                  邮件协同
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
           {/* 待办铃铛 - Odoo 风格下拉面板 */}
@@ -579,7 +672,7 @@ export default function Dashboard() {
                       <button
                         key={item.id ?? idx}
                         type="button"
-                        onClick={() => navigate("/workflow/center?tab=todo")}
+                        onClick={() => navigate(item.routePath || "/workflow/center?tab=todo")}
                         className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
                       >
                         <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-violet-50">
@@ -722,44 +815,9 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* 协同公司入口 */}
-        {(myCompanies as any[]).length > 0 && (
-          <div className="mt-6 md:mt-10">
-            <div className="flex items-center gap-2 mb-3">
-              <Network className="h-3.5 w-3.5 text-slate-400" />
-              <span className="text-xs sm:text-sm font-medium text-slate-500">协同公司</span>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {(myCompanies as any[]).map((company: any) => (
-                <button
-                  key={company.id}
-                  type="button"
-                  onClick={() => {
-                    localStorage.setItem("erp-active-company-id", String(company.id));
-                    navigate("/");
-                  }}
-                  className="group flex items-center gap-4 rounded-2xl bg-white/70 px-4 py-3.5 text-left shadow-sm backdrop-blur-sm transition-all hover:bg-white hover:-translate-y-0.5 hover:shadow-md border border-white/60"
-                >
-                  <div
-                    className="h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm"
-                    style={{ background: company.color || "#6366f1" }}
-                  >
-                    <span className="text-base text-white font-bold">{(company.shortName || company.name).charAt(0)}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate">{company.name}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{company.description || "采购部 · 销售部 · 财务部 · 仓库管理"}</p>
-                  </div>
-                  <ExternalLink className="h-4 w-4 text-slate-300 group-hover:text-slate-500 transition-colors flex-shrink-0" />
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* 最近使用 */}
         {recentVisits.length > 0 && (
-          <div className="mt-6 md:mt-12">
+          <div className="mt-6 md:mt-10">
             <div className="flex items-center gap-2 mb-2.5">
               <Clock className="h-3.5 w-3.5 text-slate-400" />
               <span className="text-xs sm:text-sm font-medium text-slate-500">最近使用</span>
@@ -786,8 +844,9 @@ export default function Dashboard() {
       </main>
 
       {/* 底部版权 */}
-      <footer className="py-3 text-center text-[10px] sm:text-xs text-slate-400/70">
-        © 2026 苏州神韵医疗器械有限公司
+      <footer className="flex items-center justify-center gap-3 px-4 py-3 text-center text-[10px] text-slate-400/70 sm:text-xs">
+        <span>© 2026 {companyDisplayName}</span>
+        <span>v1.0</span>
       </footer>
     </div>
   );

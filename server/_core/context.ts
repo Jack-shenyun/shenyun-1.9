@@ -1,5 +1,12 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
+import { users } from "../../drizzle/schema";
+import { eq } from "drizzle-orm";
+import {
+  ensureUsersExtendedColumns,
+  getDb,
+  resolveUserForCompanyScope,
+} from "../db";
 import { sdk } from "./sdk";
 import { ENV } from "./env";
 import { COOKIE_NAME } from "@shared/const";
@@ -23,9 +30,50 @@ export async function createContext(
       // 兼容可能存在的加密格式
       if (cookieValue.startsWith('{')) {
         user = JSON.parse(cookieValue);
+        const cookieUserId = Number((user as any)?.id || 0);
+        if (cookieUserId > 0) {
+          const db = await getDb();
+          if (db) {
+            await ensureUsersExtendedColumns(db);
+            const [dbUser] = await db.select().from(users).where(eq(users.id, cookieUserId)).limit(1);
+            if (dbUser) {
+              const currentCompanyId = Number((user as any)?.companyId || 0) || Number((dbUser as any)?.companyId || 0);
+              user = (await resolveUserForCompanyScope(
+                dbUser as any,
+                currentCompanyId
+              )) as any;
+            }
+          }
+        }
       }
     } catch (e) {
       // 解析失败则忽略
+    }
+  }
+
+  // 1.5. 本地用户名密码模式下，兼容从前端 header 透传本地登录用户。
+  if (!user && !ENV.oAuthServerUrl) {
+    const headerValue = opts.req.headers["x-local-auth-user"];
+    const rawHeader = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+    if (rawHeader) {
+      try {
+        const decodedHeader = Buffer.from(rawHeader, "base64").toString("utf-8");
+        const parsed = JSON.parse(decodedHeader);
+        const userId = Number(parsed?.id);
+        if (Number.isFinite(userId) && userId > 0) {
+          const db = await getDb();
+          if (db) {
+            await ensureUsersExtendedColumns(db);
+            const [dbUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+            user = (await resolveUserForCompanyScope(
+              dbUser as any,
+              Number(parsed?.companyId || 0) || Number((dbUser as any)?.companyId || 0)
+            )) as any;
+          }
+        }
+      } catch {
+        // ignore invalid local auth header
+      }
     }
   }
 

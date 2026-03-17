@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { formatDate, formatDateTime } from "@/lib/formatters";
+import { formatDateTime } from "@/lib/formatters";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -68,6 +68,33 @@ import { getStatusSemanticClass } from "@/lib/statusStyle";
 
 // 每页显示条数
 const PAGE_SIZE = 15;
+
+const getLogTime = (log: any) => log?.operatedAt || log?.createdAt || null;
+
+const parseLogValue = (value: unknown) => {
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  if (!text) return value;
+  if ((text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]"))) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+};
+
+const toChangedFields = (value: unknown) => {
+  const parsed = parseLogValue(value);
+  if (Array.isArray(parsed)) {
+    return parsed.map((item) => String(item).trim()).filter(Boolean);
+  }
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
 
 // 操作类型图标
 const getActionIcon = (action: string) => {
@@ -163,13 +190,19 @@ export default function OperationLogsPage() {
 
     if (filters.startDate) {
       const startDate = new Date(filters.startDate);
-      result = result.filter((log: any) => new Date(log.createdAt) >= startDate);
+      result = result.filter((log: any) => {
+        const time = getLogTime(log);
+        return time ? new Date(time) >= startDate : false;
+      });
     }
 
     if (filters.endDate) {
       const endDate = new Date(filters.endDate);
       endDate.setHours(23, 59, 59, 999);
-      result = result.filter((log: any) => new Date(log.createdAt) <= endDate);
+      result = result.filter((log: any) => {
+        const time = getLogTime(log);
+        return time ? new Date(time) <= endDate : false;
+      });
     }
 
     return result;
@@ -211,7 +244,7 @@ export default function OperationLogsPage() {
         log.description,
         log.operatorName,
         RESULT_NAMES[log.result as LogResult] || log.result || "成功",
-        log.createdAt ? new Date(log.createdAt).toISOString() : "",
+        getLogTime(log) ? new Date(getLogTime(log) as any).toISOString() : "",
       ]);
       content = [
         headers.join(","),
@@ -261,8 +294,8 @@ export default function OperationLogsPage() {
               <History className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h2 className="text-xl font-bold tracking-tight">操作日志</h2>
-              <p className="text-sm text-muted-foreground">查看系统所有模块的操作记录（数据库存储）</p>
+              <h2 className="text-xl font-bold tracking-tight">审计追踪（Audit Trail）</h2>
+              <p className="text-sm text-muted-foreground">自动生成带时间戳的创建、修改、删除记录，追踪谁在何时操作了什么</p>
             </div>
           </div>
           <div className="flex gap-2">
@@ -288,7 +321,7 @@ export default function OperationLogsPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            {user?.role === "admin" && (
+            {(user?.role === "admin" || Boolean((user as any)?.isCompanyAdmin)) && (
               <Button
                 variant="outline"
                 className="text-red-600"
@@ -435,7 +468,7 @@ export default function OperationLogsPage() {
         {/* 日志列表 */}
         <Card>
           <CardHeader>
-            <CardTitle>操作记录</CardTitle>
+            <CardTitle>审计记录</CardTitle>
             <CardDescription>
               共 {filteredLogs.length} 条记录
               {filteredLogs.length !== logsData.length && ` (已筛选，总计 ${logsData.length} 条)`}
@@ -472,7 +505,7 @@ export default function OperationLogsPage() {
                       {(paginatedLogs as any[]).map((log: any) => (
                         <TableRow key={log.id}>
                           <TableCell className="text-center font-mono text-sm">
-                            {log.createdAt ? formatDateTime(log.createdAt) : "-"}
+                            {getLogTime(log) ? formatDateTime(getLogTime(log) as any) : "-"}
                           </TableCell>
                           <TableCell className="text-center">
                             <Badge variant="outline">
@@ -551,7 +584,7 @@ export default function OperationLogsPage() {
         <DraggableDialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
           <DraggableDialogContent>
             <DialogHeader>
-              <DialogTitle>操作日志详情</DialogTitle>
+              <DialogTitle>审计追踪详情</DialogTitle>
             </DialogHeader>
             {selectedLog && (
               <ScrollArea className="max-h-[60vh]">
@@ -561,7 +594,7 @@ export default function OperationLogsPage() {
                     <div className="space-y-1">
                       <Label className="text-muted-foreground">操作时间</Label>
                       <p className="font-mono">
-                        {selectedLog.createdAt ? formatDateTime(selectedLog.createdAt) : "-"}
+                        {getLogTime(selectedLog) ? formatDateTime(getLogTime(selectedLog) as any) : "-"}
                       </p>
                     </div>
                     <div className="space-y-1">
@@ -610,10 +643,7 @@ export default function OperationLogsPage() {
                     <div className="space-y-1">
                       <Label className="text-muted-foreground">变更字段</Label>
                       <div className="flex flex-wrap gap-2">
-                        {(typeof selectedLog.changedFields === "string"
-                          ? selectedLog.changedFields.split(",")
-                          : selectedLog.changedFields
-                        ).map((field: string) => (
+                        {toChangedFields(selectedLog.changedFields).map((field: string) => (
                           <Badge key={field} variant="secondary">{field.trim()}</Badge>
                         ))}
                       </div>
@@ -625,9 +655,9 @@ export default function OperationLogsPage() {
                     <div className="space-y-1">
                       <Label className="text-muted-foreground">操作前数据</Label>
                       <pre className="p-3 bg-muted rounded-md text-xs overflow-auto max-h-40">
-                        {typeof selectedLog.previousData === "string"
-                          ? selectedLog.previousData
-                          : JSON.stringify(selectedLog.previousData, null, 2)}
+                        {typeof parseLogValue(selectedLog.previousData) === "string"
+                          ? parseLogValue(selectedLog.previousData) as string
+                          : JSON.stringify(parseLogValue(selectedLog.previousData), null, 2)}
                       </pre>
                     </div>
                   )}
@@ -637,9 +667,9 @@ export default function OperationLogsPage() {
                     <div className="space-y-1">
                       <Label className="text-muted-foreground">操作后数据</Label>
                       <pre className="p-3 bg-muted rounded-md text-xs overflow-auto max-h-40">
-                        {typeof selectedLog.newData === "string"
-                          ? selectedLog.newData
-                          : JSON.stringify(selectedLog.newData, null, 2)}
+                        {typeof parseLogValue(selectedLog.newData) === "string"
+                          ? parseLogValue(selectedLog.newData) as string
+                          : JSON.stringify(parseLogValue(selectedLog.newData), null, 2)}
                       </pre>
                     </div>
                   )}

@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import { formatDate } from "@/lib/formatters";
+import { formatDate, formatDisplayNumber } from "@/lib/formatters";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import DateTextInput from "@/components/DateTextInput";
+import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,13 +18,15 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
-  Warehouse, Plus, Search, MoreHorizontal, Edit, Trash2, Eye, CheckCircle, XCircle, Bell, Calculator, AlertCircle,
+  Warehouse, Plus, Search, MoreHorizontal, Edit, Trash2, Eye, CheckCircle, XCircle, Bell, Calculator, AlertCircle, Upload, Download, FileText,
 } from "lucide-react";
+import { deleteEntry as deleteFileEntry, downloadFile, formatFileSize } from "@/lib/fileManagerApi";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
 
@@ -56,7 +60,69 @@ const emptyForm = {
   remark: "",
 };
 
+type SterilizationProofMeta = {
+  fileName: string;
+  filePath: string;
+  fileSize?: number;
+  uploadedAt?: string;
+};
+
+const PROOF_UPLOAD_DIR = "/ERP/知识库/生产部/生产入库申请/灭菌证明";
+
+function sanitizeFileNamePart(value: unknown) {
+  return String(value || "")
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function parseEntryRemark(remark: unknown): { note: string; sterilizationProof: SterilizationProofMeta | null } {
+  const text = String(remark || "").trim();
+  if (!text) return { note: "", sterilizationProof: null };
+  if (!text.startsWith("{")) return { note: text, sterilizationProof: null };
+  try {
+    const parsed = JSON.parse(text);
+    const proof = parsed?.sterilizationProof;
+    return {
+      note: typeof parsed?.note === "string" ? parsed.note : typeof parsed?.remark === "string" ? parsed.remark : "",
+      sterilizationProof: proof?.filePath && proof?.fileName
+        ? {
+            fileName: String(proof.fileName),
+            filePath: String(proof.filePath),
+            fileSize: proof.fileSize ? Number(proof.fileSize) : undefined,
+            uploadedAt: proof.uploadedAt ? String(proof.uploadedAt) : undefined,
+          }
+        : null,
+    };
+  } catch {
+    return { note: text, sterilizationProof: null };
+  }
+}
+
+function buildEntryRemark(note: string, sterilizationProof: SterilizationProofMeta | null) {
+  const nextNote = String(note || "").trim();
+  if (!sterilizationProof) return nextNote;
+  return JSON.stringify({
+    note: nextNote,
+    sterilizationProof,
+  });
+}
+
+function buildSterilizationProofFileName(productName: string, sterilizationBatchNo: string, batchNo: string) {
+  const parts = [productName, sterilizationBatchNo, batchNo]
+    .map(sanitizeFileNamePart)
+    .filter(Boolean);
+  return `${parts.join("+") || "灭菌证明"}.pdf`;
+}
+
+function formatQtyDisplay(value: unknown) {
+  const num = Number(String(value ?? "").trim());
+  if (!Number.isFinite(num)) return String(value ?? "-");
+  return formatDisplayNumber(num);
+}
+
 export default function ProductionWarehouseEntryPage() {
+  const PAGE_SIZE = 10;
   const { canDelete } = usePermission();
   const { data: entries = [], isLoading, refetch } = trpc.productionWarehouseEntries.list.useQuery({});
   const { data: productionOrders = [] } = trpc.productionOrders.list.useQuery({});
@@ -81,10 +147,15 @@ export default function ProductionWarehouseEntryPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [productionOrderPickerOpen, setProductionOrderPickerOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
   const [viewingEntry, setViewingEntry] = useState<any>(null);
   const [quantityManuallyEdited, setQuantityManuallyEdited] = useState(false);
+  const [sterilizationProof, setSterilizationProof] = useState<SterilizationProofMeta | null>(null);
+  const [uploadingProof, setUploadingProof] = useState(false);
   const focusHandledRef = useRef(false);
+  const proofInputRef = useRef<HTMLInputElement>(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [formData, setFormData] = useState({ ...emptyForm });
 
@@ -108,22 +179,42 @@ export default function ProductionWarehouseEntryPage() {
     const matchStatus = statusFilter === "all" || e.status === statusFilter;
     return matchSearch && matchStatus;
   });
+  const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE));
+  const pagedEntries = filteredEntries.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const genNo = () => {
-    const now = new Date();
-    return `WE-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(Date.now()).slice(-4)}`;
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, filteredEntries.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  const findLinkedSterilization = (productionOrderId: string, batchNo: string) => {
+    return (sterilizationOrders as any[])
+      .filter((item: any) =>
+        String(item.productionOrderId || "") === String(productionOrderId || "") || String(item.batchNo || "") === String(batchNo || "")
+      )
+      .sort((a: any, b: any) => {
+        const aTime = new Date(String(a.updatedAt || a.createdAt || 0)).getTime();
+        const bTime = new Date(String(b.updatedAt || b.createdAt || 0)).getTime();
+        return bTime - aTime;
+      })[0];
   };
 
   const handleAdd = () => {
     setEditingEntry(null);
     setQuantityManuallyEdited(false);
-    setFormData({ ...emptyForm, entryNo: genNo(), applicationDate: new Date().toISOString().split("T")[0] });
+    setSterilizationProof(null);
+    setFormData({ ...emptyForm, entryNo: "", applicationDate: new Date().toISOString().split("T")[0] });
     setDialogOpen(true);
   };
 
   const handleEdit = (entry: any) => {
+    const remarkMeta = parseEntryRemark(entry.remark);
     setEditingEntry(entry);
     setQuantityManuallyEdited(true); // 编辑时不自动覆盖
+    setSterilizationProof(remarkMeta.sterilizationProof);
     setFormData({
       entryNo: entry.entryNo,
       productionOrderId: entry.productionOrderId ? String(entry.productionOrderId) : "",
@@ -142,7 +233,7 @@ export default function ProductionWarehouseEntryPage() {
       unit: entry.unit || "件",
       targetWarehouseId: entry.targetWarehouseId ? String(entry.targetWarehouseId) : "",
       applicationDate: entry.applicationDate ? String(entry.applicationDate).split("T")[0] : "",
-      remark: entry.remark || "",
+      remark: remarkMeta.note,
     });
     setDialogOpen(true);
   };
@@ -155,33 +246,91 @@ export default function ProductionWarehouseEntryPage() {
 
   const handleProductionOrderChange = (poId: string) => {
     const po = (productionOrders as any[]).find((p) => String(p.id) === poId);
+    const linkedProduct = (products as any[]).find((item: any) => String(item.id) === String(po?.productId || ""));
+    const linkedSterilization = findLinkedSterilization(poId, String(po?.batchNo || ""));
+    if (
+      sterilizationProof?.filePath &&
+      (
+        String(formData.productionOrderId || "") !== String(poId) ||
+        String(formData.batchNo || "") !== String(po?.batchNo || "") ||
+        String(formData.sterilizationBatchNo || "") !== String(linkedSterilization?.sterilizationBatchNo || "")
+      )
+    ) {
+      setSterilizationProof(null);
+      toast.info("生产/灭菌信息已变化，请重新上传灭菌证明");
+    }
     setFormData((f) => ({
       ...f,
       productionOrderId: poId,
       productionOrderNo: po?.orderNo || "",
+      sterilizationOrderId: linkedSterilization?.id ? String(linkedSterilization.id) : "",
+      sterilizationOrderNo: linkedSterilization?.orderNo || "",
       productId: po?.productId ? String(po.productId) : f.productId,
+      productName: po?.productName || linkedProduct?.name || f.productName,
       batchNo: po?.batchNo || f.batchNo,
-    }));
-  };
-
-  const handleSterilizationOrderChange = (soId: string) => {
-    const so = (sterilizationOrders as any[]).find((s) => String(s.id) === soId);
-    setFormData((f) => ({
-      ...f,
-      sterilizationOrderId: soId,
-      sterilizationOrderNo: so?.orderNo || "",
-      sterilizationBatchNo: so?.sterilizationBatchNo || f.sterilizationBatchNo,
-      productName: so?.productName || f.productName,
-      batchNo: so?.batchNo || f.batchNo,
-      sterilizedQty: so?.quantity || f.sterilizedQty, // 灭菌后数量默认取灭菌单数量
-      unit: so?.unit || f.unit,
+      sterilizationBatchNo: linkedSterilization?.sterilizationBatchNo || "",
+      sterilizedQty: linkedSterilization?.quantity || f.sterilizedQty,
+      unit: linkedSterilization?.unit || po?.unit || linkedProduct?.unit || f.unit,
     }));
     setQuantityManuallyEdited(false);
   };
 
-  const handleProductChange = (productId: string) => {
-    const product = (products as any[]).find((p) => String(p.id) === productId);
-    setFormData((f) => ({ ...f, productId, productName: product?.name || "" }));
+  const handleUploadSterilizationProof = async (file?: File | null) => {
+    if (!file) return;
+    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") {
+      toast.error("仅支持上传 PDF 文件");
+      if (proofInputRef.current) proofInputRef.current.value = "";
+      return;
+    }
+    if (!formData.productName || !formData.sterilizationBatchNo || !formData.batchNo) {
+      toast.error("请先选择生产指令并带出产品名称、灭菌批号、生产批号");
+      if (proofInputRef.current) proofInputRef.current.value = "";
+      return;
+    }
+    setUploadingProof(true);
+    try {
+      const uploadName = buildSterilizationProofFileName(formData.productName, formData.sterilizationBatchNo, formData.batchNo);
+      const renamedFile = new File([file], uploadName, { type: "application/pdf" });
+      const form = new FormData();
+      form.append("path", PROOF_UPLOAD_DIR);
+      form.append("files", renamedFile);
+      const response = await fetch("/api/file-manager/upload", {
+        method: "POST",
+        body: form,
+      });
+      const result = await response.json();
+      if (!result?.success || !result?.files?.length) {
+        throw new Error(result?.error || "上传失败");
+      }
+      const saved = result.files[0];
+      if (sterilizationProof?.filePath) {
+        deleteFileEntry(sterilizationProof.filePath).catch(() => {});
+      }
+      setSterilizationProof({
+        fileName: String(saved.name || uploadName),
+        filePath: String(saved.path || ""),
+        fileSize: saved.size ? Number(saved.size) : undefined,
+        uploadedAt: new Date().toISOString(),
+      });
+      toast.success("灭菌证明已上传");
+    } catch (error: any) {
+      toast.error("上传失败", { description: error?.message || "请稍后重试" });
+    } finally {
+      setUploadingProof(false);
+      if (proofInputRef.current) proofInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveSterilizationProof = async () => {
+    if (!sterilizationProof) return;
+    const currentProof = sterilizationProof;
+    setSterilizationProof(null);
+    try {
+      await deleteFileEntry(currentProof.filePath);
+      toast.success("灭菌证明已移除");
+    } catch {
+      toast.error("已从表单移除，但服务器文件删除失败");
+    }
   };
 
   // 判断入库数量是否被手动修改（与公式计算值不同）
@@ -198,16 +347,29 @@ export default function ProductionWarehouseEntryPage() {
   };
 
   const handleSubmit = () => {
-    if (!formData.entryNo || !formData.quantity) {
-      toast.error("请填写必填项", { description: "入库单号和数量为必填" });
+    if (!formData.quantity) {
+      toast.error("请填写必填项", { description: "数量为必填" });
+      return;
+    }
+    if (!formData.productionOrderId) {
+      toast.error("请选择生产指令");
+      return;
+    }
+    if (!formData.sterilizationOrderId || !formData.sterilizationBatchNo) {
+      toast.error("当前生产指令未匹配到灭菌信息");
       return;
     }
     if (isQtyModified() && !formData.quantityModifyReason.trim()) {
       toast.error("请填写修改原因", { description: "入库数量与公式计算值不同，需填写修改原因" });
       return;
     }
+    if (!sterilizationProof?.filePath) {
+      toast.error("请上传灭菌证明 PDF");
+      return;
+    }
+    const remarkPayload = buildEntryRemark(formData.remark, sterilizationProof);
     const payload = {
-      entryNo: formData.entryNo,
+      entryNo: formData.entryNo || undefined,
       productionOrderId: formData.productionOrderId ? Number(formData.productionOrderId) : undefined,
       productionOrderNo: formData.productionOrderNo || undefined,
       sterilizationOrderId: formData.sterilizationOrderId ? Number(formData.sterilizationOrderId) : undefined,
@@ -225,7 +387,7 @@ export default function ProductionWarehouseEntryPage() {
       targetWarehouseId: formData.targetWarehouseId ? Number(formData.targetWarehouseId) : undefined,
       applicationDate: formData.applicationDate || undefined,
       status: "draft" as const,
-      remark: formData.remark || undefined,
+      remark: remarkPayload || undefined,
     };
     if (editingEntry) {
       updateMutation.mutate({
@@ -278,12 +440,27 @@ export default function ProductionWarehouseEntryPage() {
     next.searchParams.delete("focusId");
     window.history.replaceState({}, "", `${next.pathname}${next.search}`);
   }, [entries]);
-  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
-      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
-      <span className="flex-1 text-sm text-right break-all">{children}</span>
-    </div>
-  );
+  const viewingRemarkMeta = viewingEntry ? parseEntryRemark(viewingEntry.remark) : { note: "", sterilizationProof: null as SterilizationProofMeta | null };
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => {
+    const renderValue = (value: React.ReactNode): React.ReactNode => {
+      if (value == null || value === "") return "-";
+      if (value instanceof Date) return value.toISOString().slice(0, 10);
+      if (Array.isArray(value)) {
+        const items = value
+          .map((item) => item instanceof Date ? item.toISOString().slice(0, 10) : item)
+          .filter((item) => item != null && item !== "");
+        return items.length > 0 ? items.join(" ") : "-";
+      }
+      return value;
+    };
+
+    return (
+      <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+        <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+        <span className="flex-1 text-sm text-right break-all">{renderValue(children)}</span>
+      </div>
+    );
+  };
 
   return (
     <ERPLayout>
@@ -351,7 +528,7 @@ export default function ProductionWarehouseEntryPage() {
                   <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
                 ) : filteredEntries.length === 0 ? (
                   <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">暂无入库申请</TableCell></TableRow>
-                ) : filteredEntries.map((entry: any) => {
+                ) : pagedEntries.map((entry: any) => {
                   const warehouse = (warehouseList as any[]).find((w) => w.id === entry.targetWarehouseId);
                   return (
                     <TableRow key={entry.id}>
@@ -366,7 +543,7 @@ export default function ProductionWarehouseEntryPage() {
                           : <span className="text-muted-foreground">-</span>}
                       </TableCell>
                       <TableCell className="text-center">
-                        <span className="font-medium">{entry.quantity}</span>
+                        <span className="font-medium">{formatQtyDisplay(entry.quantity)}</span>
                         <span className="text-muted-foreground ml-1 text-xs">{entry.unit}</span>
                         {entry.quantityModifyReason && (
                           <AlertCircle className="h-3 w-3 inline ml-1 text-amber-500" title={`已修改：${entry.quantityModifyReason}`} />
@@ -425,74 +602,91 @@ export default function ProductionWarehouseEntryPage() {
             </Table>
           </CardContent>
         </Card>
+        <TablePaginationFooter total={filteredEntries.length} page={currentPage} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
 
         {/* 新建/编辑对话框 */}
         <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DraggableDialogContent className="max-w-2xl">
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingEntry ? "编辑入库申请" : "新建生产入库申请"}</DialogTitle>
               <DialogDescription>入库数量 = 灭菌后数量 − 检验报废数量 − 留样数量（可手动修改，需填写原因）</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4 max-h-[65vh] overflow-y-auto pr-1">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
+              <div className="grid grid-cols-4 gap-4">
+                <div className="space-y-2 col-span-2">
                   <Label>入库单号 *</Label>
-                  <Input value={formData.entryNo} onChange={(e) => setFormData({ ...formData, entryNo: e.target.value })} readOnly={!!editingEntry} className="font-mono" />
+                  <Input value={formData.entryNo} onChange={(e) => setFormData({ ...formData, entryNo: e.target.value })} placeholder="保存后系统生成" readOnly className="font-mono" />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 col-span-2">
                   <Label>申请日期</Label>
-                  <Input type="date" value={formData.applicationDate} onChange={(e) => setFormData({ ...formData, applicationDate: e.target.value })} />
+                  <DateTextInput value={formData.applicationDate} onChange={(value) => setFormData({ ...formData, applicationDate: value })} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
+              <div className="grid grid-cols-4 gap-4">
+                <div className="space-y-2 col-span-2">
                   <Label>关联生产指令</Label>
-                  <Select value={formData.productionOrderId || "__NONE__"} onValueChange={(v) => handleProductionOrderChange(v === "__NONE__" ? "" : v)}>
-                    <SelectTrigger><SelectValue placeholder="选择生产指令" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__NONE__">不关联</SelectItem>
-                      {(productionOrders as any[]).map((po: any) => (
-                        <SelectItem key={po.id} value={String(po.id)}>{po.orderNo}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1 justify-start font-normal"
+                      onClick={() => setProductionOrderPickerOpen(true)}
+                    >
+                      {formData.productionOrderId ? (
+                        <span className="flex items-center gap-2">
+                          <span className="text-green-600">✓</span>
+                          <span className="font-mono text-xs text-muted-foreground">{formData.productionOrderNo}</span>
+                          <span className="font-medium">{formData.productName || "已关联生产指令"}</span>
+                          {formData.batchNo ? <span className="text-muted-foreground text-xs">· {formData.batchNo}</span> : null}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">点击选择生产指令...</span>
+                      )}
+                    </Button>
+                    {formData.productionOrderId ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setFormData((f) => ({
+                          ...f,
+                          productionOrderId: "",
+                          productionOrderNo: "",
+                          sterilizationOrderId: "",
+                          sterilizationOrderNo: "",
+                        }))}
+                      >
+                        清空
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="space-y-2">
-                  <Label>关联灭菌单（合格）</Label>
-                  <Select value={formData.sterilizationOrderId || "__NONE__"} onValueChange={(v) => handleSterilizationOrderChange(v === "__NONE__" ? "" : v)}>
-                    <SelectTrigger><SelectValue placeholder="选择灭菌单" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__NONE__">不关联</SelectItem>
-                      {(sterilizationOrders as any[]).filter((s: any) => s.status === "qualified" || s.status === "arrived").map((s: any) => (
-                        <SelectItem key={s.id} value={String(s.id)}>{s.orderNo} - {s.productName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>关联灭菌单</Label>
+                  <Input value={formData.sterilizationOrderNo} readOnly className="font-mono bg-muted/40" placeholder="选择生产指令后自动带入" />
+                </div>
+                <div className="space-y-2">
+                  <Label>灭菌批号</Label>
+                  <Input value={formData.sterilizationBatchNo} readOnly className="font-mono bg-muted/40" placeholder="自动带入" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
-                  <Label>产品</Label>
-                  <Select value={formData.productId || "__NONE__"} onValueChange={(v) => handleProductChange(v === "__NONE__" ? "" : v)}>
-                    <SelectTrigger><SelectValue placeholder="选择产品" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__NONE__">不选择</SelectItem>
-                      {(products as any[]).map((p: any) => (
-                        <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>产品名称</Label>
+                  <Input value={formData.productName} readOnly className="bg-muted/40" placeholder="自动带入" />
                 </div>
                 <div className="space-y-2">
                   <Label>生产批号</Label>
-                  <Input value={formData.batchNo} onChange={(e) => setFormData({ ...formData, batchNo: e.target.value })} placeholder="生产批号" className="font-mono" />
+                  <Input value={formData.batchNo} readOnly className="font-mono bg-muted/40" placeholder="自动带入" />
+                </div>
+                <div className="space-y-2">
+                  <Label>生产指令号</Label>
+                  <Input value={formData.productionOrderNo} readOnly className="font-mono bg-muted/40" placeholder="自动带入" />
+                </div>
+                <div className="space-y-2">
+                  <Label>灭菌后数量</Label>
+                  <Input value={formData.sterilizedQty} readOnly className="bg-muted/40" placeholder="自动带入" />
                 </div>
               </div>
-              {formData.sterilizationBatchNo && (
-                <div className="p-2 bg-orange-50 rounded border border-orange-100 text-sm text-orange-700">
-                  灭菌批号：<span className="font-mono font-medium">{formData.sterilizationBatchNo}</span>
-                </div>
-              )}
 
               {/* 入库数量公式区域 */}
               <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 space-y-3">
@@ -500,16 +694,7 @@ export default function ProductionWarehouseEntryPage() {
                   <Calculator className="h-4 w-4" />
                   入库数量计算公式
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">灭菌后数量</Label>
-                    <Input
-                      type="number"
-                      value={formData.sterilizedQty}
-                      onChange={(e) => { setFormData({ ...formData, sterilizedQty: e.target.value }); setQuantityManuallyEdited(false); }}
-                      placeholder="0"
-                    />
-                  </div>
+                <div className="grid grid-cols-4 gap-3">
                   <div className="space-y-1">
                     <Label className="text-xs">检验报废数量</Label>
                     <Input
@@ -528,6 +713,19 @@ export default function ProductionWarehouseEntryPage() {
                       placeholder="0"
                     />
                   </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">产品编码</Label>
+                    <Input
+                      value={(products as any[]).find((item: any) => String(item.id) === String(formData.productId || ""))?.code || ""}
+                      readOnly
+                      className="font-mono bg-muted/40"
+                      placeholder="自动带入"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">灭菌批号</Label>
+                    <Input value={formData.sterilizationBatchNo} readOnly className="font-mono bg-muted/40" placeholder="自动带入" />
+                  </div>
                 </div>
                 {calcQty() !== null && (
                   <p className="text-xs text-blue-600">
@@ -536,7 +734,7 @@ export default function ProductionWarehouseEntryPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label className="flex items-center gap-1">
                     入库数量 *
@@ -565,6 +763,46 @@ export default function ProductionWarehouseEntryPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>灭菌证明（PDF）</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1 justify-start font-normal"
+                      onClick={() => proofInputRef.current?.click()}
+                      disabled={uploadingProof}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {sterilizationProof?.fileName || (uploadingProof ? "上传中..." : "上传灭菌证明")}
+                    </Button>
+                    {sterilizationProof?.filePath ? (
+                      <Button type="button" variant="outline" size="icon" onClick={() => downloadFile(sterilizationProof.filePath, sterilizationProof.fileName)}>
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    ) : null}
+                  </div>
+                  <input
+                    ref={proofInputRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={(e) => handleUploadSterilizationProof(e.target.files?.[0] || null)}
+                  />
+                  {sterilizationProof?.filePath ? (
+                    <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground flex items-center justify-between gap-2">
+                      <span className="truncate">
+                        {sterilizationProof.fileName}
+                        {sterilizationProof.fileSize ? ` · ${formatFileSize(sterilizationProof.fileSize)}` : ""}
+                      </span>
+                      <Button type="button" variant="ghost" size="sm" className="h-6 px-2" onClick={handleRemoveSterilizationProof}>
+                        删除
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">文件名自动生成为：产品名称+灭菌批号+生产批号.pdf</p>
+                  )}
                 </div>
               </div>
 
@@ -595,9 +833,81 @@ export default function ProductionWarehouseEntryPage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
+        <EntityPickerDialog
+          open={productionOrderPickerOpen}
+          onOpenChange={setProductionOrderPickerOpen}
+          title="选择生产指令"
+          searchPlaceholder="搜索生产指令号、产品名称、批号..."
+          columns={[
+            { key: "orderNo", title: "指令号", className: "w-[160px] whitespace-nowrap", render: (row) => <span className="font-mono">{row.orderNo}</span> },
+            { key: "productName", title: "产品名称", className: "min-w-[180px]", render: (row) => <span className="font-medium">{row.productName || "-"}</span> },
+            { key: "batchNo", title: "生产批号", className: "w-[140px] whitespace-nowrap", render: (row) => <span className="font-mono">{row.batchNo || "-"}</span> },
+            { key: "plannedQty", title: "计划数量", className: "w-[120px] whitespace-nowrap", render: (row) => <span>{formatQtyDisplay(row.plannedQty)} {row.unit || ""}</span> },
+            {
+              key: "sterilizationOrder",
+              title: "灭菌单号",
+              className: "w-[180px] whitespace-nowrap",
+              render: (row) => {
+                const so = findLinkedSterilization(String(row.id), String(row.batchNo || ""));
+                return so ? <span className="font-mono text-xs">{so.orderNo}</span> : <span className="text-muted-foreground">未匹配</span>;
+              },
+            },
+            {
+              key: "sterilizationBatchNo",
+              title: "灭菌批号",
+              className: "w-[160px] whitespace-nowrap",
+              render: (row) => {
+                const so = findLinkedSterilization(String(row.id), String(row.batchNo || ""));
+                return so?.sterilizationBatchNo ? <span className="font-mono text-xs text-orange-600">{so.sterilizationBatchNo}</span> : <span className="text-muted-foreground">-</span>;
+              },
+            },
+            {
+              key: "sterilizedQty",
+              title: "灭菌后数量",
+              className: "w-[120px] whitespace-nowrap",
+              render: (row) => {
+                const so = findLinkedSterilization(String(row.id), String(row.batchNo || ""));
+                return <span>{so?.quantity ? formatQtyDisplay(so.quantity) : "-"} {so?.unit || row.unit || ""}</span>;
+              },
+            },
+            {
+              key: "sterilizationStatus",
+              title: "灭菌状态",
+              className: "w-[120px] whitespace-nowrap",
+              render: (row) => {
+                const so = findLinkedSterilization(String(row.id), String(row.batchNo || ""));
+                if (!so) return <span className="text-muted-foreground">未匹配</span>;
+                const labelMap: Record<string, string> = {
+                  draft: "草稿",
+                  sent: "灭菌中",
+                  processing: "灭菌中",
+                  arrived: "已到货",
+                  returned: "已回收",
+                  qualified: "合格",
+                  unqualified: "不合格",
+                };
+                return labelMap[String(so.status || "")] || String(so.status || "-");
+              },
+            },
+          ]}
+          rows={productionOrders as any[]}
+          selectedId={formData.productionOrderId || ""}
+          defaultWidth={1320}
+          filterFn={(row, query) => {
+            const lower = query.toLowerCase();
+            return String(row.orderNo || "").toLowerCase().includes(lower) ||
+              String(row.productName || "").toLowerCase().includes(lower) ||
+              String(row.batchNo || "").toLowerCase().includes(lower);
+          }}
+          onSelect={(row) => {
+            handleProductionOrderChange(String(row.id));
+            setProductionOrderPickerOpen(false);
+          }}
+        />
+
         {/* 查看详情 */}
 <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-  <DraggableDialogContent>
+  <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
     {viewingEntry && (
       <div className="space-y-4">
         {/* 标准头部 */}
@@ -656,7 +966,7 @@ export default function ProductionWarehouseEntryPage() {
               <div>
                 <FieldRow label="入库数量">
                   <div className="flex items-center justify-end gap-1">
-                    <span className="font-medium text-lg">{viewingEntry.quantity}</span>
+                    <span className="font-medium text-lg">{formatQtyDisplay(viewingEntry.quantity)}</span>
                     <span className="text-muted-foreground text-xs">{viewingEntry.unit}</span>
                     {viewingEntry.quantityModifyReason && (
                       <AlertCircle className="h-3 w-3 text-amber-500" title={`已修改: ${viewingEntry.quantityModifyReason}`} />
@@ -677,10 +987,35 @@ export default function ProductionWarehouseEntryPage() {
           )}
 
           {/* 备注 */}
-          {viewingEntry.remark && (
+          {viewingRemarkMeta.sterilizationProof && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">灭菌证明</h3>
+              <div className="rounded-lg border bg-muted/20 px-4 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0 flex items-center gap-2">
+                  <FileText className="h-4 w-4 shrink-0 text-red-500" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{viewingRemarkMeta.sterilizationProof.fileName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {viewingRemarkMeta.sterilizationProof.fileSize ? formatFileSize(viewingRemarkMeta.sterilizationProof.fileSize) : "PDF 文件"}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadFile(viewingRemarkMeta.sterilizationProof!.filePath, viewingRemarkMeta.sterilizationProof!.fileName)}
+                >
+                  <Download className="h-4 w-4 mr-2" />下载
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* 备注 */}
+          {viewingRemarkMeta.note && (
             <div>
               <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
-              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingEntry.remark}</p>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingRemarkMeta.note}</p>
             </div>
           )}
 

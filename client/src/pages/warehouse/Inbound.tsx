@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import ERPLayout from "@/components/ERPLayout";
+import PrintPreviewButton from "@/components/PrintPreviewButton";
 import {
   PackagePlus, Plus, Search, Eye, Edit, Trash2, MoreHorizontal, X,
 } from "lucide-react";
@@ -25,7 +26,8 @@ import {
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { usePermission } from "@/hooks/usePermission";
-import { formatDate, formatDateTime } from "@/lib/formatters";
+import { formatDate, formatDateTime, formatDisplayNumber } from "@/lib/formatters";
+import { useLocation } from "wouter";
 
 // ==================== 常量 ====================
 const typeMap: Record<string, string> = {
@@ -89,15 +91,19 @@ type FormData = {
   warehouseId: string;
   relatedOrderId: string;         // 销售订单ID（退货用）
   relatedEntryId: string;         // 生产入库申请ID
-  goodsReceiptId: string;         // 采购到货单ID
-  goodsReceiptNo: string;         // 采购到货单号（显示用）
+  goodsReceiptId: string;         // 到货单ID
+  goodsReceiptNo: string;         // 到货单号（显示用）
   supplierName: string;           // 采购入库时的供应商名称
   remark: string;
 };
 
 // ==================== 主组件 ====================
 export default function InboundPage() {
+  const detailPrintRef = useRef<HTMLDivElement>(null);
+  const prefillHandledRef = useRef("");
+  const [location] = useLocation();
   const { canDelete } = usePermission();
+  const utils = trpc.useUtils();
 
   // ---- 对话框状态 ----
   const [formOpen, setFormOpen]             = useState(false);
@@ -125,7 +131,7 @@ export default function InboundPage() {
   const [detailLines, setDetailLines] = useState<InboundDetailLine[]>([]);
 
   // ---- 来源单据选择弹窗 ----
-  const [grDialogOpen, setGrDialogOpen]   = useState(false);  // 采购到货单弹窗
+  const [grDialogOpen, setGrDialogOpen]   = useState(false);  // 到货单弹窗
   const [soDialogOpen, setSoDialogOpen]   = useState(false);  // 销售订单弹窗（退货）
   const [pweDialogOpen, setPweDialogOpen] = useState(false);  // 生产入库申请弹窗
   const [sourceSearch, setSourceSearch]   = useState("");
@@ -135,7 +141,7 @@ export default function InboundPage() {
   const { data: productList = [] }    = trpc.products.list.useQuery({ limit: 1000 });
   const { data: rawData = [], refetch } = trpc.inventoryTransactions.list.useQuery({ limit: 200 });
 
-  // 采购到货单（质检合格）
+  // 到货单（质检合格）
   const { data: goodsReceiptList = [] } = trpc.goodsReceipts.list.useQuery({ status: "passed", limit: 200 });
 
   // 销售订单（已发货/部分发货/已完成，用于退货）
@@ -158,7 +164,7 @@ export default function InboundPage() {
   const products = (productList as ProductOption[]) || [];
   const productsById = new Map(products.map((p) => [p.id, p]));
 
-  // 选中采购到货单详情
+  // 选中到货单详情
   const selectedGrId = formData.goodsReceiptId && formData.type === "purchase_in"
     ? Number(formData.goodsReceiptId) : null;
   const { data: grDetail } = trpc.goodsReceipts.getById.useQuery(
@@ -174,7 +180,7 @@ export default function InboundPage() {
     { enabled: !!selectedSoId }
   );
 
-  // 采购到货单选择后自动加载明细
+  // 到货单选择后自动加载明细
   useEffect(() => {
     if (grDetail?.items && formData.type === "purchase_in" && selectedGrId) {
       const lines: InboundDetailLine[] = (grDetail.items as any[]).map((item: any, idx: number) => {
@@ -226,15 +232,34 @@ export default function InboundPage() {
 
   // ==================== Mutations ====================
   const createMutation = trpc.inventoryTransactions.create.useMutation({
-    onSuccess: () => { toast.success("入库单已创建"); refetch(); setFormOpen(false); },
+    onSuccess: () => {
+      toast.success("入库单已创建");
+      refetch();
+      utils.goodsReceipts.list.invalidate();
+      utils.purchaseOrders.list.invalidate();
+      utils.productionWarehouseEntries.list.invalidate();
+      utils.workflowCenter.list.invalidate();
+      setFormOpen(false);
+    },
     onError: (e) => toast.error("创建失败：" + e.message),
   });
   const updateMutation = trpc.inventoryTransactions.update.useMutation({
-    onSuccess: () => { toast.success("入库单已更新"); refetch(); setFormOpen(false); },
+    onSuccess: () => {
+      toast.success("入库单已更新");
+      refetch();
+      utils.goodsReceipts.list.invalidate();
+      utils.purchaseOrders.list.invalidate();
+      setFormOpen(false);
+    },
     onError: (e) => toast.error("更新失败：" + e.message),
   });
   const deleteMutation = trpc.inventoryTransactions.delete.useMutation({
-    onSuccess: () => { toast.success("入库单已删除"); refetch(); },
+    onSuccess: () => {
+      toast.success("入库单已删除");
+      refetch();
+      utils.goodsReceipts.list.invalidate();
+      utils.purchaseOrders.list.invalidate();
+    },
     onError: (e) => toast.error("删除失败：" + e.message),
   });
   const syncShipmentStatusMutation = trpc.salesOrders.syncShipmentStatus.useMutation();
@@ -245,12 +270,9 @@ export default function InboundPage() {
     return wh ? wh.name : `仓库${warehouseId}`;
   };
 
-  const buildDefaultDocumentNo = () =>
-    `IN-${new Date().getFullYear()}-${String(data.length + 1).padStart(4, "0")}`;
-
   const resetForm = () => {
     setFormData({
-      documentNo: buildDefaultDocumentNo(),
+      documentNo: "",
       type: "purchase_in",
       warehouseId: "",
       relatedOrderId: "",
@@ -342,6 +364,8 @@ export default function InboundPage() {
     setPweDialogOpen(false);
     setFormData((prev) => ({
       ...prev,
+      type: "production_in",
+      warehouseId: entry.targetWarehouseId ? String(entry.targetWarehouseId) : prev.warehouseId,
       relatedEntryId: String(entry.id),
     }));
     // 直接加载生产入库申请明细（单条）
@@ -362,6 +386,24 @@ export default function InboundPage() {
       isSterilized: product?.isSterilized ?? false,
     }]);
   };
+
+  useEffect(() => {
+    const rawEntryId = String(new URLSearchParams(window.location.search).get("productionEntryId") || "").trim();
+    if (!rawEntryId) return;
+    if (prefillHandledRef.current === rawEntryId) return;
+    const entryId = Number(rawEntryId);
+    if (!Number.isFinite(entryId) || entryId <= 0) return;
+    const entry = (pweList as any[]).find((item: any) => Number(item?.id) === entryId);
+    if (!entry) return;
+    prefillHandledRef.current = rawEntryId;
+    setEditingRecord(null);
+    resetForm();
+    handleSelectPWE(entry);
+    setFormOpen(true);
+    const next = new URL(window.location.href);
+    next.searchParams.delete("productionEntryId");
+    window.history.replaceState({}, "", `${next.pathname}${next.search}`);
+  }, [location, pweList]);
 
   // 更新明细行
   const updateDetailLine = (key: string, field: keyof InboundDetailLine, value: string) => {
@@ -395,7 +437,7 @@ export default function InboundPage() {
     if (validLines.length === 0) { toast.error("请至少填写一条入库明细"); return; }
 
     for (const line of validLines) {
-      if (line.isMedicalDevice && line.isSterilized && !line.sterilizationBatchNo.trim()) {
+      if (formData.type !== "purchase_in" && line.isMedicalDevice && line.isSterilized && !line.sterilizationBatchNo.trim()) {
         toast.error(`${line.productName} 为需灭菌医疗器械，必须填写灭菌批号`);
         return;
       }
@@ -410,7 +452,7 @@ export default function InboundPage() {
           productId: line.productId || undefined,
           itemName: line.productName,
           batchNo: line.batchNo || undefined,
-          sterilizationBatchNo: line.sterilizationBatchNo || undefined,
+          sterilizationBatchNo: formData.type === "purchase_in" ? undefined : line.sterilizationBatchNo || undefined,
           quantity: String(line.inboundQty),
           unit: line.unit || undefined,
           remark: formData.remark || undefined,
@@ -420,24 +462,28 @@ export default function InboundPage() {
       let successCount = 0;
       let errorCount = 0;
       const total = validLines.length;
+      const purchaseOrderId = formData.type === "purchase_in"
+        ? Number((grDetail as any)?.purchaseOrderId || 0) || undefined
+        : formData.relatedOrderId
+          ? Number(formData.relatedOrderId)
+          : undefined;
 
-      validLines.forEach((line, idx) => {
-        const docNo = total > 1
-          ? `${formData.documentNo || buildDefaultDocumentNo()}-${String(idx + 1).padStart(2, "0")}`
-          : formData.documentNo || buildDefaultDocumentNo();
-
+      validLines.forEach((line) => {
         createMutation.mutate({
           productId: line.productId || undefined,
           warehouseId: Number(formData.warehouseId),
           type: formData.type as any,
-          documentNo: docNo,
+          documentNo: formData.documentNo || undefined,
           itemName: line.productName,
           batchNo: line.batchNo || undefined,
-          sterilizationBatchNo: line.sterilizationBatchNo || undefined,
+          sterilizationBatchNo: formData.type === "purchase_in" ? undefined : line.sterilizationBatchNo || undefined,
           quantity: String(line.inboundQty),
           unit: line.unit || undefined,
           remark: formData.remark || undefined,
-          relatedOrderId: formData.relatedOrderId ? Number(formData.relatedOrderId) : undefined,
+          relatedOrderId: purchaseOrderId,
+          productionWarehouseEntryId: formData.type === "production_in" && formData.relatedEntryId
+            ? Number(formData.relatedEntryId)
+            : undefined,
         }, {
           onSuccess: () => {
             successCount++;
@@ -609,9 +655,11 @@ export default function InboundPage() {
                   </TableCell>
                   <TableCell className="font-medium">{record.itemName}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{record.batchNo || "-"}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{record.sterilizationBatchNo || "-"}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {record.type === "purchase_in" ? "-" : (record.sterilizationBatchNo || "-")}
+                  </TableCell>
                   <TableCell className="text-right text-sm">
-                    {parseFloat(String(record.quantity || 0)).toLocaleString()} {record.unit || ""}
+                    {formatDisplayNumber(record.quantity)} {record.unit || ""}
                   </TableCell>
                   <TableCell className="text-sm">{getWarehouseName(record.warehouseId)}</TableCell>
                   <TableCell>
@@ -683,7 +731,8 @@ export default function InboundPage() {
                   <Input
                     value={formData.documentNo}
                     onChange={(e) => setFormData((p) => ({ ...p, documentNo: e.target.value }))}
-                    placeholder="系统自动生成或手动输入"
+                    placeholder="保存后系统生成"
+                    readOnly
                   />
                 </div>
                 <div className="space-y-2">
@@ -733,7 +782,7 @@ export default function InboundPage() {
                   <div className="flex-1 rounded-md border bg-muted/30 px-3 py-2 text-sm">
                     {getRelatedLabel() || (
                       <span className="text-muted-foreground">
-                        {formData.type === "purchase_in" && "尚未选择采购到货单（需质检合格）"}
+                        {formData.type === "purchase_in" && "尚未选择到货单（需质检合格）"}
                         {formData.type === "return_in" && "尚未选择销售订单"}
                         {formData.type === "production_in" && "尚未选择生产入库申请"}
                       </span>
@@ -785,7 +834,7 @@ export default function InboundPage() {
 
               {detailLines.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground text-sm">
-                  {formData.type === "purchase_in" && "请先选择质检合格的采购到货单，系统将自动带入物料明细"}
+                  {formData.type === "purchase_in" && "请先选择质检合格的到货单，系统将自动带入物料明细"}
                   {formData.type === "production_in" && "请先选择生产入库申请，系统将自动带入产品信息"}
                   {formData.type === "return_in" && "请选择销售订单或手动添加退货明细"}
                   {formData.type === "other_in" && "请点击「添加明细」手动添加入库物料"}
@@ -813,7 +862,7 @@ export default function InboundPage() {
                           <TableHead className="text-xs text-right">申请数量</TableHead>
                         )}
                         <TableHead className="text-xs">批次号</TableHead>
-                        <TableHead className="text-xs">灭菌批号</TableHead>
+                        {formData.type !== "purchase_in" && <TableHead className="text-xs">灭菌批号</TableHead>}
                         <TableHead className="text-xs">本次入库数量</TableHead>
                         <TableHead className="w-8"></TableHead>
                       </TableRow>
@@ -888,18 +937,20 @@ export default function InboundPage() {
                           </TableCell>
 
                           {/* 灭菌批号 */}
-                          <TableCell>
-                            {line.isMedicalDevice && line.isSterilized ? (
-                              <Input
-                                className="h-8 text-xs w-28"
-                                value={line.sterilizationBatchNo}
-                                onChange={(e) => updateDetailLine(line.key, "sterilizationBatchNo", e.target.value)}
-                                placeholder="灭菌批号 *"
-                              />
-                            ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
+                          {formData.type !== "purchase_in" && (
+                            <TableCell>
+                              {line.isMedicalDevice && line.isSterilized ? (
+                                <Input
+                                  className="h-8 text-xs w-28"
+                                  value={line.sterilizationBatchNo}
+                                  onChange={(e) => updateDetailLine(line.key, "sterilizationBatchNo", e.target.value)}
+                                  placeholder="灭菌批号 *"
+                                />
+                              ) : (
+                                <span className="text-xs text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                          )}
 
                           {/* 本次入库数量 */}
                           <TableCell>
@@ -966,16 +1017,16 @@ export default function InboundPage() {
         </DraggableDialogContent>
       </DraggableDialog>
 
-      {/* ==================== 采购到货单选择弹窗 ==================== */}
+      {/* ==================== 到货单选择弹窗 ==================== */}
       <DraggableDialog open={grDialogOpen} onOpenChange={setGrDialogOpen} defaultWidth={860} defaultHeight={550}>
         <DraggableDialogContent>
           <DialogHeader>
-            <DialogTitle>选择采购到货单（质检合格）</DialogTitle>
+            <DialogTitle>选择到货单（质检合格）</DialogTitle>
           </DialogHeader>
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="搜索到货单号、采购单号、供应商名称..."
+              placeholder="搜索到货单号、采购订单号、供应商名称..."
               value={sourceSearch}
               onChange={(e) => setSourceSearch(e.target.value)}
               className="pl-9"
@@ -997,7 +1048,7 @@ export default function InboundPage() {
                 {filteredGR.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      暂无质检合格的采购到货单
+                      暂无质检合格的到货单
                     </TableCell>
                   </TableRow>
                 ) : filteredGR.map((receipt: any) => (
@@ -1124,7 +1175,7 @@ export default function InboundPage() {
                     <TableCell className="text-sm">{entry.productName || "-"}</TableCell>
                     <TableCell className="text-sm">{entry.batchNo || "-"}</TableCell>
                     <TableCell className="text-right text-sm">
-                      {parseFloat(entry.quantity || "0").toLocaleString()} {entry.unit || ""}
+                      {formatDisplayNumber(entry.quantity)} {entry.unit || ""}
                     </TableCell>
                     <TableCell className="text-sm">{formatDate(entry.applicationDate)}</TableCell>
                     <TableCell>
@@ -1142,29 +1193,32 @@ export default function InboundPage() {
       {viewingRecord && (
         <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
           <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>入库单详情 - {viewingRecord.documentNo || viewingRecord.id}</DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-2 gap-4 py-4">
-              {[
-                { label: "入库单号", value: viewingRecord.documentNo || "-" },
-                { label: "入库类型", value: <Badge variant={viewingRecord.type === "return_in" ? "destructive" : "outline"}>{typeMap[viewingRecord.type] || viewingRecord.type}</Badge> },
-                { label: "物料名称", value: viewingRecord.itemName },
-                { label: "批次号", value: viewingRecord.batchNo || "-" },
-                { label: "灭菌批号", value: viewingRecord.sterilizationBatchNo || "-" },
-                { label: "数量", value: `${parseFloat(String(viewingRecord.quantity || 0)).toLocaleString()} ${viewingRecord.unit || ""}` },
-                { label: "入库仓库", value: getWarehouseName(viewingRecord.warehouseId) },
-                { label: "关联单据", value: viewingRecord.relatedOrderId ? `#${viewingRecord.relatedOrderId}` : "-" },
-                { label: "入库时间", value: formatDateTime(viewingRecord.createdAt) },
-                { label: "备注", value: viewingRecord.remark || "-" },
-              ].map(({ label, value }) => (
-                <div key={label} className="space-y-1">
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                  <p className="text-sm font-medium">{value}</p>
-                </div>
-              ))}
+            <div ref={detailPrintRef}>
+              <DialogHeader>
+                <DialogTitle>入库单详情 - {viewingRecord.documentNo || viewingRecord.id}</DialogTitle>
+              </DialogHeader>
+              <div className="grid grid-cols-2 gap-4 py-4">
+                {[
+                  { label: "入库单号", value: viewingRecord.documentNo || "-" },
+                  { label: "入库类型", value: <Badge variant={viewingRecord.type === "return_in" ? "destructive" : "outline"}>{typeMap[viewingRecord.type] || viewingRecord.type}</Badge> },
+                  { label: "物料名称", value: viewingRecord.itemName },
+                  { label: "批次号", value: viewingRecord.batchNo || "-" },
+                  ...(viewingRecord.type === "purchase_in" ? [] : [{ label: "灭菌批号", value: viewingRecord.sterilizationBatchNo || "-" }]),
+                  { label: "数量", value: `${formatDisplayNumber(viewingRecord.quantity)} ${viewingRecord.unit || ""}` },
+                  { label: "入库仓库", value: getWarehouseName(viewingRecord.warehouseId) },
+                  { label: "关联单据", value: viewingRecord.relatedOrderId ? `#${viewingRecord.relatedOrderId}` : "-" },
+                  { label: "入库时间", value: formatDateTime(viewingRecord.createdAt) },
+                  { label: "备注", value: viewingRecord.remark || "-" },
+                ].map(({ label, value }) => (
+                  <div key={label} className="space-y-1">
+                    <p className="text-xs text-muted-foreground">{label}</p>
+                    <p className="text-sm font-medium">{value}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-            <DialogFooter>
+            <DialogFooter data-print-ignore="true">
+              <PrintPreviewButton title="入库单详情" targetRef={detailPrintRef} />
               <Button variant="outline" onClick={() => { setDetailOpen(false); handleEdit(viewingRecord); }}>
                 编辑入库单
               </Button>

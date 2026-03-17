@@ -91,7 +91,7 @@ export default function OvertimePage() {
           { name: "remark", label: "备注", type: "textarea", span: 2 },
         ]}
         initialData={editingRecord || {
-          requestNo: `OT-${new Date().getFullYear()}-${String(data.length + 1).padStart(4, "0")}`,
+          requestNo: "",
           overtimeType: "weekday",
         }}
         onSubmit={handleSubmit}

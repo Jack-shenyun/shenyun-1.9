@@ -68,12 +68,24 @@ export interface EntityPickerDialogProps<T = any> {
   rows: T[];
   /** 当前已选中的行 id（用于显示勾选标记） */
   selectedId?: string | number | null;
+  /** 多选模式下的已选 id 集合 */
+  selectedIds?: Array<string | number>;
   /** 获取每行的唯一 id，默认取 row.id */
   getRowId?: (row: T) => string | number;
   /** 点击"选择"时的回调 */
   onSelect: (row: T) => void;
+  /** 点击确认按钮时的回调 */
+  onConfirm?: () => void;
+  /** 确认按钮文案 */
+  confirmText?: string;
   /** 自定义筛选函数，默认对所有列值做 toLowerCase includes 匹配 */
   filterFn?: (row: T, query: string) => boolean;
+  /** 外部受控搜索值 */
+  searchValue?: string;
+  /** 外部受控搜索回调 */
+  onSearchChange?: (value: string) => void;
+  /** 搜索区右侧附加内容，例如筛选项 */
+  toolbarContent?: React.ReactNode;
   /** 空数据提示 */
   emptyText?: string;
   /** 弹窗默认宽度 */
@@ -90,19 +102,38 @@ export function EntityPickerDialog<T extends Record<string, any>>({
   columns,
   rows,
   selectedId,
+  selectedIds,
   getRowId = (row) => row.id,
   onSelect,
+  onConfirm,
+  confirmText = "确认",
   filterFn,
+  searchValue,
+  onSearchChange,
+  toolbarContent,
   emptyText = "未找到匹配数据",
   defaultWidth = 800,
   defaultHeight = 560,
 }: EntityPickerDialogProps<T>) {
   const [search, setSearch] = useState("");
+  const isMultiSelect = Array.isArray(selectedIds);
+  const resolvedSearch = searchValue ?? search;
+
+  const renderPlainValue = (value: unknown): React.ReactNode => {
+    if (value == null || value === "") return "-";
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    if (Array.isArray(value)) return value.map((item) => renderPlainValue(item)).join("，");
+    if (typeof value === "object") return String(value);
+    return value as React.ReactNode;
+  };
 
   // 弹窗关闭时清空搜索
   useEffect(() => {
-    if (!open) setSearch("");
-  }, [open]);
+    if (!open) {
+      setSearch("");
+      onSearchChange?.("");
+    }
+  }, [open, onSearchChange]);
 
   // 默认筛选：对所有列值做 toLowerCase includes 匹配
   const defaultFilterFn = (row: T, q: string) => {
@@ -114,8 +145,10 @@ export function EntityPickerDialog<T extends Record<string, any>>({
   };
 
   const filteredRows = rows.filter((row) =>
-    search.trim()
-      ? (filterFn ? filterFn(row, search) : defaultFilterFn(row, search))
+    resolvedSearch.trim()
+      ? (filterFn
+          ? filterFn(row, resolvedSearch)
+          : defaultFilterFn(row, resolvedSearch))
       : true
   );
 
@@ -126,43 +159,57 @@ export function EntityPickerDialog<T extends Record<string, any>>({
       defaultWidth={defaultWidth}
       defaultHeight={defaultHeight}
     >
-      <DraggableDialogContent>
+      <DraggableDialogContent className="flex h-full min-h-0 flex-col">
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle className="text-xl font-semibold tracking-tight">{title}</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 mt-3">
+        <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
           {/* 搜索框 */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder={searchPlaceholder}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              autoFocus
-            />
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="h-11 pl-10 text-sm"
+                placeholder={searchPlaceholder}
+                value={resolvedSearch}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  onSearchChange?.(e.target.value);
+                }}
+                autoFocus
+              />
+            </div>
+            {toolbarContent ? <div className="shrink-0">{toolbarContent}</div> : null}
           </div>
 
           {/* 表格 */}
-          <div className="border rounded-lg overflow-hidden">
-            <div className="max-h-[380px] overflow-y-auto">
-              <Table className="text-xs">
+          <div className="min-h-0 flex-1 overflow-hidden rounded-lg border bg-background">
+            <div className="h-full overflow-auto">
+              <Table className="text-sm">
                 <TableHeader>
                   <TableRow className="bg-muted/50 sticky top-0">
+                    {isMultiSelect ? (
+                      <TableHead className="h-12 w-[48px] py-3 text-center text-sm font-semibold text-foreground" />
+                    ) : null}
                     {columns.map((col) => (
-                      <TableHead key={col.key} className={cn("py-2 text-xs", col.className)}>
+                      <TableHead
+                        key={col.key}
+                        className={cn("h-12 py-3 text-sm font-semibold text-foreground", col.className)}
+                      >
                         {col.title}
                       </TableHead>
                     ))}
-                    <TableHead className="text-right w-[60px] py-2 text-xs">操作</TableHead>
+                    <TableHead className="h-12 w-[76px] py-3 text-right text-sm font-semibold text-foreground">
+                      操作
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredRows.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={columns.length + 1}
+                        colSpan={columns.length + 1 + (isMultiSelect ? 1 : 0)}
                         className="text-center py-10 text-muted-foreground"
                       >
                         {emptyText}
@@ -172,8 +219,8 @@ export function EntityPickerDialog<T extends Record<string, any>>({
                     filteredRows.map((row) => {
                       const rowId = getRowId(row);
                       const isSelected =
-                        selectedId != null &&
-                        String(rowId) === String(selectedId);
+                        (Array.isArray(selectedIds) && selectedIds.some((id) => String(id) === String(rowId))) ||
+                        (selectedId != null && String(rowId) === String(selectedId));
                       return (
                         <TableRow
                           key={rowId}
@@ -183,21 +230,35 @@ export function EntityPickerDialog<T extends Record<string, any>>({
                           )}
                           onClick={() => onSelect(row)}
                         >
+                          {isMultiSelect ? (
+                            <TableCell className="py-3 align-middle">
+                              <div
+                                className={cn(
+                                  "mx-auto flex h-4 w-4 items-center justify-center rounded-sm border",
+                                  isSelected
+                                    ? "border-blue-600 bg-blue-600 text-white"
+                                    : "border-muted-foreground/40 bg-background"
+                                )}
+                              >
+                                {isSelected ? <Check className="h-3 w-3" /> : null}
+                              </div>
+                            </TableCell>
+                          ) : null}
                           {columns.map((col) => (
-                            <TableCell key={col.key} className={cn("py-1.5", col.className)}>
+                            <TableCell key={col.key} className={cn("py-3 align-middle text-sm", col.className)}>
                               {col.render
                                 ? col.render(row)
-                                : (row[col.key] ?? "-")}
+                                : renderPlainValue(row[col.key])}
                             </TableCell>
                           ))}
-                          <TableCell className="text-right py-1.5">
+                          <TableCell className="py-3 text-right align-middle">
                             {isSelected ? (
                               <Check className="h-4 w-4 text-green-600 ml-auto" />
                             ) : (
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                className="h-8 px-3 text-sm text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   onSelect(row);
@@ -217,7 +278,12 @@ export function EntityPickerDialog<T extends Record<string, any>>({
           </div>
 
           {/* 底部操作 */}
-          <DialogFooter>
+          <DialogFooter className="pt-1">
+            {onConfirm ? (
+              <Button onClick={onConfirm}>
+                {confirmText}
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}

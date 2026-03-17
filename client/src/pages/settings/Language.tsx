@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,18 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useOperationLog } from "@/hooks/useOperationLog";
+import { trpc } from "@/lib/trpc";
+import {
+  DEFAULT_LANGUAGE_SETTINGS,
+  formatDateBySettings,
+  formatMoneyBySettings,
+  formatTimeBySettings,
+  normalizeLanguageSettings,
+  parseLanguageSettings,
+  resolveEffectiveLanguage,
+  type LanguageSettings,
+} from "@/lib/languageSettings";
+import { useLanguageSettings } from "@/contexts/LanguageSettingsContext";
 
 interface LanguageOption {
   code: string;
@@ -72,24 +84,41 @@ const currencyOptions = [
 ];
 
 export default function LanguagePage() {
-  const [selectedLanguage, setSelectedLanguage] = useState("zh-CN");
-  const [timezone, setTimezone] = useState("Asia/Shanghai");
-  const [dateFormat, setDateFormat] = useState("YYYY-MM-DD");
-  const [timeFormat, setTimeFormat] = useState("24h");
-  const [currency, setCurrency] = useState("CNY");
-  const [autoDetect, setAutoDetect] = useState(false);
+  const utils = trpc.useUtils();
+  const { settings: activeSettings, updateSettings } = useLanguageSettings();
+  const { data: company } = trpc.companyInfo.get.useQuery(undefined, { refetchOnWindowFocus: false });
+  const updateMutation = trpc.companyInfo.update.useMutation({
+    onSuccess: (updated) => {
+      utils.companyInfo.get.setData(undefined, updated);
+    },
+    onError: (error) => {
+      toast.error("保存失败", { description: error.message });
+    },
+  });
+  const [formSettings, setFormSettings] = useState<LanguageSettings>(activeSettings);
+  const [originalSettings, setOriginalSettings] = useState<LanguageSettings>(activeSettings);
   const [hasChanges, setHasChanges] = useState(false);
   const { logOperation } = useOperationLog();
-  
-  // 保存原始设置用于日志记录
-  const [originalSettings] = useState({
-    language: "zh-CN",
-    timezone: "Asia/Shanghai",
-    dateFormat: "YYYY-MM-DD",
-    timeFormat: "24h",
-    currency: "CNY",
-    autoDetect: false,
-  });
+
+  useEffect(() => {
+    const serverSettings = parseLanguageSettings((company as any)?.languageSettings);
+    const nextSettings = normalizeLanguageSettings(serverSettings || activeSettings || DEFAULT_LANGUAGE_SETTINGS);
+    setFormSettings(nextSettings);
+    setOriginalSettings(nextSettings);
+    setHasChanges(false);
+  }, [company, activeSettings]);
+
+  const selectedLanguage = formSettings.language;
+  const timezone = formSettings.timezone;
+  const dateFormat = formSettings.dateFormat;
+  const timeFormat = formSettings.timeFormat;
+  const currency = formSettings.currency;
+  const autoDetect = formSettings.autoDetect;
+
+  const effectiveLanguage = useMemo(
+    () => resolveEffectiveLanguage(formSettings),
+    [formSettings]
+  );
 
   const handleLanguageChange = (code: string) => {
     const lang = languageOptions.find(l => l.code === code);
@@ -97,62 +126,39 @@ export default function LanguagePage() {
       toast.info("该语言即将推出", { description: "敬请期待" });
       return;
     }
-    setSelectedLanguage(code);
+    setFormSettings((prev) => ({ ...prev, language: code }));
     setHasChanges(true);
   };
 
-  const handleSave = () => {
-    // 记录操作日志
-    logOperation({
-      module: "language",
-      action: "update",
-      targetType: "语言设置",
-      targetId: 1,
-      targetName: "系统语言设置",
-      description: "更新语言和区域设置",
-      previousData: originalSettings,
-      newData: {
-        language: selectedLanguage,
-        timezone,
-        dateFormat,
-        timeFormat,
-        currency,
-        autoDetect,
-      },
-    });
-    
-    toast.success("设置已保存", { description: "语言和区域设置已更新" });
-    setHasChanges(false);
+  const handleSave = async () => {
+    const nextSettings = normalizeLanguageSettings(formSettings);
+    try {
+      await updateMutation.mutateAsync({
+        languageSettings: JSON.stringify(nextSettings),
+      });
+      updateSettings(nextSettings);
+      logOperation({
+        module: "language",
+        action: "update",
+        targetType: "语言设置",
+        targetId: 1,
+        targetName: "系统语言设置",
+        description: "更新语言和区域设置",
+        previousData: originalSettings,
+        newData: nextSettings,
+      });
+      setOriginalSettings(nextSettings);
+      setHasChanges(false);
+      toast.success("设置已保存", { description: "语言和区域设置已更新并立即生效" });
+    } catch {
+      // 错误提示由 mutation onError 统一处理
+    }
   };
 
   const handleReset = () => {
-    setSelectedLanguage("zh-CN");
-    setTimezone("Asia/Shanghai");
-    setDateFormat("YYYY-MM-DD");
-    setTimeFormat("24h");
-    setCurrency("CNY");
-    setAutoDetect(false);
-    setHasChanges(false);
-    // 记录操作日志
-    logOperation({
-      module: "language",
-      action: "reset",
-      targetType: "语言设置",
-      targetId: 1,
-      targetName: "系统语言设置",
-      description: "恢复默认语言和区域设置",
-      previousData: {
-        language: selectedLanguage,
-        timezone,
-        dateFormat,
-        timeFormat,
-        currency,
-        autoDetect,
-      },
-      newData: originalSettings,
-    });
-    
-    toast.info("已恢复默认设置");
+    setFormSettings(DEFAULT_LANGUAGE_SETTINGS);
+    setHasChanges(true);
+    toast.info("已恢复为默认值，请点击保存设置");
   };
 
   return (
@@ -173,11 +179,28 @@ export default function LanguagePage() {
             <Button variant="outline" onClick={handleReset}>
               恢复默认
             </Button>
-            <Button onClick={handleSave} disabled={!hasChanges}>
+            <Button onClick={handleSave} disabled={!hasChanges || updateMutation.isPending}>
               保存设置
             </Button>
           </div>
         </div>
+
+        <Card>
+          <CardContent className="p-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">当前生效语言</p>
+              <p className="font-medium">
+                {languageOptions.find((item) => item.code === effectiveLanguage)?.nativeName || effectiveLanguage}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">时区：{timezone}</Badge>
+              <Badge variant="outline">日期：{dateFormat}</Badge>
+              <Badge variant="outline">时间：{timeFormat === "24h" ? "24小时制" : "12小时制"}</Badge>
+              <Badge variant="outline">货币：{currency}</Badge>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid gap-6 lg:grid-cols-2">
           {/* 语言选择 */}
@@ -198,7 +221,7 @@ export default function LanguagePage() {
                 <Switch
                   checked={autoDetect}
                   onCheckedChange={(checked) => {
-                    setAutoDetect(checked);
+                    setFormSettings((prev) => ({ ...prev, autoDetect: checked }));
                     setHasChanges(true);
                   }}
                 />
@@ -257,7 +280,7 @@ export default function LanguagePage() {
                 <Select
                   value={timezone}
                   onValueChange={(v) => {
-                    setTimezone(v);
+                    setFormSettings((prev) => ({ ...prev, timezone: v }));
                     setHasChanges(true);
                   }}
                 >
@@ -288,9 +311,9 @@ export default function LanguagePage() {
                 <div className="space-y-2">
                   <Label>日期格式</Label>
                   <Select
-                    value={dateFormat}
-                    onValueChange={(v) => {
-                      setDateFormat(v);
+                  value={dateFormat}
+                  onValueChange={(v) => {
+                      setFormSettings((prev) => ({ ...prev, dateFormat: v }));
                       setHasChanges(true);
                     }}
                   >
@@ -309,9 +332,9 @@ export default function LanguagePage() {
                 <div className="space-y-2">
                   <Label>时间格式</Label>
                   <Select
-                    value={timeFormat}
-                    onValueChange={(v) => {
-                      setTimeFormat(v);
+                  value={timeFormat}
+                  onValueChange={(v) => {
+                      setFormSettings((prev) => ({ ...prev, timeFormat: v as LanguageSettings["timeFormat"] }));
                       setHasChanges(true);
                     }}
                   >
@@ -340,7 +363,7 @@ export default function LanguagePage() {
                 <Select
                   value={currency}
                   onValueChange={(v) => {
-                    setCurrency(v);
+                    setFormSettings((prev) => ({ ...prev, currency: v }));
                     setHasChanges(true);
                   }}
                 >
@@ -374,22 +397,19 @@ export default function LanguagePage() {
               <div className="p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-1">日期示例</p>
                 <p className="font-medium">
-                  {dateFormat === "YYYY-MM-DD" && "2026-02-02"}
-                  {dateFormat === "DD/MM/YYYY" && "02/02/2026"}
-                  {dateFormat === "MM/DD/YYYY" && "02/02/2026"}
-                  {dateFormat === "YYYY年MM月DD日" && "2026年02月02日"}
+                  {formatDateBySettings(new Date("2026-02-02T14:30:00"), formSettings)}
                 </p>
               </div>
               <div className="p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-1">时间示例</p>
                 <p className="font-medium">
-                  {timeFormat === "24h" ? "14:30:00" : "2:30:00 PM"}
+                  {formatTimeBySettings(new Date("2026-02-02T14:30:00"), formSettings, true)}
                 </p>
               </div>
               <div className="p-4 bg-muted/50 rounded-lg">
                 <p className="text-sm text-muted-foreground mb-1">金额示例</p>
                 <p className="font-medium">
-                  {currencyOptions.find(c => c.value === currency)?.symbol}1,234.56
+                  {formatMoneyBySettings(1234.56, formSettings)}
                 </p>
               </div>
               <div className="p-4 bg-muted/50 rounded-lg">

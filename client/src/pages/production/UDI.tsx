@@ -1,9 +1,12 @@
 import { formatDateValue } from "@/lib/formatters";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import DateTextInput from "@/components/DateTextInput";
 import ERPLayout from "@/components/ERPLayout";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,6 +81,8 @@ const statusMap: Record<string, any> = {
 const labelTypeOptions = ["GS1-128", "DataMatrix", "QR Code", "RFID"];
 
 export default function UDIPage() {
+  const PAGE_SIZE = 10;
+  const [, navigate] = useLocation();
   const { data: _dbData = [], isLoading, refetch } = trpc.productionOrders.list.useQuery();
   const createMutation = trpc.productionOrders.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
   const updateMutation = trpc.productionOrders.update.useMutation({ onSuccess: () => { refetch(); toast.success("更新成功"); } });
@@ -90,6 +95,7 @@ export default function UDIPage() {
   const [editingRecord, setEditingRecord] = useState<UDIRecord | null>(null);
   const [viewingRecord, setViewingRecord] = useState<UDIRecord | null>(null);
   const { canDelete } = usePermission();
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [formData, setFormData] = useState({
     udiDi: "",
@@ -118,6 +124,16 @@ export default function UDIPage() {
     const matchesStatus = statusFilter === "all" || r.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / PAGE_SIZE));
+  const pagedRecords = filteredRecords.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleAdd = () => {
     setEditingRecord(null);
@@ -206,12 +222,26 @@ export default function UDIPage() {
   const pendingCount = records.filter((r: any) => r.status === "pending").length;
   const printedCount = records.filter((r: any) => r.status === "printed").length;
   const usedCount = records.filter((r: any) => r.status === "used").length;
-  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
-      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
-      <span className="flex-1 text-sm text-right break-all">{children}</span>
-    </div>
-  );
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => {
+    const renderValue = (value: React.ReactNode): React.ReactNode => {
+      if (value == null || value === "") return "-";
+      if (value instanceof Date) return value.toISOString().slice(0, 10);
+      if (Array.isArray(value)) {
+        const items = value
+          .map((item) => item instanceof Date ? item.toISOString().slice(0, 10) : item)
+          .filter((item) => item != null && item !== "");
+        return items.length > 0 ? items.join(" ") : "-";
+      }
+      return value;
+    };
+
+    return (
+      <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+        <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+        <span className="flex-1 text-sm text-right break-all">{renderValue(children)}</span>
+      </div>
+    );
+  };
 
   return (
     <ERPLayout>
@@ -227,10 +257,20 @@ export default function UDIPage() {
               <p className="text-sm text-muted-foreground">建立符合全球法规的UDI管理系统，支持标签设计和打印</p>
             </div>
           </div>
-          <Button onClick={handleAdd}>
-            <Plus className="h-4 w-4 mr-1" />
-            生成UDI
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => navigate("/production/udi/designer")}>
+              <QrCode className="h-4 w-4 mr-1" />
+              标签设计器
+            </Button>
+            <Button variant="outline" onClick={() => navigate("/production/udi/print")}>
+              <Printer className="h-4 w-4 mr-1" />
+              打印中心
+            </Button>
+            <Button onClick={handleAdd}>
+              <Plus className="h-4 w-4 mr-1" />
+              生成UDI
+            </Button>
+          </div>
         </div>
 
         {/* 统计卡片 */}
@@ -307,7 +347,7 @@ export default function UDIPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRecords.map((record: any) => (
+                {pagedRecords.map((record: any) => (
                   <TableRow key={record.id}>
                     <TableCell className="text-center font-mono text-xs">{record.udiDi}</TableCell>
                     <TableCell className="text-center">{record.productName}</TableCell>
@@ -364,10 +404,11 @@ export default function UDIPage() {
             </Table>
           </CardContent>
         </Card>
+        <TablePaginationFooter total={filteredRecords.length} page={currentPage} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
 
         {/* 新建/编辑对话框 */}
         <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DraggableDialogContent>
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingRecord ? "编辑UDI信息" : "生成UDI"}</DialogTitle>
               <DialogDescription>
@@ -462,18 +503,16 @@ export default function UDIPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>生产日期</Label>
-                  <Input
-                    type="date"
+                  <DateTextInput
                     value={formData.productionDate}
-                    onChange={(e) => setFormData({ ...formData, productionDate: e.target.value })}
+                    onChange={(value) => setFormData({ ...formData, productionDate: value })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>有效期至</Label>
-                  <Input
-                    type="date"
+                  <DateTextInput
                     value={formData.expiryDate}
-                    onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                    onChange={(value) => setFormData({ ...formData, expiryDate: value })}
                   />
                 </div>
               </div>
@@ -537,7 +576,7 @@ export default function UDIPage() {
 
 {/* 查看详情对话框 */}
 <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-  <DraggableDialogContent>
+  <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
     {viewingRecord && (
       <div className="space-y-4">
         {/* 标准头部 */}

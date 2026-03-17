@@ -45,6 +45,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 
 interface StocktakeItem {
   materialCode: string;
@@ -174,11 +175,8 @@ export default function StocktakePage() {
   const handleAdd = () => {
     setEditingStocktake(null);
     const today = new Date();
-    const year = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const dd = String(today.getDate()).padStart(2, "0");
     setFormData({
-      stocktakeNo: `ST-${year}${mm}${dd}-${String(Date.now()).slice(-4)}`,
+      stocktakeNo: "",
       type: "full",
       warehouse: (warehouseList as any[])[0]?.name || "原材料仓",
       itemCount: "",
@@ -250,8 +248,8 @@ export default function StocktakePage() {
   };
 
   const handleSubmit = () => {
-    if (!formData.stocktakeNo || !formData.warehouse) {
-      toast.error("请填写必填项", { description: "盘点单号和仓库为必填" });
+    if (!formData.warehouse) {
+      toast.error("请填写必填项", { description: "仓库为必填" });
       return;
     }
 
@@ -281,7 +279,7 @@ export default function StocktakePage() {
       });
     } else {
       createMutation.mutate({
-        stocktakeNo: formData.stocktakeNo,
+        stocktakeNo: formData.stocktakeNo || undefined,
         warehouseId,
         type: typeToDb[formData.type] || "full",
         stocktakeDate: formData.date || new Date().toISOString().split("T")[0],
@@ -485,7 +483,8 @@ export default function StocktakePage() {
                   <Input
                     value={formData.stocktakeNo}
                     onChange={(e) => setFormData({ ...formData, stocktakeNo: e.target.value })}
-                    placeholder="盘点单号"
+                    placeholder="保存后系统生成"
+                    readOnly
                   />
                 </div>
                 <div className="space-y-2">
@@ -595,6 +594,26 @@ export default function StocktakePage() {
   <DraggableDialogContent>
     {viewingStocktake && (
       <div className="flex flex-col gap-4">
+        {(() => {
+          const stocktakePrintData = {
+            checkNo: viewingStocktake.stocktakeNo || "",
+            checkDate: viewingStocktake.date || "",
+            warehouseName: viewingStocktake.warehouse || "",
+            handlerName: viewingStocktake.operator || "",
+            items: viewingStocktake.items.map((item) => ({
+              materialCode: item.materialCode || "",
+              materialName: item.materialName || "",
+              location: "",
+              batchNo: "",
+              bookQuantity: Number(item.systemQty || 0),
+              actualQuantity: Number(item.actualQty || 0),
+              diffQuantity: Number(item.difference || 0),
+              unit: item.unit || "",
+              remark: "",
+            })),
+          };
+          return (
+            <>
         {/* 标准头部 */}
         <div className="border-b pb-3">
           <h2 className="text-lg font-semibold">盘点计划详情</h2>
@@ -684,6 +703,11 @@ export default function StocktakePage() {
         <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
           <div className="flex gap-2 flex-wrap"></div>
           <div className="flex gap-2 flex-wrap justify-end">
+            <TemplatePrintPreviewButton
+              templateKey="inventory_check"
+              data={stocktakePrintData}
+              title={`盘点单打印预览 - ${viewingStocktake.stocktakeNo}`}
+            />
             <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
             <Button variant="outline" size="sm" onClick={() => {
               setViewDialogOpen(false);
@@ -691,6 +715,9 @@ export default function StocktakePage() {
             }}>编辑</Button>
           </div>
         </div>
+            </>
+          );
+        })()}
       </div>
     )}
   </DraggableDialogContent>

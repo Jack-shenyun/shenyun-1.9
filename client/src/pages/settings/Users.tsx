@@ -57,7 +57,13 @@ import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
 import { useOperationLog } from "@/hooks/useOperationLog";
 import { trpc } from "@/lib/trpc";
-import { parseVisibleAppIds, WORKBENCH_APP_OPTIONS } from "@/constants/workbenchApps";
+import { getCompanyMenuIds, readActiveCompany } from "@/lib/activeCompany";
+import {
+  parseVisibleAppIds,
+  WORKBENCH_APP_ENTRIES,
+} from "@/constants/workbenchApps";
+import { DASHBOARD_BOARD_DEFINITIONS, type DashboardPermissionId } from "@shared/dashboardBoards";
+import { FORM_VISIBILITY_GROUPS, getFormVisibilityLabel, parseVisibleFormIds } from "@shared/formVisibility";
 
 const statusMap: Record<string, any> = {
   active: { label: "正常", variant: "default" as const, color: "text-green-600" },
@@ -71,6 +77,21 @@ const departmentOptions = [
   "质量部", "采购部", "仓库管理", "财务部",
 ];
 
+const dataScopeLabelMap: Record<string, string> = {
+  self: "仅本人",
+  department: "本部门",
+  all: "全部数据",
+};
+
+const DASHBOARD_MENU_ID_MAP: Record<DashboardPermissionId, string> = {
+  boss_dashboard: "dashboard",
+  sales_dashboard: "sales",
+  production_dashboard: "production",
+  purchase_dashboard: "purchase",
+  finance_dashboard: "finance",
+  quality_dashboard: "quality",
+};
+
 function parseDepartments(raw: string): string[] {
   return String(raw ?? "")
     .split(/[,\uFF0C;；/、|\s]+/)
@@ -81,9 +102,10 @@ function parseDepartments(raw: string): string[] {
 export default function UsersPage() {
   const { user: currentUser } = useAuth();
   const utils = trpc.useUtils();
-  const { data: usersData, refetch } = trpc.users.list.useQuery();
+  const { data: usersData, refetch } = trpc.users.listByCompany.useQuery();
   const createMutation = trpc.users.create.useMutation({
     onSuccess: async () => {
+      await utils.dashboard.access.invalidate();
       await refetch();
       toast.success("用户创建成功");
     },
@@ -91,6 +113,8 @@ export default function UsersPage() {
   });
   const updateMutation = trpc.users.update.useMutation({
     onSuccess: async () => {
+      await utils.dashboard.access.invalidate();
+      await utils.auth.me.invalidate();
       await refetch();
       toast.success("用户信息已更新");
     },
@@ -137,11 +161,20 @@ export default function UsersPage() {
     id: u.id,
     username: u.openId?.startsWith("user-") ? u.openId.slice(5) : (u.openId || ""),
     name: u.name || "",
+    englishName: u.englishName || "",
     email: u.email || "",
     phone: u.phone || "",
     department: u.department || "",
+    position: u.position || "",
     role: u.role as "admin" | "user",
+    dataScope: String(u.dataScope || (u.role === "admin" ? "all" : "self")) as "self" | "department" | "all",
     visibleApps: parseVisibleAppIds(u.visibleApps),
+    visibleForms: parseVisibleFormIds(u.visibleForms),
+    dashboardPermissions: (Array.isArray(u.dashboardPermissions) ? u.dashboardPermissions : []) as DashboardPermissionId[],
+    allowedCompanies: Array.isArray(u.allowedCompanies) ? u.allowedCompanies.map((id: any) => Number(id)).filter((id: number) => id > 0) : [],
+    companyId: Number(u.companyId || 0),
+    homeCompanyId: Number(u.homeCompanyId || u.companyId || 0),
+    isScopedUser: Boolean(u.isScopedUser),
     avatarUrl: u.avatarUrl || null,
     // 微信字段
     wxAccount: u.wxAccount || "",
@@ -161,6 +194,7 @@ export default function UsersPage() {
   const [passwordUser, setPasswordUser] = useState<any>(null);
   const { canDelete, isAdmin } = usePermission();
   const { logOperation } = useOperationLog();
+  const isScopedUserSettings = Boolean(editingUser?.isScopedUser);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>, userId: number) => {
     const file = e.target.files?.[0];
@@ -181,15 +215,88 @@ export default function UsersPage() {
 
   // 协同公司列表
   const { data: allCompanies = [] } = trpc.companies.list.useQuery();
+  const collaborationCompanies = useMemo(
+    () => (allCompanies as any[]).filter((company: any) => String(company.type || "").toLowerCase() !== "main"),
+    [allCompanies],
+  );
+  const currentCompanyId = Number((currentUser as any)?.companyId || 0);
+  const currentCompany = useMemo(
+    () =>
+      (allCompanies as any[]).find(
+        (company: any) => Number(company.id || 0) === currentCompanyId,
+      ) ??
+      readActiveCompany(),
+    [allCompanies, currentCompanyId],
+  );
+  const isMainCompanyContext = useMemo(() => {
+    const type = String((currentCompany as any)?.type || "").toLowerCase();
+    if (type) return type === "main";
+    const homeCompanyId = Number((currentUser as any)?.homeCompanyId || 0);
+    return homeCompanyId <= 0 || homeCompanyId === currentCompanyId;
+  }, [currentCompany, currentCompanyId, currentUser]);
+  const currentCompanyMenuIds = useMemo(
+    () => getCompanyMenuIds((currentCompany as any)?.modules),
+    [currentCompany],
+  );
+  const visibleAppOptions = useMemo(
+    () => WORKBENCH_APP_ENTRIES.map((item) => ({ id: item.id, label: item.label })),
+    [],
+  );
+  const visibleAppIdSet = useMemo(
+    () => new Set(visibleAppOptions.map((item) => item.id)),
+    [visibleAppOptions],
+  );
+  const filteredFormVisibilityGroups = useMemo(
+    () =>
+      FORM_VISIBILITY_GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          !currentCompanyMenuIds || currentCompanyMenuIds.size === 0
+            ? true
+            : currentCompanyMenuIds.has(item.menuId),
+        ),
+      })).filter((group) => group.items.length > 0),
+    [currentCompanyMenuIds],
+  );
+  const visibleFormIdSet = useMemo(
+    () =>
+      new Set(
+        filteredFormVisibilityGroups.flatMap((group) =>
+          group.items.map((item) => item.id),
+        ),
+      ),
+    [filteredFormVisibilityGroups],
+  );
+  const filteredDashboardDefinitions = useMemo(
+    () =>
+      DASHBOARD_BOARD_DEFINITIONS.filter((dashboard) => {
+        if (!isMainCompanyContext && dashboard.id === "boss_dashboard") {
+          return false;
+        }
+        if (!currentCompanyMenuIds || currentCompanyMenuIds.size === 0) {
+          return true;
+        }
+        return currentCompanyMenuIds.has(DASHBOARD_MENU_ID_MAP[dashboard.id]);
+      }),
+    [currentCompanyMenuIds, isMainCompanyContext],
+  );
+  const visibleDashboardIdSet = useMemo(
+    () => new Set(filteredDashboardDefinitions.map((item) => item.id)),
+    [filteredDashboardDefinitions],
+  );
 
   const [formData, setFormData] = useState({
     username: "",
     name: "",
+    englishName: "",
     email: "",
     phone: "",
     department: "",
     role: "user",
+    dataScope: "self" as "self" | "department" | "all",
     visibleApps: [] as string[],
+    visibleForms: [] as string[],
+    dashboardPermissions: [] as DashboardPermissionId[],
     allowedCompanies: [] as number[],
     status: "active",
     wxAccount: "",
@@ -222,11 +329,15 @@ export default function UsersPage() {
     setFormData({
       username: "",
       name: "",
+      englishName: "",
       email: "",
       phone: "",
       department: "",
       role: "user",
+      dataScope: "self",
       visibleApps: [],
+      visibleForms: [],
+      dashboardPermissions: [],
       allowedCompanies: [],
       status: "active",
       wxAccount: "",
@@ -245,12 +356,18 @@ export default function UsersPage() {
     setFormData({
       username: user.username,
       name: user.name,
+      englishName: user.englishName || "",
       email: user.email,
       phone: user.phone,
       department: user.department,
       role: user.role,
-      visibleApps: user.visibleApps ?? [],
-      allowedCompanies: user.allowedCompanies ?? [],
+      dataScope: user.dataScope || (user.role === "admin" ? "all" : "self"),
+      visibleApps: (user.visibleApps ?? []).filter((id: string) => visibleAppIdSet.has(id)),
+      visibleForms: (user.visibleForms ?? []).filter((id: string) => visibleFormIdSet.has(id)),
+      dashboardPermissions: (user.dashboardPermissions ?? []).filter((id: DashboardPermissionId) =>
+        visibleDashboardIdSet.has(id),
+      ),
+      allowedCompanies: isMainCompanyContext ? (user.allowedCompanies ?? []) : [],
       status: user.status,
       wxAccount: user.wxAccount || "",
       wxOpenid: user.wxOpenid || "",
@@ -267,6 +384,12 @@ export default function UsersPage() {
   const handleDelete = async (user: any) => {
     if (!canDelete) {
       toast.error("您没有删除权限", { description: "只有管理员可以删除用户" });
+      return;
+    }
+    if (user.isScopedUser) {
+      toast.error("协同公司授权用户不能在当前公司删除", {
+        description: "如需删除账号，请回所属公司维护；当前公司只维护显示板块和权限。",
+      });
       return;
     }
     if (user.role === "admin") {
@@ -289,6 +412,12 @@ export default function UsersPage() {
   const handleChangePassword = (user: any) => {
     if (!isAdmin) {
       toast.error("仅管理员可修改密码");
+      return;
+    }
+    if (user.isScopedUser) {
+      toast.error("协同公司授权用户不能在当前公司改密码", {
+        description: "请回所属公司维护密码；当前公司只维护显示板块和权限。",
+      });
       return;
     }
     setPasswordUser(user);
@@ -348,29 +477,43 @@ export default function UsersPage() {
     };
 
     if (editingUser) {
+      const isScopedEditing =
+        Boolean(editingUser?.isScopedUser) ||
+        Number(editingUser?.companyId || 0) !== currentCompanyId;
       await updateMutation.mutateAsync({
         id: editingUser.id,
         username,
         name,
+        englishName: formData.englishName.trim() || undefined,
         email: email || undefined,
         phone: formData.phone.trim() || undefined,
         department: formData.department || undefined,
         role: formData.role as "admin" | "user",
+        dataScope: formData.role === "admin" ? "all" : formData.dataScope,
         visibleApps: formData.visibleApps,
-        allowedCompanies: formData.allowedCompanies,
+        visibleForms: formData.visibleForms,
+        dashboardPermissions: formData.dashboardPermissions,
+        allowedCompanies: isMainCompanyContext ? formData.allowedCompanies : undefined,
         ...wxPayload,
       });
       if (currentUser && Number((currentUser as any).id) === Number(editingUser.id)) {
         const nextUser = {
           ...(currentUser as any),
-          openId: `user-${username}`,
-          name,
-          email: email || null,
-          phone: formData.phone.trim() || null,
           department: formData.department || null,
           role: formData.role as "admin" | "user",
-          visibleApps: formData.visibleApps.length ? formData.visibleApps.join(",") : null,
+          dataScope: formData.role === "admin" ? "all" : formData.dataScope,
+          visibleApps: formData.visibleApps.join(","),
+          visibleForms: formData.visibleForms.join(","),
+          dashboardPermissions: formData.dashboardPermissions,
         };
+        if (!isScopedEditing) {
+          Object.assign(nextUser, {
+            openId: `user-${username}`,
+            name,
+            email: email || null,
+            phone: formData.phone.trim() || null,
+          });
+        }
         utils.auth.me.setData(undefined, nextUser);
         if (typeof window !== "undefined") {
           localStorage.setItem(LOCAL_AUTH_USER_KEY, JSON.stringify(nextUser));
@@ -391,12 +534,16 @@ export default function UsersPage() {
       await createMutation.mutateAsync({
         username,
         name,
+        englishName: formData.englishName.trim() || undefined,
         email: email || undefined,
         phone: formData.phone.trim() || undefined,
         department: formData.department || undefined,
         role: formData.role as "admin" | "user",
+        dataScope: formData.role === "admin" ? "all" : formData.dataScope,
         visibleApps: formData.visibleApps,
-        allowedCompanies: formData.allowedCompanies,
+        visibleForms: formData.visibleForms,
+        dashboardPermissions: formData.dashboardPermissions,
+        allowedCompanies: isMainCompanyContext ? formData.allowedCompanies : undefined,
         ...wxPayload,
       });
       logOperation({
@@ -432,8 +579,33 @@ export default function UsersPage() {
     setFormData({ ...formData, visibleApps: next });
   };
 
+  const toggleDashboardPermission = (dashboardId: DashboardPermissionId, checked: boolean) => {
+    const next = checked
+      ? Array.from(new Set([...formData.dashboardPermissions, dashboardId]))
+      : formData.dashboardPermissions.filter((id) => id !== dashboardId);
+    setFormData({ ...formData, dashboardPermissions: next });
+  };
+
+  const toggleVisibleForm = (formId: string, checked: boolean) => {
+    const next = checked
+      ? Array.from(new Set([...formData.visibleForms, formId]))
+      : formData.visibleForms.filter((id) => id !== formId);
+    setFormData({ ...formData, visibleForms: next });
+  };
+
   const getVisibleAppLabels = (appIds: string[]) =>
-    WORKBENCH_APP_OPTIONS.filter((item) => appIds.includes(item.id)).map((item) => item.label);
+    visibleAppOptions.filter((item) => appIds.includes(item.id)).map((item) => item.label);
+
+  const getVisibleFormLabels = (formIds: string[]) =>
+    formIds.map((id) => getFormVisibilityLabel(id));
+
+  const getDashboardPermissionLabels = (dashboardIds: DashboardPermissionId[]) =>
+    filteredDashboardDefinitions.filter((item) => dashboardIds.includes(item.id)).map((item) => item.label);
+
+  const getAllowedCompanyLabels = (companyIds: number[]) =>
+    collaborationCompanies
+      .filter((company: any) => companyIds.includes(Number(company.id)))
+      .map((company: any) => company.name || company.shortName || `公司${company.id}`);
 
   const activeUsers = users.filter((u: any) => u.status === "active").length;
   const adminUsers = users.filter((u: any) => u.role === "admin").length;
@@ -613,14 +785,14 @@ export default function UsersPage() {
                                 <Edit className="h-4 w-4 mr-2" />
                                 编辑
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangePassword(user)} disabled={!isAdmin}>
+                              <DropdownMenuItem onClick={() => handleChangePassword(user)} disabled={!isAdmin || user.isScopedUser}>
                                 <Key className="h-4 w-4 mr-2" />
                                 修改密码
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => void handleDelete(user)}
                                 className={canDelete ? "text-destructive" : "text-muted-foreground"}
-                                disabled={!canDelete || !isAdmin || user.role === "admin"}
+                                disabled={!canDelete || !isAdmin || user.role === "admin" || user.isScopedUser}
                               >
                                 <Trash2 className="h-4 w-4 mr-2" />
                                 删除
@@ -648,6 +820,11 @@ export default function UsersPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-1">
+            {isScopedUserSettings && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+                当前仅维护该用户在本公司的权限、板块和看板显示，不会改动神韵里的基础资料。
+              </div>
+            )}
             {/* 基本信息 */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -656,7 +833,7 @@ export default function UsersPage() {
                   value={formData.username}
                   onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                   placeholder="登录用户名"
-                  disabled={!isAdmin}
+                  disabled={!isAdmin || isScopedUserSettings}
                 />
               </div>
               <div className="space-y-2">
@@ -665,11 +842,20 @@ export default function UsersPage() {
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="用户姓名"
-                  disabled={!isAdmin}
+                  disabled={!isAdmin || isScopedUserSettings}
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>英文名</Label>
+                <Input
+                  value={formData.englishName}
+                  onChange={(e) => setFormData({ ...formData, englishName: e.target.value })}
+                  placeholder="如：Jack / Jolin / Mandy"
+                  disabled={!isAdmin || isScopedUserSettings}
+                />
+              </div>
               <div className="space-y-2">
                 <Label>邮箱</Label>
                 <Input
@@ -677,7 +863,7 @@ export default function UsersPage() {
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="user@company.com"
-                  disabled={!isAdmin}
+                  disabled={!isAdmin || isScopedUserSettings}
                 />
               </div>
               <div className="space-y-2">
@@ -686,11 +872,11 @@ export default function UsersPage() {
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                   placeholder="13800138000"
-                  disabled={!isAdmin}
+                  disabled={!isAdmin || isScopedUserSettings}
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label>所属部门</Label>
                 <DropdownMenu>
@@ -716,7 +902,13 @@ export default function UsersPage() {
                 <Label>用户角色</Label>
                 <Select
                   value={formData.role}
-                  onValueChange={(v) => setFormData({ ...formData, role: v })}
+                  onValueChange={(v) =>
+                    setFormData({
+                      ...formData,
+                      role: v,
+                      dataScope: v === "admin" ? "all" : formData.dataScope,
+                    })
+                  }
                   disabled={!isAdmin}
                 >
                   <SelectTrigger>
@@ -727,6 +919,26 @@ export default function UsersPage() {
                     <SelectItem value="admin">管理员</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>数据范围</Label>
+                <Select
+                  value={formData.role === "admin" ? "all" : formData.dataScope}
+                  onValueChange={(v) => setFormData({ ...formData, dataScope: v as "self" | "department" | "all" })}
+                  disabled={!isAdmin || formData.role === "admin"}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="self">仅本人</SelectItem>
+                    <SelectItem value="department">本部门</SelectItem>
+                    <SelectItem value="all">全部数据</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  普通销售、采购、财务协同页会按这里控制可见单据范围。
+                </p>
               </div>
             </div>
 
@@ -781,7 +993,7 @@ export default function UsersPage() {
             <div className="space-y-3">
               <Label>首页显示应用</Label>
               <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-3">
-                {WORKBENCH_APP_OPTIONS.map((app) => (
+                {visibleAppOptions.map((app) => (
                   <label
                     key={app.id}
                     className="flex items-center gap-3 rounded-lg border border-transparent bg-white px-3 py-2 shadow-sm cursor-pointer"
@@ -800,8 +1012,69 @@ export default function UsersPage() {
               </p>
             </div>
 
+            <Separator />
+            <div className="space-y-3">
+              <Label>部门表单显示</Label>
+              <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                {filteredFormVisibilityGroups.map((group) => (
+                  <div key={group.id} className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-700">{group.label}</p>
+                      <span className="text-xs text-muted-foreground">
+                        已选 {group.items.filter((item) => formData.visibleForms.includes(item.id)).length} / {group.items.length}
+                      </span>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {group.items.map((item) => (
+                        <label
+                          key={item.id}
+                          className="flex items-center gap-3 rounded-lg border border-transparent bg-white px-3 py-2.5 shadow-sm cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={formData.visibleForms.includes(item.id)}
+                            onCheckedChange={(checked) => toggleVisibleForm(item.id, Boolean(checked))}
+                            disabled={!isAdmin}
+                          />
+                          <span className="text-sm font-medium text-slate-700">{item.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                留空时，侧边栏按用户所属部门默认显示；勾选后，按这里精确控制每个用户能看到的部门表单，并可跨部门单独授权。
+              </p>
+            </div>
+
+            <Separator />
+            <div className="space-y-3">
+              <Label>看板查看权限</Label>
+              <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 md:grid-cols-2">
+                {filteredDashboardDefinitions.map((dashboard) => (
+                  <label
+                    key={dashboard.id}
+                    className="flex items-start gap-3 rounded-lg border border-transparent bg-white px-3 py-3 shadow-sm cursor-pointer"
+                  >
+                    <Checkbox
+                      checked={formData.dashboardPermissions.includes(dashboard.id)}
+                      onCheckedChange={(checked) => toggleDashboardPermission(dashboard.id, Boolean(checked))}
+                      disabled={!isAdmin}
+                    />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-slate-700">{dashboard.label}</p>
+                      <p className="text-xs text-muted-foreground">{dashboard.department}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                只有被勾选的用户，才能看到对应看板；经营看板显示在首页“经营看板”入口中。
+              </p>
+            </div>
+
             {/* 协同公司访问权限 */}
-            {(allCompanies as any[]).length > 0 && (
+            {isMainCompanyContext && collaborationCompanies.length > 0 && (
               <>
                 <Separator />
                 <div className="space-y-3">
@@ -810,7 +1083,7 @@ export default function UsersPage() {
                     <Label>协同公司访问权限</Label>
                   </div>
                   <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                    {(allCompanies as any[]).map((company: any) => (
+                    {collaborationCompanies.map((company: any) => (
                       <label
                         key={company.id}
                         className="flex items-center gap-3 rounded-lg border border-transparent bg-white px-3 py-2.5 shadow-sm cursor-pointer"
@@ -875,9 +1148,13 @@ export default function UsersPage() {
                     accept="image/*"
                     className="hidden"
                     id="avatar-upload"
+                    disabled={Boolean(viewingUser.isScopedUser)}
                     onChange={(e) => handleAvatarUpload(e, viewingUser.id)}
                   />
-                  <label htmlFor="avatar-upload" className="cursor-pointer">
+                  <label
+                    htmlFor={viewingUser.isScopedUser ? undefined : "avatar-upload"}
+                    className={viewingUser.isScopedUser ? "cursor-not-allowed" : "cursor-pointer"}
+                  >
                     <Avatar className="h-20 w-20 shrink-0 border-2 border-white shadow-lg group-hover:opacity-80 transition-opacity">
                       {viewingUser.avatarUrl ? (
                         <img src={viewingUser.avatarUrl} alt={viewingUser.name} className="w-full h-full object-cover" />
@@ -892,7 +1169,9 @@ export default function UsersPage() {
                       </AvatarFallback>
                     </Avatar>
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full bg-black/30">
-                      <span className="text-white text-xs font-semibold">点击上传</span>
+                      <span className="text-white text-xs font-semibold">
+                        {viewingUser.isScopedUser ? "所属公司维护" : "点击上传"}
+                      </span>
                     </div>
                   </label>
                 </div>
@@ -905,9 +1184,13 @@ export default function UsersPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
                     <div>
                       <FieldRow label="姓名">{viewingUser.name}</FieldRow>
+                      <FieldRow label="英文名">{viewingUser.englishName || "-"}</FieldRow>
                       <FieldRow label="邮箱">{viewingUser.email || "-"}</FieldRow>
                       <FieldRow label="手机号">{viewingUser.phone || "-"}</FieldRow>
                       <FieldRow label="所属部门">{viewingUser.department || "-"}</FieldRow>
+                      <FieldRow label="数据范围">
+                        {dataScopeLabelMap[String(viewingUser.role === "admin" ? "all" : viewingUser.dataScope || "self")] || "仅本人"}
+                      </FieldRow>
                     </div>
                     <div>
                       <FieldRow label="用户名">@{viewingUser.username}</FieldRow>
@@ -966,6 +1249,47 @@ export default function UsersPage() {
                       ))
                     ) : (
                       <span className="text-sm text-muted-foreground">未单独配置，按部门默认显示</span>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide">表单显示</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {getVisibleFormLabels(viewingUser.visibleForms ?? []).length > 0 ? (
+                      getVisibleFormLabels(viewingUser.visibleForms ?? []).map((label) => (
+                        <Badge key={label} variant="secondary">{label}</Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">未单独配置，按部门默认显示</span>
+                    )}
+                  </div>
+                </div>
+
+                {isMainCompanyContext && (
+                  <div>
+                    <h3 className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide">协同公司权限</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {getAllowedCompanyLabels(viewingUser.allowedCompanies ?? []).length > 0 ? (
+                        getAllowedCompanyLabels(viewingUser.allowedCompanies ?? []).map((label) => (
+                          <Badge key={label} variant="secondary">{label}</Badge>
+                        ))
+                      ) : (
+                        <span className="text-sm text-muted-foreground">未配置协同公司权限</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <h3 className="text-xs font-semibold mb-2 text-muted-foreground uppercase tracking-wide">看板权限</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {getDashboardPermissionLabels(viewingUser.dashboardPermissions ?? []).length > 0 ? (
+                      getDashboardPermissionLabels(viewingUser.dashboardPermissions ?? []).map((label) => (
+                        <Badge key={label} variant="secondary">{label}</Badge>
+                      ))
+                    ) : (
+                      <span className="text-sm text-muted-foreground">未配置可见看板</span>
                     )}
                   </div>
                 </div>

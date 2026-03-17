@@ -5,10 +5,18 @@ import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
-import { getLoginUrl } from "./const";
+import { getLoginUrl, LOCAL_AUTH_USER_KEY } from "./const";
 import "./index.css";
 
 const queryClient = new QueryClient();
+
+const encodeLocalAuthUser = (value: string) => {
+  try {
+    return btoa(unescape(encodeURIComponent(value)));
+  } catch {
+    return null;
+  }
+};
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
@@ -42,10 +50,21 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
+      methodOverride: "POST",
       fetch(input, init) {
+        const localAuthUser =
+          typeof window !== "undefined" ? localStorage.getItem(LOCAL_AUTH_USER_KEY) : null;
+        const headers = new Headers(init?.headers ?? {});
+        if (localAuthUser) {
+          const encodedUser = encodeLocalAuthUser(localAuthUser);
+          if (encodedUser) {
+            headers.set("x-local-auth-user", encodedUser);
+          }
+        }
         return globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
+          headers,
         });
       },
     }),

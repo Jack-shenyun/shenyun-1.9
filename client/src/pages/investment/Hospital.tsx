@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import {
   Hospital,
   Plus,
@@ -84,15 +85,17 @@ const provinceOptions = [
 ];
 
 export default function HospitalPage() {
-  const { data: _dbData = [], isLoading, refetch } = trpc.dealerQualifications.list.useQuery();
-  const createMutation = trpc.dealerQualifications.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
-  const updateMutation = trpc.dealerQualifications.update.useMutation({ onSuccess: () => { refetch(); toast.success("更新成功"); } });
-  const deleteMutation = trpc.dealerQualifications.delete.useMutation({ onSuccess: () => { refetch(); toast.success("删除成功"); } });
+  const { data: _dbData = [], isLoading, refetch } = trpc.investmentHospitals.list.useQuery();
+  const createMutation = trpc.investmentHospitals.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
+  const updateMutation = trpc.investmentHospitals.update.useMutation({ onSuccess: () => { refetch(); toast.success("更新成功"); } });
+  const deleteMutation = trpc.investmentHospitals.delete.useMutation({ onSuccess: () => { refetch(); toast.success("删除成功"); } });
   const hospitals = _dbData as any[];
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [formDialogMaximized, setFormDialogMaximized] = useState(false);
+  const [viewDialogMaximized, setViewDialogMaximized] = useState(false);
   const [editingHospital, setEditingHospital] = useState<HospitalRecord | null>(null);
   const [viewingHospital, setViewingHospital] = useState<HospitalRecord | null>(null);
   const { canDelete } = usePermission();
@@ -190,6 +193,13 @@ export default function HospitalPage() {
   };
 
   const handleApprove = (hospital: HospitalRecord) => {
+    updateMutation.mutate({
+      id: hospital.id,
+      data: {
+        status: "approved",
+        approveDate: new Date().toISOString().split("T")[0],
+      },
+    });
     toast.success("入院申请已通过");
   };
 
@@ -200,13 +210,19 @@ export default function HospitalPage() {
     }
 
     if (editingHospital) {
+      updateMutation.mutate({
+        id: editingHospital.id,
+        data: {
+          ...formData,
+          productCount: Number(formData.productCount || 0),
+        },
+      });
       toast.success("入院信息已更新");
     } else {
-      const newHospital: HospitalRecord = {
-        id: Math.max(...hospitals.map((h: any) => h.id)) + 1,
+      createMutation.mutate({
         ...formData,
-        status: formData.status as HospitalRecord["status"],
-      };
+        productCount: Number(formData.productCount || 0),
+      });
       toast.success("入院申请创建成功");
     }
     setDialogOpen(false);
@@ -379,15 +395,25 @@ export default function HospitalPage() {
         </Card>
 
         {/* 新建/编辑对话框 */}
-        <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DraggableDialogContent>
+        <DraggableDialog
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          defaultWidth={960}
+          defaultHeight={760}
+          isMaximized={formDialogMaximized}
+          onMaximizedChange={setFormDialogMaximized}
+        >
+          <DraggableDialogContent isMaximized={formDialogMaximized}>
             <DialogHeader>
               <DialogTitle>{editingHospital ? "编辑入院信息" : "新增入院申请"}</DialogTitle>
               <DialogDescription>
                 {editingHospital ? "修改医院入院信息" : "录入新的医院入院申请"}
               </DialogDescription>
+              {!editingHospital && formData.hospitalCode && (
+                <p className="text-sm text-muted-foreground">医院编号：{formData.hospitalCode}</p>
+              )}
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            <div className="space-y-6 py-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>医院编号</Label>
@@ -473,7 +499,9 @@ export default function HospitalPage() {
                 </div>
               </div>
 
-              <div className="text-sm font-medium text-muted-foreground mt-2">联系信息</div>
+              <Separator />
+
+              <div className="text-sm font-medium text-muted-foreground">联系信息</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>联系部门</Label>
@@ -513,7 +541,9 @@ export default function HospitalPage() {
                 </div>
               </div>
 
-              <div className="text-sm font-medium text-muted-foreground mt-2">入院信息</div>
+              <Separator />
+
+              <div className="text-sm font-medium text-muted-foreground">入院信息</div>
               <div className="space-y-2">
                 <Label>入院产品</Label>
                 <Textarea
@@ -560,6 +590,8 @@ export default function HospitalPage() {
                 </div>
               </div>
 
+              <Separator />
+
               <div className="space-y-2">
                 <Label>备注</Label>
                 <Textarea
@@ -584,8 +616,15 @@ export default function HospitalPage() {
         {
   /* 查看详情对话框 */
 }
-<DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-  <DraggableDialogContent>
+<DraggableDialog
+  open={viewDialogOpen}
+  onOpenChange={setViewDialogOpen}
+  defaultWidth={920}
+  defaultHeight={760}
+  isMaximized={viewDialogMaximized}
+  onMaximizedChange={setViewDialogMaximized}
+>
+  <DraggableDialogContent isMaximized={viewDialogMaximized}>
     {viewingHospital && (
       <div className="space-y-6">
         <div className="border-b pb-3">

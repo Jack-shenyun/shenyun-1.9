@@ -1,6 +1,9 @@
-import { useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { formatCurrencyValue, formatDateValue, formatDisplayNumber } from "@/lib/formatters";
 import ERPLayout from "@/components/ERPLayout";
+import PrintPreviewButton from "@/components/PrintPreviewButton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -37,7 +41,9 @@ interface ReceivedInvoice {
   invoiceNo: string;
   invoiceCode: string;
   invoiceType: InvoiceType;
+  supplierId?: number;
   supplierName: string;
+  payableIds?: number[];
   invoiceDate: string;
   receiveDate: string;
   amountExTax: number;
@@ -54,12 +60,16 @@ interface IssuedInvoice {
   id: number;
   invoiceNo: string;
   invoiceType: InvoiceType;
+  customerId?: number;
   customerName: string;
+  receivableIds?: number[];
+  reconcileMonth?: string;
   invoiceDate: string;
   amountExTax: number;
   taxRate: number;
   taxAmount: number;
   totalAmount: number;
+  bankAccountId?: number;
   status: IssuedStatus;
   relatedOrderNo: string;
   bankAccount: string;
@@ -93,35 +103,92 @@ const issuedStatusMap: Record<IssuedStatus, { label: string; color: string }> = 
 
 const TAX_RATES = ["0%", "1%", "3%", "6%", "9%", "13%"];
 
-// ==================== 模拟数据 ====================
+function formatBankAccountDisplay(account: any) {
+  return [
+    String(account?.accountName || "").trim(),
+    String(account?.bankName || "").trim(),
+    String(account?.accountNo || "").trim(),
+  ].filter(Boolean).join(" / ");
+}
 
-const mockReceivedInvoices: ReceivedInvoice[] = [
-  { id: 1, invoiceNo: "12345678", invoiceCode: "3100212320", invoiceType: "vat_special", supplierName: "上海某材料有限公司", invoiceDate: "2026-03-01", receiveDate: "2026-03-03", amountExTax: 10000, taxRate: 13, taxAmount: 1300, totalAmount: 11300, status: "verified", relatedOrderNo: "PO-2026-001", verifyCode: "", remark: "" },
-  { id: 2, invoiceNo: "87654321", invoiceCode: "3100212321", invoiceType: "vat_normal", supplierName: "北京某科技有限公司", invoiceDate: "2026-03-05", receiveDate: "2026-03-06", amountExTax: 5000, taxRate: 6, taxAmount: 300, totalAmount: 5300, status: "received", relatedOrderNo: "PO-2026-002", verifyCode: "", remark: "" },
-  { id: 3, invoiceNo: "11223344", invoiceCode: "", invoiceType: "electronic", supplierName: "广州某贸易有限公司", invoiceDate: "2026-03-07", receiveDate: "2026-03-07", amountExTax: 2000, taxRate: 3, taxAmount: 60, totalAmount: 2060, status: "pending", relatedOrderNo: "", verifyCode: "", remark: "待核验" },
-];
+function normalizeDateOnly(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text.includes("T") ? text.slice(0, 10) : text.slice(0, 10);
+}
 
-const mockIssuedInvoices: IssuedInvoice[] = [
-  { id: 1, invoiceNo: "20260001", invoiceType: "vat_special", customerName: "深圳某医院", invoiceDate: "2026-03-02", amountExTax: 20000, taxRate: 13, taxAmount: 2600, totalAmount: 22600, status: "issued", relatedOrderNo: "SO-2026-001", bankAccount: "招商银行 6225 **** **** 1234", remark: "" },
-  { id: 2, invoiceNo: "20260002", invoiceType: "electronic", customerName: "武汉某诊所", invoiceDate: "2026-03-06", amountExTax: 8000, taxRate: 6, taxAmount: 480, totalAmount: 8480, status: "issued", relatedOrderNo: "SO-2026-003", bankAccount: "", remark: "" },
-  { id: 3, invoiceNo: "", invoiceType: "vat_special", customerName: "成都某医疗器械公司", invoiceDate: "", amountExTax: 15000, taxRate: 13, taxAmount: 1950, totalAmount: 16950, status: "draft", relatedOrderNo: "SO-2026-005", bankAccount: "", remark: "待开具" },
-];
+function mapReceivedInvoiceRecord(record: any): ReceivedInvoice {
+  return {
+    id: Number(record?.id || 0),
+    invoiceNo: String(record?.invoiceNo || ""),
+    invoiceCode: String(record?.invoiceCode || ""),
+    invoiceType: (record?.invoiceType || "vat_special") as InvoiceType,
+    supplierId: Number(record?.supplierId || 0) || undefined,
+    supplierName: String(record?.supplierName || ""),
+    payableIds: Array.isArray(record?.payableIds) ? record.payableIds.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0) : [],
+    invoiceDate: normalizeDateOnly(record?.invoiceDate),
+    receiveDate: normalizeDateOnly(record?.receiveDate),
+    amountExTax: Number(record?.amountExTax || 0),
+    taxRate: Number(record?.taxRate || 0),
+    taxAmount: Number(record?.taxAmount || 0),
+    totalAmount: Number(record?.totalAmount || 0),
+    status: (record?.status || "received") as InvoiceStatus,
+    relatedOrderNo: String(record?.relatedOrderNo || ""),
+    verifyCode: String(record?.verifyCode || ""),
+    remark: String(record?.remark || ""),
+  };
+}
+
+function mapIssuedInvoiceRecord(record: any): IssuedInvoice {
+  return {
+    id: Number(record?.id || 0),
+    invoiceNo: String(record?.invoiceNo || ""),
+    invoiceType: (record?.invoiceType || "vat_special") as InvoiceType,
+    customerId: Number(record?.customerId || 0) || undefined,
+    customerName: String(record?.customerName || ""),
+    receivableIds: Array.isArray(record?.receivableIds) ? record.receivableIds.map((id: any) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0) : [],
+    reconcileMonth: String(record?.reconcileMonth || ""),
+    invoiceDate: normalizeDateOnly(record?.invoiceDate),
+    amountExTax: Number(record?.amountExTax || 0),
+    taxRate: Number(record?.taxRate || 0),
+    taxAmount: Number(record?.taxAmount || 0),
+    totalAmount: Number(record?.totalAmount || 0),
+    bankAccountId: Number(record?.bankAccountId || 0) || undefined,
+    status: (record?.status || "draft") as IssuedStatus,
+    relatedOrderNo: String(record?.relatedOrderNo || ""),
+    bankAccount: String(record?.bankAccount || ""),
+    remark: String(record?.remark || ""),
+  };
+}
 
 // ==================== 收票子组件 ====================
 
 function ReceivedInvoiceTab() {
+  const PAGE_SIZE = 10;
+  const trpcUtils = trpc.useUtils();
+  const formPrintRef = useRef<HTMLDivElement>(null);
+  const viewPrintRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [records, setRecords] = useState<ReceivedInvoice[]>(mockReceivedInvoices);
   const [formOpen, setFormOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [editing, setEditing] = useState<ReceivedInvoice | null>(null);
   const [viewing, setViewing] = useState<ReceivedInvoice | null>(null);
   const [form, setForm] = useState<Partial<ReceivedInvoice>>({});
+  const [currentPage, setCurrentPage] = useState(1);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrProvider, setOcrProvider] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognizeMutation = trpc.invoiceOcr.recognize.useMutation();
+  const { data: invoiceRows = [], isLoading } = trpc.receivedInvoices.list.useQuery(undefined);
+  const createMutation = trpc.receivedInvoices.create.useMutation();
+  const updateMutation = trpc.receivedInvoices.update.useMutation();
+  const deleteMutation = trpc.receivedInvoices.delete.useMutation();
+
+  const records = useMemo(
+    () => (invoiceRows as any[]).map(mapReceivedInvoiceRecord),
+    [invoiceRows],
+  );
 
   const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -169,30 +236,70 @@ function ReceivedInvoiceTab() {
     const matchStatus = statusFilter === "all" || r.status === statusFilter;
     return matchSearch && matchStatus;
   });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pagedRecords = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const totalAmount = filtered.reduce((s, r) => s + r.totalAmount, 0);
   const totalTax = filtered.reduce((s, r) => s + r.taxAmount, 0);
 
-  const openAdd = () => { setEditing(null); setForm({ invoiceType: "vat_special", taxRate: 13, status: "pending" }); setFormOpen(true); };
+  const openAdd = () => { setEditing(null); setForm({ invoiceType: "vat_special", taxRate: 13, status: "received" }); setFormOpen(true); };
   const openEdit = (r: ReceivedInvoice) => { setEditing(r); setForm({ ...r }); setFormOpen(true); };
   const openView = (r: ReceivedInvoice) => { setViewing(r); setViewOpen(true); };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.invoiceNo || !form.supplierName) { toast.error("请填写发票号码和供应商名称"); return; }
+    const payload = {
+      invoiceNo: form.invoiceNo || "",
+      invoiceCode: form.invoiceCode || "",
+      invoiceType: (form.invoiceType as InvoiceType) || "vat_special",
+      supplierId: form.supplierId,
+      supplierName: form.supplierName || "",
+      payableIds: form.payableIds || [],
+      relatedOrderNo: form.relatedOrderNo || "",
+      invoiceDate: form.invoiceDate || undefined,
+      receiveDate: form.receiveDate || undefined,
+      amountExTax: String(Number(form.amountExTax) || 0),
+      taxRate: String(Number(form.taxRate) || 13),
+      taxAmount: String(Number(form.taxAmount) || 0),
+      totalAmount: String(Number(form.totalAmount) || 0),
+      verifyCode: form.verifyCode || "",
+      status: (form.status as InvoiceStatus) || "received",
+      remark: form.remark || "",
+    };
     if (editing) {
-      setRecords(prev => prev.map(r => r.id === editing.id ? { ...r, ...form } as ReceivedInvoice : r));
+      await updateMutation.mutateAsync({ id: editing.id, data: payload });
       toast.success("已更新");
     } else {
-      const newRecord: ReceivedInvoice = { id: Date.now(), invoiceNo: form.invoiceNo!, invoiceCode: form.invoiceCode || "", invoiceType: form.invoiceType as InvoiceType || "vat_special", supplierName: form.supplierName!, invoiceDate: form.invoiceDate || "", receiveDate: form.receiveDate || new Date().toISOString().split("T")[0], amountExTax: Number(form.amountExTax) || 0, taxRate: Number(form.taxRate) || 13, taxAmount: Number(form.taxAmount) || 0, totalAmount: Number(form.totalAmount) || 0, status: form.status as InvoiceStatus || "received", relatedOrderNo: form.relatedOrderNo || "", verifyCode: form.verifyCode || "", remark: form.remark || "" };
-      setRecords(prev => [newRecord, ...prev]);
-      toast.success("已添加");
+      await createMutation.mutateAsync(payload);
+      toast.success("已登记收票");
     }
+    await trpcUtils.receivedInvoices.list.invalidate();
     setFormOpen(false);
   };
 
-  const handleDelete = (id: number) => { setRecords(prev => prev.filter(r => r.id !== id)); toast.success("已删除"); };
-  const handleVerify = (id: number) => { setRecords(prev => prev.map(r => r.id === id ? { ...r, status: "verified" as InvoiceStatus } : r)); toast.success("已验证"); };
-  const handleBook = (id: number) => { setRecords(prev => prev.map(r => r.id === id ? { ...r, status: "booked" as InvoiceStatus } : r)); toast.success("已入账"); };
+  const handleDelete = async (id: number) => {
+    await deleteMutation.mutateAsync({ id });
+    await trpcUtils.receivedInvoices.list.invalidate();
+    toast.success("已删除");
+  };
+  const handleVerify = async (id: number) => {
+    await updateMutation.mutateAsync({ id, data: { status: "verified" } });
+    await trpcUtils.receivedInvoices.list.invalidate();
+    toast.success("已验证");
+  };
+  const handleBook = async (id: number) => {
+    await updateMutation.mutateAsync({ id, data: { status: "booked" } });
+    await trpcUtils.receivedInvoices.list.invalidate();
+    toast.success("已入账");
+  };
 
   const calcTax = (exTax: number, rate: number) => {
     const tax = exTax * rate / 100;
@@ -207,7 +314,7 @@ function ReceivedInvoiceTab() {
           { label: "发票总数", value: records.length, color: "text-blue-600" },
           { label: "待验证", value: records.filter(r => r.status === "pending").length, color: "text-yellow-600" },
           { label: "已入账", value: records.filter(r => r.status === "booked").length, color: "text-purple-600" },
-          { label: "含税总额", value: `¥${records.reduce((s, r) => s + r.totalAmount, 0).toLocaleString()}`, color: "text-green-600" },
+          { label: "含税总额", value: formatCurrencyValue(records.reduce((s, r) => s + r.totalAmount, 0)), color: "text-green-600" },
         ].map(s => (
           <Card key={s.label}>
             <CardContent className="pt-4 pb-3">
@@ -253,17 +360,19 @@ function ReceivedInvoiceTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.length === 0 ? (
+              {isLoading ? (
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">加载中...</TableCell></TableRow>
+              ) : filtered.length === 0 ? (
                 <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">暂无数据</TableCell></TableRow>
-              ) : filtered.map(r => (
+              ) : pagedRecords.map(r => (
                 <TableRow key={r.id}>
                   <TableCell className="font-mono text-sm">{r.invoiceNo}</TableCell>
                   <TableCell className="text-sm">{invoiceTypeMap[r.invoiceType]}</TableCell>
                   <TableCell className="text-sm">{r.supplierName}</TableCell>
-                  <TableCell className="text-sm">{r.invoiceDate}</TableCell>
-                  <TableCell className="text-right text-sm">¥{r.amountExTax.toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-sm text-muted-foreground">¥{r.taxAmount.toLocaleString()}</TableCell>
-                  <TableCell className="text-right font-medium">¥{r.totalAmount.toLocaleString()}</TableCell>
+                  <TableCell className="text-sm">{formatDateValue(r.invoiceDate)}</TableCell>
+                  <TableCell className="text-right text-sm">{formatCurrencyValue(r.amountExTax)}</TableCell>
+                  <TableCell className="text-right text-sm text-muted-foreground">{formatCurrencyValue(r.taxAmount)}</TableCell>
+                  <TableCell className="text-right font-medium">{formatCurrencyValue(r.totalAmount)}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{r.relatedOrderNo || "-"}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={`text-xs ${receivedStatusMap[r.status]?.color}`}>
@@ -290,93 +399,99 @@ function ReceivedInvoiceTab() {
           </Table>
         </CardContent>
       </Card>
+      <TablePaginationFooter total={filtered.length} page={currentPage} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
 
       {/* 汇总行 */}
       <div className="flex justify-end gap-6 text-sm text-muted-foreground pr-2">
         <span>共 {filtered.length} 条</span>
-        <span>税额合计：<span className="font-medium text-foreground">¥{totalTax.toLocaleString()}</span></span>
-        <span>含税合计：<span className="font-medium text-foreground">¥{totalAmount.toLocaleString()}</span></span>
+        <span>税额合计：<span className="font-medium text-foreground">{formatCurrencyValue(totalTax)}</span></span>
+        <span>含税合计：<span className="font-medium text-foreground">{formatCurrencyValue(totalAmount)}</span></span>
       </div>
 
       {/* 登记/编辑对话框 */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>{editing ? "编辑收票" : "登记收票"}</DialogTitle></DialogHeader>
-          {/* AI 识别上传区 */}
-          <div className="border-2 border-dashed border-muted rounded-lg p-4 text-center bg-muted/30">
-            <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleOcrUpload} />
-            <Button type="button" variant="outline" size="sm" disabled={ocrLoading} onClick={() => fileInputRef.current?.click()}>
-              {ocrLoading ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />AI识别中...</> : <><Upload className="h-4 w-4 mr-1.5" />上传发票自动识别（图片/PDF）</>}
-            </Button>
-            {ocrProvider && <p className="text-xs text-green-600 mt-1.5 flex items-center justify-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />已由 {ocrProvider} 识别，请核对以下信息</p>}
-            <p className="text-xs text-muted-foreground mt-1">支持 JPG、PNG、PDF，上传后自动填入表单</p>
+          <div ref={formPrintRef}>
+            <DialogHeader><DialogTitle>{editing ? "编辑收票" : "登记收票"}</DialogTitle></DialogHeader>
+            {/* AI 识别上传区 */}
+            <div className="border-2 border-dashed border-muted rounded-lg p-4 text-center bg-muted/30">
+              <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleOcrUpload} />
+              <Button type="button" variant="outline" size="sm" disabled={ocrLoading} onClick={() => fileInputRef.current?.click()}>
+                {ocrLoading ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />AI识别中...</> : <><Upload className="h-4 w-4 mr-1.5" />上传发票自动识别（图片/PDF）</>}
+              </Button>
+              {ocrProvider && <p className="text-xs text-green-600 mt-1.5 flex items-center justify-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />已由 {ocrProvider} 识别，请核对以下信息</p>}
+              <p className="text-xs text-muted-foreground mt-1">支持 JPG、PNG、PDF，上传后自动填入表单</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>发票号码 *</Label>
+                <Input value={form.invoiceNo || ""} onChange={e => setForm(f => ({ ...f, invoiceNo: e.target.value }))} placeholder="8位发票号码" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>发票代码</Label>
+                <Input value={form.invoiceCode || ""} onChange={e => setForm(f => ({ ...f, invoiceCode: e.target.value }))} placeholder="10位发票代码" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>发票类型</Label>
+                <Select value={form.invoiceType || "vat_special"} onValueChange={v => setForm(f => ({ ...f, invoiceType: v as InvoiceType }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{Object.entries(invoiceTypeMap).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>供应商名称 *</Label>
+                <Input value={form.supplierName || ""} onChange={e => setForm(f => ({ ...f, supplierName: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>开票日期</Label>
+                <Input type="date" value={form.invoiceDate || ""} onChange={e => setForm(f => ({ ...f, invoiceDate: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>收票日期</Label>
+                <Input type="date" value={form.receiveDate || ""} onChange={e => setForm(f => ({ ...f, receiveDate: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>不含税金额</Label>
+                <Input type="number" value={form.amountExTax || ""} onChange={e => { const v = Number(e.target.value); setForm(f => ({ ...f, amountExTax: v })); calcTax(v, Number(form.taxRate) || 13); }} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>税率</Label>
+                <Select value={String(form.taxRate ?? 13)} onValueChange={v => { setForm(f => ({ ...f, taxRate: Number(v) })); calcTax(Number(form.amountExTax) || 0, Number(v)); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{TAX_RATES.map(r => <SelectItem key={r} value={r.replace("%", "")}>{r}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>税额</Label>
+                <Input type="number" value={form.taxAmount || ""} onChange={e => setForm(f => ({ ...f, taxAmount: Number(e.target.value) }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>含税金额</Label>
+                <Input type="number" value={form.totalAmount || ""} onChange={e => setForm(f => ({ ...f, totalAmount: Number(e.target.value) }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>关联采购单号</Label>
+                <Input value={form.relatedOrderNo || ""} onChange={e => setForm(f => ({ ...f, relatedOrderNo: e.target.value }))} placeholder="PO-2026-001" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>状态</Label>
+                <Select value={form.status || "received"} onValueChange={v => setForm(f => ({ ...f, status: v as InvoiceStatus }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{Object.entries(receivedStatusMap).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2 space-y-1.5">
+                <Label>备注</Label>
+                <Textarea value={form.remark || ""} onChange={e => setForm(f => ({ ...f, remark: e.target.value }))} rows={2} />
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>发票号码 *</Label>
-              <Input value={form.invoiceNo || ""} onChange={e => setForm(f => ({ ...f, invoiceNo: e.target.value }))} placeholder="8位发票号码" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>发票代码</Label>
-              <Input value={form.invoiceCode || ""} onChange={e => setForm(f => ({ ...f, invoiceCode: e.target.value }))} placeholder="10位发票代码" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>发票类型</Label>
-              <Select value={form.invoiceType || "vat_special"} onValueChange={v => setForm(f => ({ ...f, invoiceType: v as InvoiceType }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{Object.entries(invoiceTypeMap).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>供应商名称 *</Label>
-              <Input value={form.supplierName || ""} onChange={e => setForm(f => ({ ...f, supplierName: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>开票日期</Label>
-              <Input type="date" value={form.invoiceDate || ""} onChange={e => setForm(f => ({ ...f, invoiceDate: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>收票日期</Label>
-              <Input type="date" value={form.receiveDate || ""} onChange={e => setForm(f => ({ ...f, receiveDate: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>不含税金额</Label>
-              <Input type="number" value={form.amountExTax || ""} onChange={e => { const v = Number(e.target.value); setForm(f => ({ ...f, amountExTax: v })); calcTax(v, Number(form.taxRate) || 13); }} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>税率</Label>
-              <Select value={String(form.taxRate ?? 13)} onValueChange={v => { setForm(f => ({ ...f, taxRate: Number(v) })); calcTax(Number(form.amountExTax) || 0, Number(v)); }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{TAX_RATES.map(r => <SelectItem key={r} value={r.replace("%", "")}>{r}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>税额</Label>
-              <Input type="number" value={form.taxAmount || ""} onChange={e => setForm(f => ({ ...f, taxAmount: Number(e.target.value) }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>含税金额</Label>
-              <Input type="number" value={form.totalAmount || ""} onChange={e => setForm(f => ({ ...f, totalAmount: Number(e.target.value) }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>关联采购单号</Label>
-              <Input value={form.relatedOrderNo || ""} onChange={e => setForm(f => ({ ...f, relatedOrderNo: e.target.value }))} placeholder="PO-2026-001" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>状态</Label>
-              <Select value={form.status || "received"} onValueChange={v => setForm(f => ({ ...f, status: v as InvoiceStatus }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{Object.entries(receivedStatusMap).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="col-span-2 space-y-1.5">
-              <Label>备注</Label>
-              <Textarea value={form.remark || ""} onChange={e => setForm(f => ({ ...f, remark: e.target.value }))} rows={2} />
-            </div>
-          </div>
-          <DialogFooter>
+          <DialogFooter data-print-ignore="true">
+            <PrintPreviewButton title={editing ? "编辑收票" : "登记收票"} targetRef={formPrintRef} />
             <Button variant="outline" onClick={() => setFormOpen(false)}>取消</Button>
-            <Button onClick={handleSave}>保存</Button>
+            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>
+              {createMutation.isPending || updateMutation.isPending ? "保存中..." : "保存"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -384,26 +499,31 @@ function ReceivedInvoiceTab() {
       {/* 查看对话框 */}
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>发票详情</DialogTitle></DialogHeader>
-          {viewing && (
-            <div className="space-y-3 text-sm">
-              {[
-                ["发票号码", viewing.invoiceNo], ["发票代码", viewing.invoiceCode || "-"],
-                ["发票类型", invoiceTypeMap[viewing.invoiceType]], ["供应商", viewing.supplierName],
-                ["开票日期", viewing.invoiceDate], ["收票日期", viewing.receiveDate],
-                ["不含税金额", `¥${viewing.amountExTax.toLocaleString()}`], ["税率", `${viewing.taxRate}%`],
-                ["税额", `¥${viewing.taxAmount.toLocaleString()}`], ["含税金额", `¥${viewing.totalAmount.toLocaleString()}`],
-                ["关联订单", viewing.relatedOrderNo || "-"], ["状态", receivedStatusMap[viewing.status]?.label],
-                ["备注", viewing.remark || "-"],
-              ].map(([k, v]) => (
-                <div key={k} className="flex gap-3">
-                  <span className="text-muted-foreground w-24 shrink-0">{k}：</span>
-                  <span className="font-medium">{v}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <DialogFooter><Button variant="outline" onClick={() => setViewOpen(false)}>关闭</Button></DialogFooter>
+          <div ref={viewPrintRef}>
+            <DialogHeader><DialogTitle>发票详情</DialogTitle></DialogHeader>
+            {viewing && (
+              <div className="space-y-3 text-sm">
+                {[
+                  ["发票号码", viewing.invoiceNo], ["发票代码", viewing.invoiceCode || "-"],
+                  ["发票类型", invoiceTypeMap[viewing.invoiceType]], ["供应商", viewing.supplierName],
+                  ["开票日期", viewing.invoiceDate], ["收票日期", viewing.receiveDate],
+                  ["不含税金额", formatCurrencyValue(viewing.amountExTax)], ["税率", `${formatDisplayNumber(viewing.taxRate)}%`],
+                  ["税额", formatCurrencyValue(viewing.taxAmount)], ["含税金额", formatCurrencyValue(viewing.totalAmount)],
+                  ["关联订单", viewing.relatedOrderNo || "-"], ["状态", receivedStatusMap[viewing.status]?.label],
+                  ["备注", viewing.remark || "-"],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex gap-3">
+                    <span className="text-muted-foreground w-24 shrink-0">{k}：</span>
+                    <span className="font-medium">{v}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter data-print-ignore="true">
+            <PrintPreviewButton title="收票详情" targetRef={viewPrintRef} />
+            <Button variant="outline" onClick={() => setViewOpen(false)}>关闭</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -413,18 +533,35 @@ function ReceivedInvoiceTab() {
 // ==================== 开票子组件 ====================
 
 function IssuedInvoiceTab() {
+  const PAGE_SIZE = 10;
+  const trpcUtils = trpc.useUtils();
+  const [location] = useLocation();
+  const formPrintRef = useRef<HTMLDivElement>(null);
+  const viewPrintRef = useRef<HTMLDivElement>(null);
+  const { data: bankAccounts = [] } = trpc.bankAccounts.list.useQuery({ status: "active" });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [records, setRecords] = useState<IssuedInvoice[]>(mockIssuedInvoices);
   const [formOpen, setFormOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [editing, setEditing] = useState<IssuedInvoice | null>(null);
   const [viewing, setViewing] = useState<IssuedInvoice | null>(null);
   const [form, setForm] = useState<Partial<IssuedInvoice>>({});
+  const [currentPage, setCurrentPage] = useState(1);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrProvider, setOcrProvider] = useState("");
+  const [hasAppliedRoutePrefill, setHasAppliedRoutePrefill] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognizeMutation = trpc.invoiceOcr.recognize.useMutation();
+  const { data: invoiceRows = [], isLoading } = trpc.issuedInvoices.list.useQuery(undefined);
+  const createMutation = trpc.issuedInvoices.create.useMutation();
+  const updateMutation = trpc.issuedInvoices.update.useMutation();
+  const deleteMutation = trpc.issuedInvoices.delete.useMutation();
+  const draftFromReceivablesMutation = trpc.issuedInvoices.createDraftFromReceivables.useMutation();
+
+  const records = useMemo(
+    () => (invoiceRows as any[]).map(mapIssuedInvoiceRecord),
+    [invoiceRows],
+  );
 
   const handleOcrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -470,29 +607,139 @@ function IssuedInvoiceTab() {
     const matchStatus = statusFilter === "all" || r.status === statusFilter;
     return matchSearch && matchStatus;
   });
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pagedRecords = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (hasAppliedRoutePrefill) return;
+    const params = new URLSearchParams(window.location.search);
+    const customerName = String(params.get("customerName") || "").trim();
+    const reconcileMonth = String(params.get("reconcileMonth") || "").trim();
+    const customerId = Number(params.get("customerId") || 0) || undefined;
+    const receivableIds = String(params.get("receivableIds") || "")
+      .split(",")
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    if (!customerName) return;
+
+    let cancelled = false;
+    (async () => {
+      const draft = await draftFromReceivablesMutation.mutateAsync({
+        customerId,
+        customerName,
+        reconcileMonth,
+        receivableIds,
+        bankAccountId: Number((bankAccounts as any[])[0]?.id || 0) || undefined,
+      });
+      if (cancelled) return;
+      const mapped = mapIssuedInvoiceRecord(draft);
+      const fallbackAccount = (bankAccounts as any[]).find((item: any) => Number(item.id) === Number(mapped.bankAccountId))
+        || (bankAccounts as any[])[0];
+      setEditing(mapped);
+      setForm({
+        ...mapped,
+        bankAccountId: mapped.bankAccountId || Number(fallbackAccount?.id || 0) || undefined,
+        bankAccount: mapped.bankAccount || (fallbackAccount ? formatBankAccountDisplay(fallbackAccount) : ""),
+      });
+      setFormOpen(true);
+      setHasAppliedRoutePrefill(true);
+      await trpcUtils.issuedInvoices.list.invalidate();
+      toast.success(`已带入开票客户：${customerName}`);
+
+      params.delete("customerId");
+      params.delete("customerName");
+      params.delete("reconcileMonth");
+      params.delete("receivableIds");
+      const query = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+    })().catch((error: any) => {
+      toast.error(error?.message || "生成开票草稿失败");
+      setHasAppliedRoutePrefill(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bankAccounts, draftFromReceivablesMutation, hasAppliedRoutePrefill, location, trpcUtils.issuedInvoices.list]);
 
   const totalAmount = filtered.reduce((s, r) => s + r.totalAmount, 0);
 
-  const openAdd = () => { setEditing(null); setForm({ invoiceType: "vat_special", taxRate: 13, status: "draft" }); setFormOpen(true); };
+  const openAdd = () => {
+    const defaultAccount = (bankAccounts as any[])[0];
+    setEditing(null);
+    setForm({
+      invoiceType: "vat_special",
+      taxRate: 13,
+      status: "draft",
+      bankAccountId: Number(defaultAccount?.id || 0) || undefined,
+      bankAccount: defaultAccount ? formatBankAccountDisplay(defaultAccount) : "",
+    });
+    setFormOpen(true);
+  };
   const openEdit = (r: IssuedInvoice) => { setEditing(r); setForm({ ...r }); setFormOpen(true); };
   const openView = (r: IssuedInvoice) => { setViewing(r); setViewOpen(true); };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.customerName) { toast.error("请填写客户名称"); return; }
+    const payload = {
+      invoiceNo: form.invoiceNo || undefined,
+      invoiceType: (form.invoiceType as InvoiceType) || "vat_special",
+      customerId: form.customerId,
+      customerName: form.customerName || "",
+      receivableIds: form.receivableIds || [],
+      relatedOrderNo: form.relatedOrderNo || "",
+      reconcileMonth: form.reconcileMonth || "",
+      invoiceDate: form.invoiceDate || undefined,
+      amountExTax: String(Number(form.amountExTax) || 0),
+      taxRate: String(Number(form.taxRate) || 13),
+      taxAmount: String(Number(form.taxAmount) || 0),
+      totalAmount: String(Number(form.totalAmount) || 0),
+      bankAccountId: form.bankAccountId,
+      bankAccount: form.bankAccount || "",
+      status: (form.status as IssuedStatus) || "draft",
+      remark: form.remark || "",
+    };
     if (editing) {
-      setRecords(prev => prev.map(r => r.id === editing.id ? { ...r, ...form } as IssuedInvoice : r));
+      await updateMutation.mutateAsync({ id: editing.id, data: payload });
       toast.success("已更新");
     } else {
-      const newRecord: IssuedInvoice = { id: Date.now(), invoiceNo: form.invoiceNo || "", invoiceType: form.invoiceType as InvoiceType || "vat_special", customerName: form.customerName!, invoiceDate: form.invoiceDate || new Date().toISOString().split("T")[0], amountExTax: Number(form.amountExTax) || 0, taxRate: Number(form.taxRate) || 13, taxAmount: Number(form.taxAmount) || 0, totalAmount: Number(form.totalAmount) || 0, status: form.status as IssuedStatus || "draft", relatedOrderNo: form.relatedOrderNo || "", bankAccount: form.bankAccount || "", remark: form.remark || "" };
-      setRecords(prev => [newRecord, ...prev]);
+      await createMutation.mutateAsync(payload);
       toast.success("已添加");
     }
+    await trpcUtils.issuedInvoices.list.invalidate();
     setFormOpen(false);
   };
 
-  const handleDelete = (id: number) => { setRecords(prev => prev.filter(r => r.id !== id)); toast.success("已删除"); };
-  const handleIssue = (id: number) => { setRecords(prev => prev.map(r => r.id === id ? { ...r, status: "issued" as IssuedStatus } : r)); toast.success("已标记为已开票"); };
-  const handleCancel = (id: number) => { setRecords(prev => prev.map(r => r.id === id ? { ...r, status: "cancelled" as IssuedStatus } : r)); toast.success("已作废"); };
+  const handleIssue = async (record: IssuedInvoice) => {
+    await updateMutation.mutateAsync({
+      id: record.id,
+      data: {
+        status: "issued",
+        invoiceDate: record.invoiceDate || new Date().toISOString().split("T")[0],
+        invoiceNo: record.invoiceNo || undefined,
+      },
+    });
+    await trpcUtils.issuedInvoices.list.invalidate();
+    toast.success("已标记为已开票");
+  };
+  const handleCancel = async (record: IssuedInvoice) => {
+    await updateMutation.mutateAsync({ id: record.id, data: { status: "cancelled" } });
+    await trpcUtils.issuedInvoices.list.invalidate();
+    toast.success("已作废");
+  };
+  const handleDelete = async (id: number) => {
+    await deleteMutation.mutateAsync({ id });
+    await trpcUtils.issuedInvoices.list.invalidate();
+    toast.success("已删除");
+  };
 
   const calcTax = (exTax: number, rate: number) => {
     const tax = exTax * rate / 100;
@@ -507,7 +754,7 @@ function IssuedInvoiceTab() {
           { label: "开票总数", value: records.length, color: "text-blue-600" },
           { label: "草稿", value: records.filter(r => r.status === "draft").length, color: "text-gray-500" },
           { label: "已开票", value: records.filter(r => r.status === "issued").length, color: "text-green-600" },
-          { label: "含税总额", value: `¥${records.reduce((s, r) => s + r.totalAmount, 0).toLocaleString()}`, color: "text-green-600" },
+          { label: "含税总额", value: formatCurrencyValue(records.reduce((s, r) => s + r.totalAmount, 0)), color: "text-green-600" },
         ].map(s => (
           <Card key={s.label}>
             <CardContent className="pt-4 pb-3">
@@ -531,7 +778,7 @@ function IssuedInvoiceTab() {
             {Object.entries(issuedStatusMap).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Button size="sm" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />新建开票</Button>
+        <Button size="sm" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />新建开票草稿</Button>
       </div>
 
       {/* 表格 */}
@@ -553,17 +800,19 @@ function IssuedInvoiceTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.length === 0 ? (
+              {isLoading ? (
+                <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">加载中...</TableCell></TableRow>
+              ) : filtered.length === 0 ? (
                 <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">暂无数据</TableCell></TableRow>
-              ) : filtered.map(r => (
+              ) : pagedRecords.map(r => (
                 <TableRow key={r.id}>
                   <TableCell className="font-mono text-sm">{r.invoiceNo || <span className="text-muted-foreground">待开具</span>}</TableCell>
                   <TableCell className="text-sm">{invoiceTypeMap[r.invoiceType]}</TableCell>
                   <TableCell className="text-sm">{r.customerName}</TableCell>
                   <TableCell className="text-sm">{r.invoiceDate || "-"}</TableCell>
-                  <TableCell className="text-right text-sm">¥{r.amountExTax.toLocaleString()}</TableCell>
-                  <TableCell className="text-right text-sm text-muted-foreground">¥{r.taxAmount.toLocaleString()}</TableCell>
-                  <TableCell className="text-right font-medium">¥{r.totalAmount.toLocaleString()}</TableCell>
+                  <TableCell className="text-right text-sm">{formatCurrencyValue(r.amountExTax)}</TableCell>
+                  <TableCell className="text-right text-sm text-muted-foreground">{formatCurrencyValue(r.taxAmount)}</TableCell>
+                  <TableCell className="text-right font-medium">{formatCurrencyValue(r.totalAmount)}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{r.relatedOrderNo || "-"}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={`text-xs ${issuedStatusMap[r.status]?.color}`}>
@@ -577,9 +826,11 @@ function IssuedInvoiceTab() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => openView(r)}><Eye className="h-4 w-4 mr-2" />查看</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openEdit(r)}><Edit className="h-4 w-4 mr-2" />编辑</DropdownMenuItem>
-                        {r.status === "draft" && <DropdownMenuItem onClick={() => handleIssue(r.id)}><Send className="h-4 w-4 mr-2" />标记已开票</DropdownMenuItem>}
-                        {(r.status === "draft" || r.status === "issued") && <DropdownMenuItem className="text-orange-600" onClick={() => handleCancel(r.id)}><FileText className="h-4 w-4 mr-2" />作废</DropdownMenuItem>}
+                        {r.status === "draft" && (
+                          <DropdownMenuItem onClick={() => openEdit(r)}><Edit className="h-4 w-4 mr-2" />编辑草稿</DropdownMenuItem>
+                        )}
+                        {r.status === "draft" && <DropdownMenuItem onClick={() => handleIssue(r)}><Send className="h-4 w-4 mr-2" />标记已开票</DropdownMenuItem>}
+                        {(r.status === "draft" || r.status === "issued") && <DropdownMenuItem className="text-orange-600" onClick={() => handleCancel(r)}><FileText className="h-4 w-4 mr-2" />作废</DropdownMenuItem>}
                         <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />删除</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -590,26 +841,28 @@ function IssuedInvoiceTab() {
           </Table>
         </CardContent>
       </Card>
+      <TablePaginationFooter total={filtered.length} page={currentPage} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
 
       <div className="flex justify-end gap-6 text-sm text-muted-foreground pr-2">
         <span>共 {filtered.length} 条</span>
-        <span>含税合计：<span className="font-medium text-foreground">¥{totalAmount.toLocaleString()}</span></span>
+        <span>含税合计：<span className="font-medium text-foreground">{formatCurrencyValue(totalAmount)}</span></span>
       </div>
 
       {/* 表单对话框 */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>{editing ? "编辑开票" : "新建开票"}</DialogTitle></DialogHeader>
-          {/* AI 识别上传区 */}
-          <div className="border-2 border-dashed border-muted rounded-lg p-4 text-center bg-muted/30">
-            <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleOcrUpload} />
-            <Button type="button" variant="outline" size="sm" disabled={ocrLoading} onClick={() => fileInputRef.current?.click()}>
-              {ocrLoading ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />AI识别中...</> : <><Upload className="h-4 w-4 mr-1.5" />上传发票自动识别（图片/PDF）</>}
-            </Button>
-            {ocrProvider && <p className="text-xs text-green-600 mt-1.5 flex items-center justify-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />已由 {ocrProvider} 识别，请核对以下信息</p>}
-            <p className="text-xs text-muted-foreground mt-1">支持 JPG、PNG、PDF，上传后自动填入表单</p>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div ref={formPrintRef}>
+            <DialogHeader><DialogTitle>{editing ? "编辑开票草稿" : "新建开票草稿"}</DialogTitle></DialogHeader>
+            {/* AI 识别上传区 */}
+            <div className="border-2 border-dashed border-muted rounded-lg p-4 text-center bg-muted/30">
+              <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleOcrUpload} />
+              <Button type="button" variant="outline" size="sm" disabled={ocrLoading} onClick={() => fileInputRef.current?.click()}>
+                {ocrLoading ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />AI识别中...</> : <><Upload className="h-4 w-4 mr-1.5" />上传发票自动识别（图片/PDF）</>}
+              </Button>
+              {ocrProvider && <p className="text-xs text-green-600 mt-1.5 flex items-center justify-center gap-1"><CheckCircle2 className="h-3.5 w-3.5" />已由 {ocrProvider} 识别，请核对以下信息</p>}
+              <p className="text-xs text-muted-foreground mt-1">支持 JPG、PNG、PDF，上传后自动填入表单</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>客户名称 *</Label>
               <Input value={form.customerName || ""} onChange={e => setForm(f => ({ ...f, customerName: e.target.value }))} />
@@ -653,24 +906,49 @@ function IssuedInvoiceTab() {
               <Input value={form.relatedOrderNo || ""} onChange={e => setForm(f => ({ ...f, relatedOrderNo: e.target.value }))} placeholder="SO-2026-001" />
             </div>
             <div className="space-y-1.5">
-              <Label>状态</Label>
-              <Select value={form.status || "draft"} onValueChange={v => setForm(f => ({ ...f, status: v as IssuedStatus }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{Object.entries(issuedStatusMap).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
-              </Select>
+              <Label>当前状态</Label>
+              <Input readOnly value={issuedStatusMap[(form.status as IssuedStatus) || "draft"]?.label || "草稿"} />
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label>收款银行账户</Label>
-              <Input value={form.bankAccount || ""} onChange={e => setForm(f => ({ ...f, bankAccount: e.target.value }))} placeholder="银行名称 + 账号" />
+              <Select
+                value={form.bankAccountId ? String(form.bankAccountId) : ""}
+                onValueChange={(value) => {
+                  const account = (bankAccounts as any[]).find((item: any) => String(item.id) === String(value));
+                  setForm(f => ({
+                    ...f,
+                    bankAccountId: Number(value) || undefined,
+                    bankAccount: account ? formatBankAccountDisplay(account) : "",
+                  }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="请选择收款银行账户" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(bankAccounts as any[]).map((account: any) => {
+                    const displayName = formatBankAccountDisplay(account);
+                    return (
+                      <SelectItem key={account.id} value={String(account.id)}>
+                        {displayName}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label>备注</Label>
               <Textarea value={form.remark || ""} onChange={e => setForm(f => ({ ...f, remark: e.target.value }))} rows={2} />
             </div>
           </div>
-          <DialogFooter>
+          </div>
+          <DialogFooter data-print-ignore="true">
+            <PrintPreviewButton title={editing ? "编辑开票草稿" : "新建开票草稿"} targetRef={formPrintRef} />
             <Button variant="outline" onClick={() => setFormOpen(false)}>取消</Button>
-            <Button onClick={handleSave}>保存</Button>
+            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending || draftFromReceivablesMutation.isPending}>
+              {createMutation.isPending || updateMutation.isPending || draftFromReceivablesMutation.isPending ? "保存中..." : "保存"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -678,25 +956,30 @@ function IssuedInvoiceTab() {
       {/* 查看对话框 */}
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>开票详情</DialogTitle></DialogHeader>
-          {viewing && (
-            <div className="space-y-3 text-sm">
-              {[
-                ["发票号码", viewing.invoiceNo || "待开具"], ["发票类型", invoiceTypeMap[viewing.invoiceType]],
-                ["客户名称", viewing.customerName], ["开票日期", viewing.invoiceDate || "-"],
-                ["不含税金额", `¥${viewing.amountExTax.toLocaleString()}`], ["税率", `${viewing.taxRate}%`],
-                ["税额", `¥${viewing.taxAmount.toLocaleString()}`], ["含税金额", `¥${viewing.totalAmount.toLocaleString()}`],
-                ["关联订单", viewing.relatedOrderNo || "-"], ["收款账户", viewing.bankAccount || "-"],
-                ["状态", issuedStatusMap[viewing.status]?.label], ["备注", viewing.remark || "-"],
-              ].map(([k, v]) => (
-                <div key={k} className="flex gap-3">
-                  <span className="text-muted-foreground w-24 shrink-0">{k}：</span>
-                  <span className="font-medium">{v}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <DialogFooter><Button variant="outline" onClick={() => setViewOpen(false)}>关闭</Button></DialogFooter>
+          <div ref={viewPrintRef}>
+            <DialogHeader><DialogTitle>开票详情</DialogTitle></DialogHeader>
+            {viewing && (
+              <div className="space-y-3 text-sm">
+                {[
+                  ["发票号码", viewing.invoiceNo || "待开具"], ["发票类型", invoiceTypeMap[viewing.invoiceType]],
+                  ["客户名称", viewing.customerName], ["开票日期", viewing.invoiceDate || "-"],
+                  ["不含税金额", formatCurrencyValue(viewing.amountExTax)], ["税率", `${formatDisplayNumber(viewing.taxRate)}%`],
+                  ["税额", formatCurrencyValue(viewing.taxAmount)], ["含税金额", formatCurrencyValue(viewing.totalAmount)],
+                  ["关联订单", viewing.relatedOrderNo || "-"], ["收款账户", viewing.bankAccount || "-"],
+                  ["状态", issuedStatusMap[viewing.status]?.label], ["备注", viewing.remark || "-"],
+                ].map(([k, v]) => (
+                  <div key={k} className="flex gap-3">
+                    <span className="text-muted-foreground w-24 shrink-0">{k}：</span>
+                    <span className="font-medium">{v}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter data-print-ignore="true">
+            <PrintPreviewButton title="开票详情" targetRef={viewPrintRef} />
+            <Button variant="outline" onClick={() => setViewOpen(false)}>关闭</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -706,6 +989,7 @@ function IssuedInvoiceTab() {
 // ==================== 主页面 ====================
 
 export default function InvoicePage() {
+  const hasIssuedPrefill = Boolean(new URLSearchParams(window.location.search).get("customerName"));
   return (
     <ERPLayout>
       <div className="w-full px-3 py-4 md:px-4 md:py-5">
@@ -719,7 +1003,7 @@ export default function InvoicePage() {
           </div>
         </div>
 
-        <Tabs defaultValue="received">
+        <Tabs defaultValue={hasIssuedPrefill ? "issued" : "received"}>
           <TabsList className="mb-4">
             <TabsTrigger value="received" className="gap-2">
               <Download className="h-4 w-4" />收票管理

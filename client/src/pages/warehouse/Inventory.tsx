@@ -1,5 +1,5 @@
-import { formatDate, formatDateTime } from "@/lib/formatters";
-import { useState, useMemo } from "react";
+import { formatDate, formatDateTime, formatDisplayNumber } from "@/lib/formatters";
+import { useEffect, useMemo, useState } from "react";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PRODUCT_CATEGORY_LABELS, PRODUCT_CATEGORY_OPTIONS } from "@shared/productCategories";
 import {
   Boxes,
   Plus,
@@ -49,6 +50,7 @@ import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
+import { useLocation } from "wouter";
 
 const statusMap: Record<string, any> = {
   qualified: { label: "正常", variant: "default" as const },
@@ -59,14 +61,19 @@ const statusMap: Record<string, any> = {
 
 // 产品分类映射
 const productCategoryMap: Record<string, string> = {
-  finished: "成品",
-  semi_finished: "半成品",
-  raw_material: "原材料",
-  auxiliary: "辅料",
+  ...PRODUCT_CATEGORY_LABELS,
+};
+
+// 产品属性映射（与产品管理 category 一致）
+const categoryMap: Record<string, string> = {
+  nmpa: "NMPA注册",
+  fda: "FDA注册",
+  ce: "CE注册",
+  oem: "OEM代工",
   other: "其他",
 };
 
-// 产品属性（sourceType）映射
+// 来源类型映射
 const sourceTypeMap: Record<string, string> = {
   production: "自制",
   purchase: "采购",
@@ -79,14 +86,30 @@ function calcDisplayStatus(quantity: number, safetyStock: number) {
   return "normal";
 }
 
+function calcAggregateStatus(items: any[]) {
+  const statuses = items.map((item) => String(item.status || ""));
+  if (statuses.includes("unqualified")) return "unqualified";
+  if (statuses.includes("quarantine")) return "quarantine";
+  if (statuses.includes("reserved")) return "reserved";
+  return statuses[0] || "qualified";
+}
+
 const units = ["kg", "g", "m", "个", "支", "盒", "箱", "卷", "套", "片", "米", "PCS", "50PCS/箱"];
 
+function isStagingWarehouse(warehouse: any) {
+  const text = `${String(warehouse?.name || "")} ${String(warehouse?.code || "")}`.toLowerCase();
+  return text.includes("暂存") || text.includes("staging");
+}
+
 export default function InventoryPage() {
+  const [location] = useLocation();
+  const isSalesInventoryBoard = location === "/inventory-board";
+  const isStagingAreaPage = location === "/production/staging-area";
   const { canDelete } = usePermission();
   const [searchTerm, setSearchTerm] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState<string>("all");
   const [productCategoryFilter, setProductCategoryFilter] = useState<string>("all"); // 产品分类筛选
-  const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");           // 产品属性筛选
+  const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("all");           // 来源类型筛选
   const [productNameFilter, setProductNameFilter] = useState<string>("");             // 产品名称筛选
   const [hideZeroStock, setHideZeroStock] = useState<boolean>(true);                 // 默认隐藏零库存/负库存
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -100,6 +123,20 @@ export default function InventoryPage() {
   const [adjustType, setAdjustType] = useState<"in" | "out">("in");
   const [adjustQuantity, setAdjustQuantity] = useState("");
   const [adjustReason, setAdjustReason] = useState("");
+
+  useEffect(() => {
+    if (!isSalesInventoryBoard) return;
+    setProductCategoryFilter("finished");
+    setSourceTypeFilter("all");
+    setWarehouseFilter("all");
+    setHideZeroStock(true);
+  }, [isSalesInventoryBoard]);
+
+  useEffect(() => {
+    if (!isStagingAreaPage) return;
+    setWarehouseFilter("all");
+    setHideZeroStock(true);
+  }, [isStagingAreaPage]);
 
   const [formData, setFormData] = useState({
     productId: "",
@@ -116,6 +153,15 @@ export default function InventoryPage() {
 
   const { data: warehouseList = [] } = trpc.warehouses.list.useQuery({ status: "active" });
   const { data: products = [] } = trpc.products.list.useQuery({ limit: 1000 });
+  const stagingWarehouses = useMemo(
+    () => (warehouseList as any[]).filter((warehouse: any) => isStagingWarehouse(warehouse)),
+    [warehouseList]
+  );
+  const selectableWarehouses = isStagingAreaPage ? stagingWarehouses : (warehouseList as any[]);
+  const stagingWarehouseIds = useMemo(
+    () => new Set(stagingWarehouses.map((warehouse: any) => Number(warehouse.id))),
+    [stagingWarehouses]
+  );
 
   const { data: inventoryList = [], refetch } = trpc.inventory.list.useQuery({
     search: searchTerm || undefined,
@@ -129,7 +175,7 @@ export default function InventoryPage() {
     return map;
   }, [products]);
 
-  // 库存列表附加产品信息（规格、分类、属性）
+  // 库存列表附加产品信息（规格、分类、产品类型、产品属性、来源类型）
   const inventoryWithProduct = useMemo(() => {
     return (inventoryList as any[]).map((item: any) => {
       const product = item.productId ? productMap[item.productId] : null;
@@ -139,6 +185,8 @@ export default function InventoryPage() {
         displayCode: product?.code || item.materialCode || "-",
         specification: product?.specification || item.specification || "-",
         productCategory: product?.productCategory || null,
+        category: product?.category || null,
+        isMedicalDevice: typeof product?.isMedicalDevice === "boolean" ? product.isMedicalDevice : null,
         sourceType: product?.sourceType || null,
       };
     });
@@ -147,17 +195,69 @@ export default function InventoryPage() {
   // 前端多维度筛选
   const filteredInventory = useMemo(() => {
     return inventoryWithProduct.filter((item: any) => {
+      if (isStagingAreaPage && !stagingWarehouseIds.has(Number(item.warehouseId))) return false;
+      if (isSalesInventoryBoard && (item.productCategory !== "finished" || item.isMedicalDevice !== true)) return false;
       // 零库存/负库存过滤（默认隐藏）
       if (hideZeroStock && (parseFloat(String(item.quantity)) || 0) <= 0) return false;
       // 产品名称筛选
       if (productNameFilter && !item.itemName?.toLowerCase().includes(productNameFilter.toLowerCase())) return false;
       // 产品分类筛选
       if (productCategoryFilter !== "all" && item.productCategory !== productCategoryFilter) return false;
-      // 产品属性筛选
+      // 来源类型筛选
       if (sourceTypeFilter !== "all" && item.sourceType !== sourceTypeFilter) return false;
       return true;
     });
-  }, [inventoryWithProduct, productNameFilter, productCategoryFilter, sourceTypeFilter, hideZeroStock]);
+  }, [inventoryWithProduct, isSalesInventoryBoard, isStagingAreaPage, stagingWarehouseIds, productNameFilter, productCategoryFilter, sourceTypeFilter, hideZeroStock]);
+
+  const displayInventory = useMemo(() => {
+    const grouped = new Map<string, any>();
+
+    filteredInventory.forEach((item: any) => {
+      const groupKey = `${item.productId || item.displayCode || item.itemName}-${item.warehouseId}`;
+      const existing = grouped.get(groupKey);
+      const qty = parseFloat(String(item.quantity || 0)) || 0;
+      const safetyQty = parseFloat(String(item.safetyStock || 0)) || 0;
+
+      if (!existing) {
+        grouped.set(groupKey, {
+          ...item,
+          id: `group-${groupKey}`,
+          quantity: qty,
+          safetyStock: safetyQty,
+          batchNo: item.batchNo || "-",
+          batchCount: 1,
+          batchItems: [item],
+          inventoryIds: [item.id],
+          latestCreatedAt: item.createdAt,
+        });
+        return;
+      }
+
+      const batchItems = [...existing.batchItems, item].sort((a: any, b: any) => {
+        const aTime = new Date(String(a.createdAt || 0)).getTime();
+        const bTime = new Date(String(b.createdAt || 0)).getTime();
+        return bTime - aTime;
+      });
+
+      grouped.set(groupKey, {
+        ...existing,
+        quantity: (parseFloat(String(existing.quantity || 0)) || 0) + qty,
+        safetyStock: Math.max(parseFloat(String(existing.safetyStock || 0)) || 0, safetyQty),
+        status: calcAggregateStatus(batchItems),
+        batchCount: batchItems.length,
+        batchNo: batchItems.length > 1 ? `${batchItems.length} 个批次` : (batchItems[0]?.batchNo || "-"),
+        batchItems,
+        inventoryIds: batchItems.map((row: any) => row.id),
+        latestCreatedAt: batchItems[0]?.createdAt || existing.latestCreatedAt,
+      });
+    });
+
+    return Array.from(grouped.values()).sort((a: any, b: any) => {
+      const aTime = new Date(String(a.latestCreatedAt || 0)).getTime();
+      const bTime = new Date(String(b.latestCreatedAt || 0)).getTime();
+      return bTime - aTime;
+    });
+  }, [filteredInventory]);
 
   const createMutation = trpc.inventory.create.useMutation({
     onSuccess: () => { toast.success("库存记录创建成功"); refetch(); setDialogOpen(false); },
@@ -211,7 +311,7 @@ export default function InventoryPage() {
       materialCode: "",
       itemName: "",
       batchNo: "",
-      warehouseId: warehouseList[0]?.id ? String((warehouseList[0] as any).id) : "",
+      warehouseId: selectableWarehouses[0]?.id ? String((selectableWarehouses[0] as any).id) : "",
       quantity: "",
       unit: "kg",
       safetyStock: "",
@@ -313,9 +413,9 @@ export default function InventoryPage() {
     return wh ? wh.name : `仓库${warehouseId}`;
   };
 
-  const normalCount = (inventoryList as any[]).filter((i: any) => i.status === "qualified").length;
-  const quarantineCount = (inventoryList as any[]).filter((i: any) => i.status === "quarantine").length;
-  const unqualifiedCount = (inventoryList as any[]).filter((i: any) => i.status === "unqualified").length;
+  const normalCount = displayInventory.filter((i: any) => i.status === "qualified").length;
+  const quarantineCount = displayInventory.filter((i: any) => i.status === "quarantine").length;
+  const unqualifiedCount = displayInventory.filter((i: any) => i.status === "unqualified").length;
 
   const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
@@ -334,23 +434,33 @@ export default function InventoryPage() {
               <Boxes className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h2 className="text-xl font-bold tracking-tight">库存台账</h2>
-              <p className="text-sm text-muted-foreground">实时监控库存状态，支持安全库存预警和库存分析</p>
+              <h2 className="text-xl font-bold tracking-tight">
+                {isStagingAreaPage ? "暂存区管理" : isSalesInventoryBoard ? "库存看板" : "库存台账"}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {isStagingAreaPage
+                  ? "生产领料进入暂存区、采购入暂存区的物料统一在这里管理"
+                  : isSalesInventoryBoard
+                    ? "销售查看医疗器械成品库存状态，仅展示医疗器械成品库存数据"
+                    : "实时监控库存状态，支持安全库存预警和库存分析"}
+              </p>
             </div>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-1" />刷新
             </Button>
-            <Button onClick={handleAdd}>
-              <Plus className="h-4 w-4 mr-1" />新增库存
-            </Button>
+            {!isSalesInventoryBoard && (
+              <Button onClick={handleAdd}>
+                <Plus className="h-4 w-4 mr-1" />新增库存
+              </Button>
+            )}
           </div>
         </div>
 
         {/* 统计卡片 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">库存总数</p><p className="text-2xl font-bold">{filteredInventory.length}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">库存总数</p><p className="text-2xl font-bold">{displayInventory.length}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">合格品</p><p className="text-2xl font-bold text-green-600">{normalCount}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">待检品</p><p className="text-2xl font-bold text-amber-600">{quarantineCount}</p></CardContent></Card>
           <Card>
@@ -363,6 +473,14 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
         </div>
+
+        {isStagingAreaPage && selectableWarehouses.length === 0 && (
+          <Card>
+            <CardContent className="p-4 text-sm text-muted-foreground">
+              暂未找到“暂存区”仓库，请先到仓库管理里新增名称包含“暂存区”的仓库。
+            </CardContent>
+          </Card>
+        )}
 
         {/* 搜索和筛选 */}
         <div className="flex flex-col md:flex-row gap-3 flex-wrap">
@@ -388,32 +506,36 @@ export default function InventoryPage() {
             />
           </div>
 
-          {/* 产品属性筛选（自制/采购） */}
-          <Select value={sourceTypeFilter} onValueChange={setSourceTypeFilter}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="产品属性" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部属性</SelectItem>
-              <SelectItem value="production">自制</SelectItem>
-              <SelectItem value="purchase">采购</SelectItem>
-            </SelectContent>
-          </Select>
+          {!isSalesInventoryBoard && (
+            <>
+              {/* 来源类型筛选（自制/采购） */}
+              <Select value={sourceTypeFilter} onValueChange={setSourceTypeFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="来源类型" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部来源</SelectItem>
+                  <SelectItem value="production">自制</SelectItem>
+                  <SelectItem value="purchase">采购</SelectItem>
+                </SelectContent>
+              </Select>
 
-          {/* 产品分类筛选 */}
-          <Select value={productCategoryFilter} onValueChange={setProductCategoryFilter}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="产品分类" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">全部分类</SelectItem>
-              <SelectItem value="finished">成品</SelectItem>
-              <SelectItem value="semi_finished">半成品</SelectItem>
-              <SelectItem value="raw_material">原材料</SelectItem>
-              <SelectItem value="auxiliary">辅料</SelectItem>
-              <SelectItem value="other">其他</SelectItem>
-            </SelectContent>
-          </Select>
+              {/* 产品分类筛选 */}
+              <Select value={productCategoryFilter} onValueChange={setProductCategoryFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="产品分类" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部分类</SelectItem>
+                  {PRODUCT_CATEGORY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
 
           {/* 仓库筛选 */}
           <Select value={warehouseFilter} onValueChange={setWarehouseFilter}>
@@ -422,25 +544,26 @@ export default function InventoryPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部仓库</SelectItem>
-              {(warehouseList as any[]).map((w: any) => (
+              {selectableWarehouses.map((w: any) => (
                 <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
 
-          {/* 零库存显示开关 */}
-          <Button
-            variant={hideZeroStock ? "secondary" : "outline"}
-            size="sm"
-            className="whitespace-nowrap"
-            onClick={() => setHideZeroStock((v) => !v)}
-          >
-            {hideZeroStock ? (
-              <><Eye className="h-4 w-4 mr-1.5" />隐藏零库存</>
-            ) : (
-              <><EyeOff className="h-4 w-4 mr-1.5" />显示零库存</>
-            )}
-          </Button>
+          {!isSalesInventoryBoard && (
+            <Button
+              variant={hideZeroStock ? "secondary" : "outline"}
+              size="sm"
+              className="whitespace-nowrap"
+              onClick={() => setHideZeroStock((v) => !v)}
+            >
+              {hideZeroStock ? (
+                <><Eye className="h-4 w-4 mr-1.5" />隐藏零库存</>
+              ) : (
+                <><EyeOff className="h-4 w-4 mr-1.5" />显示零库存</>
+              )}
+            </Button>
+          )}
         </div>
 
         {/* 库存表格 */}
@@ -453,6 +576,7 @@ export default function InventoryPage() {
                   <TableHead className="text-center font-bold">物料名称</TableHead>
                   <TableHead className="text-center font-bold">型号规格</TableHead>
                   <TableHead className="text-center font-bold">产品分类</TableHead>
+                  <TableHead className="text-center font-bold">产品类型</TableHead>
                   <TableHead className="text-center font-bold">产品属性</TableHead>
                   <TableHead className="text-center font-bold">批次号</TableHead>
                   <TableHead className="text-center font-bold">仓库</TableHead>
@@ -467,17 +591,18 @@ export default function InventoryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredInventory.length === 0 ? (
+                {displayInventory.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                       暂无库存记录
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredInventory.map((item: any) => {
+                  displayInventory.map((item: any) => {
                     const qty = parseFloat(String(item.quantity)) || 0;
                     const safetyQty = parseFloat(String(item.safetyStock)) || 0;
                     const displayStatus = calcDisplayStatus(qty, safetyQty);
+                    const canDirectOperate = !item.batchItems || item.batchItems.length === 1;
                     return (
                       <TableRow key={item.id}>
                         <TableCell className="text-center font-mono text-sm">{item.displayCode}</TableCell>
@@ -491,9 +616,14 @@ export default function InventoryPage() {
                           ) : "-"}
                         </TableCell>
                         <TableCell className="text-center text-sm">
-                          {item.sourceType ? (
-                            <Badge variant={item.sourceType === "production" ? "secondary" : "outline"} className="text-xs">
-                              {sourceTypeMap[item.sourceType] || item.sourceType}
+                          <Badge variant={item.isMedicalDevice ? "default" : "secondary"} className="text-xs">
+                            {item.isMedicalDevice ? "医疗器械" : "非医疗器械"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-center text-sm">
+                          {item.category ? (
+                            <Badge variant="outline" className="text-xs">
+                              {categoryMap[item.category] || item.category}
                             </Badge>
                           ) : "-"}
                         </TableCell>
@@ -529,15 +659,19 @@ export default function InventoryPage() {
                               <DropdownMenuItem onClick={() => handleView(item)}>
                                 <Eye className="h-4 w-4 mr-2" />查看详情
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleAdjust(item)}>
-                                <ArrowUpDown className="h-4 w-4 mr-2" />库存调整
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleEdit(item)}>
-                                <Edit className="h-4 w-4 mr-2" />编辑
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(item)}>
-                                <Trash2 className="h-4 w-4 mr-2" />删除
-                              </DropdownMenuItem>
+                              {!isSalesInventoryBoard && canDirectOperate && (
+                                <>
+                                  <DropdownMenuItem onClick={() => handleAdjust(item)}>
+                                    <ArrowUpDown className="h-4 w-4 mr-2" />库存调整
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleEdit(item)}>
+                                    <Edit className="h-4 w-4 mr-2" />编辑
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(item)}>
+                                    <Trash2 className="h-4 w-4 mr-2" />删除
+                                  </DropdownMenuItem>
+                                </>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
@@ -582,7 +716,7 @@ export default function InventoryPage() {
                   <Select value={formData.warehouseId} onValueChange={(value) => setFormData({ ...formData, warehouseId: value })}>
                     <SelectTrigger><SelectValue placeholder="选择仓库" /></SelectTrigger>
                     <SelectContent>
-                      {(warehouseList as any[]).map((w: any) => (
+                      {selectableWarehouses.map((w: any) => (
                         <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -652,6 +786,7 @@ export default function InventoryPage() {
                       <TableHead className="text-center font-bold">物料名称</TableHead>
                       <TableHead className="w-[180px] text-center font-bold">型号规格</TableHead>
                       <TableHead className="w-[90px] text-center font-bold">产品分类</TableHead>
+                      <TableHead className="w-[90px] text-center font-bold">产品类型</TableHead>
                       <TableHead className="w-[90px] text-center font-bold">产品属性</TableHead>
                       <TableHead className="w-[70px] text-center font-bold">单位</TableHead>
                       <TableHead className="w-[70px] text-center font-bold">操作</TableHead>
@@ -660,7 +795,7 @@ export default function InventoryPage() {
                   <TableBody>
                     {filteredProducts.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">未找到匹配物料</TableCell>
+                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">未找到匹配物料</TableCell>
                       </TableRow>
                     ) : (
                       filteredProducts.map((p: any) => (
@@ -674,8 +809,13 @@ export default function InventoryPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-center">
+                            <Badge variant={p.isMedicalDevice ? "default" : "secondary"} className="text-xs">
+                              {p.isMedicalDevice ? "医疗器械" : "非医疗器械"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
                             <Badge variant={p.sourceType === "production" ? "secondary" : "outline"} className="text-xs">
-                              {sourceTypeMap[p.sourceType] || p.sourceType || "-"}
+                              {categoryMap[p.category] || p.category || "-"}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-center">{p.unit || "-"}</TableCell>
@@ -759,11 +899,13 @@ export default function InventoryPage() {
                 item={viewingItem}
                 statusMap={statusMap}
                 productCategoryMap={productCategoryMap}
+                categoryMap={categoryMap}
                 sourceTypeMap={sourceTypeMap}
                 getWarehouseName={getWarehouseName}
                 onClose={() => setViewDialogOpen(false)}
                 onEdit={() => { setViewDialogOpen(false); handleEdit(viewingItem); }}
                 onAdjust={() => { setViewDialogOpen(false); handleAdjust(viewingItem); }}
+                readonly={isSalesInventoryBoard}
               />
             )}
           </DraggableDialogContent>
@@ -791,27 +933,40 @@ function InventoryDetailContent({
   item,
   statusMap,
   productCategoryMap,
+  categoryMap,
   sourceTypeMap,
   getWarehouseName,
   onClose,
   onEdit,
   onAdjust,
+  readonly = false,
 }: {
   item: any;
   statusMap: Record<string, any>;
   productCategoryMap: Record<string, string>;
+  categoryMap: Record<string, string>;
   sourceTypeMap: Record<string, string>;
   getWarehouseName: (id: number) => string;
   onClose: () => void;
   onEdit: () => void;
   onAdjust: () => void;
+  readonly?: boolean;
 }) {
+  const batchItems = item?.batchItems?.length ? item.batchItems : [item];
+  const isAggregated = batchItems.length > 1;
+  const isStagingWarehouse = String(getWarehouseName(item.warehouseId) || "").includes("暂存");
   const { data: txList = [], isLoading: txLoading } = trpc.inventoryTransactions.list.useQuery(
     item?.id
-      ? {
-          inventoryId: item.id,
-          limit: 100,
-        }
+      ? isAggregated
+        ? {
+            productId: item.productId || undefined,
+            warehouseId: item.warehouseId,
+            limit: 300,
+          }
+        : {
+            inventoryId: batchItems[0]?.id,
+            limit: 100,
+          }
       : undefined,
     { enabled: !!item?.id }
   );
@@ -858,10 +1013,55 @@ function InventoryDetailContent({
             </div>
             <div>
               <FieldRow label="产品分类">{item.productCategory ? (productCategoryMap[item.productCategory] || item.productCategory) : "-"}</FieldRow>
-              <FieldRow label="产品属性">{item.sourceType ? (sourceTypeMap[item.sourceType] || item.sourceType) : "-"}</FieldRow>
+              <FieldRow label="产品类型">{item.isMedicalDevice ? "医疗器械" : "非医疗器械"}</FieldRow>
+              <FieldRow label="产品属性">{item.category ? (categoryMap[item.category] || item.category) : "-"}</FieldRow>
+              <FieldRow label="来源类型">{item.sourceType ? (sourceTypeMap[item.sourceType] || item.sourceType) : "-"}</FieldRow>
               <FieldRow label="仓库">{getWarehouseName(item.warehouseId)}</FieldRow>
               <FieldRow label="单位">{item.unit || "-"}</FieldRow>
+              <FieldRow label="批次数">{batchItems.length}</FieldRow>
             </div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">
+            批次明细
+            <span className="ml-2 text-xs font-normal text-muted-foreground normal-case">
+              共 {batchItems.length} 个批次
+            </span>
+          </h3>
+          <div className="rounded-lg border overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="text-center text-xs">批次号</TableHead>
+                  <TableHead className="text-center text-xs">库存数量</TableHead>
+                  <TableHead className="text-center text-xs">安全库存</TableHead>
+                  <TableHead className="text-center text-xs">状态</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {batchItems.map((batch: any) => (
+                  <TableRow key={batch.id}>
+                    <TableCell className="text-center text-xs font-mono">{batch.batchNo || "-"}</TableCell>
+                    <TableCell className="text-center text-sm">
+                      {formatDisplayNumber(batch.quantity)} {batch.unit || ""}
+                    </TableCell>
+                    <TableCell className="text-center text-xs text-muted-foreground">
+                      {batch.safetyStock ? `${formatDisplayNumber(batch.safetyStock)} ${batch.unit || ""}` : "-"}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        variant={statusMap[batch.status]?.variant || "outline"}
+                        className={getStatusSemanticClass(batch.status, statusMap[batch.status]?.label)}
+                      >
+                        {statusMap[batch.status]?.label || batch.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </div>
 
@@ -871,21 +1071,21 @@ function InventoryDetailContent({
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg bg-green-50 border border-green-100 p-3 text-center">
               <p className="text-xs text-muted-foreground mb-1">累计入库</p>
-              <p className="text-base font-bold text-green-600">{totalIn.toLocaleString()} {item.unit || ""}</p>
+              <p className="text-base font-bold text-green-600">{formatDisplayNumber(totalIn)} {item.unit || ""}</p>
             </div>
             <div className="rounded-lg bg-red-50 border border-red-100 p-3 text-center">
               <p className="text-xs text-muted-foreground mb-1">累计出库</p>
-              <p className="text-base font-bold text-red-600">{totalOut.toLocaleString()} {item.unit || ""}</p>
+              <p className="text-base font-bold text-red-600">{formatDisplayNumber(totalOut)} {item.unit || ""}</p>
             </div>
             <div className="rounded-lg bg-primary/5 border border-primary/10 p-3 text-center">
               <p className="text-xs text-muted-foreground mb-1">当前库存</p>
-              <p className="text-base font-bold text-primary">{(parseFloat(String(item.quantity || 0))).toLocaleString()} {item.unit || ""}</p>
+              <p className="text-base font-bold text-primary">{formatDisplayNumber(item.quantity)} {item.unit || ""}</p>
             </div>
           </div>
           {item.safetyStock && parseFloat(String(item.safetyStock)) > 0 && (
             <div className="mt-2 space-y-1">
               <Progress value={Math.min((parseFloat(String(item.quantity)) / parseFloat(String(item.safetyStock))) * 100, 100)} className="h-2" />
-              <p className="text-xs text-muted-foreground text-right">安全库存: {parseFloat(String(item.safetyStock)).toLocaleString()} {item.unit || ""}</p>
+              <p className="text-xs text-muted-foreground text-right">安全库存: {formatDisplayNumber(item.safetyStock)} {item.unit || ""}</p>
             </div>
           )}
         </div>
@@ -926,7 +1126,15 @@ function InventoryDetailContent({
                   </TableRow>
                 ) : (
                   (txList as any[]).map((tx: any) => {
-                    const txInfo = txTypeMap[tx.type] || { label: tx.type, color: "text-foreground" };
+                    const txInfo = (() => {
+                      if (isStagingWarehouse && tx.type === "other_in") {
+                        return { label: "领料入暂存区", color: "text-cyan-600" };
+                      }
+                      if (isStagingWarehouse && tx.type === "production_out") {
+                        return { label: "工序使用", color: "text-orange-600" };
+                      }
+                      return txTypeMap[tx.type] || { label: tx.type, color: "text-foreground" };
+                    })();
                     const isIn = inTypes.includes(tx.type);
                     const qty = parseFloat(String(tx.quantity)) || 0;
                     return (
@@ -943,13 +1151,13 @@ function InventoryDetailContent({
                           {tx.documentNo || "-"}
                         </TableCell>
                         <TableCell className={`text-right text-sm font-medium ${isIn ? "text-green-600" : "text-red-600"}`}>
-                          {isIn ? "+" : "-"}{qty.toLocaleString()} {item.unit || ""}
+                          {isIn ? "+" : "-"}{formatDisplayNumber(qty)} {item.unit || ""}
                         </TableCell>
                         <TableCell className="text-right text-xs text-muted-foreground">
-                          {tx.beforeQty != null ? parseFloat(String(tx.beforeQty)).toLocaleString() : "-"}
+                          {tx.beforeQty != null ? formatDisplayNumber(tx.beforeQty) : "-"}
                         </TableCell>
                         <TableCell className="text-right text-xs text-muted-foreground">
-                          {tx.afterQty != null ? parseFloat(String(tx.afterQty)).toLocaleString() : "-"}
+                          {tx.afterQty != null ? formatDisplayNumber(tx.afterQty) : "-"}
                         </TableCell>
                         <TableCell className="text-center text-xs text-muted-foreground max-w-[120px] truncate">
                           {tx.remark || "-"}
@@ -967,8 +1175,8 @@ function InventoryDetailContent({
       {/* 底部按钮 */}
       <div className="flex justify-end gap-2 pt-3 border-t shrink-0">
         <Button variant="outline" size="sm" onClick={onClose}>关闭</Button>
-        <Button variant="outline" size="sm" onClick={onEdit}>编辑</Button>
-        <Button size="sm" onClick={onAdjust}>库存调整</Button>
+        {!readonly && !isAggregated && <Button variant="outline" size="sm" onClick={onEdit}>编辑</Button>}
+        {!readonly && !isAggregated && <Button size="sm" onClick={onAdjust}>库存调整</Button>}
       </div>
     </div>
   );

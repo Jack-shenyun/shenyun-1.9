@@ -3,10 +3,11 @@ import Draggable from "react-draggable";
 import { Resizable } from "re-resizable";
 import { Dialog, DialogPortal, DialogOverlay } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { Maximize2, Minimize2, GripVertical, Search, X } from "lucide-react";
+import { Maximize2, Minimize2, GripVertical, Search, X, Printer } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/useMobile";
+import { openPrintPreviewWindow } from "@/lib/printPreview";
 
 interface DraggableDialogProps {
   open: boolean;
@@ -22,6 +23,10 @@ interface DraggableDialogProps {
   isMaximized?: boolean;
   onMaximizedChange?: (maximized: boolean) => void;
   enableSearch?: boolean;
+  printable?: boolean;
+  printTitle?: string;
+  printLandscape?: boolean;
+  onPrintPreview?: () => void;
 }
 
 export function DraggableDialog({
@@ -38,6 +43,10 @@ export function DraggableDialog({
   isMaximized: externalIsMaximized,
   onMaximizedChange,
   enableSearch = true,
+  printable = true,
+  printTitle,
+  printLandscape = false,
+  onPrintPreview,
 }: DraggableDialogProps) {
   const isMobile = useIsMobile();
   const [internalIsMaximized, setInternalIsMaximized] = useState(false);
@@ -115,6 +124,18 @@ export function DraggableDialog({
     }
   };
 
+  const handleOpenPrintPreview = () => {
+    if (onPrintPreview) {
+      onPrintPreview();
+      return;
+    }
+    openPrintPreviewWindow({
+      title: printTitle,
+      element: contentRef.current,
+      landscape: printLandscape,
+    });
+  };
+
   if (!open) return null;
 
   return (
@@ -175,6 +196,15 @@ export function DraggableDialog({
                     <span className="text-xs">拖动移动</span>
                   </div>
                   <div className="flex items-center gap-2">
+                    {printable && (
+                      <button
+                        onClick={handleOpenPrintPreview}
+                        className="p-1 hover:bg-muted rounded transition-colors"
+                        title="打印预览"
+                      >
+                        <Printer className="h-4 w-4" />
+                      </button>
+                    )}
                     {enableSearch && (
                       <button
                         onClick={() => setShowSearch(!showSearch)}

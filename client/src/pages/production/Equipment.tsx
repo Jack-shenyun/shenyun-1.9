@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import DateTextInput from "@/components/DateTextInput";
 import ERPLayout from "@/components/ERPLayout";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +33,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Wrench,
   Plus,
@@ -45,8 +48,9 @@ import {
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
 import { formatDateValue } from "@/lib/formatters";
+import { loadInitialMoldToolingRecords, type MoldToolingRecord } from "./MoldTooling";
 
-interface Equipment {
+export interface Equipment {
   id: number;
   code: string;
   name: string;
@@ -58,6 +62,8 @@ interface Equipment {
   location: string;
   department: string;
   responsible: string;
+  inspectionRequirement?: string;
+  maintenanceRequirement?: string;
   status: "normal" | "maintenance" | "repair" | "scrapped";
   lastMaintenance: string;
   nextMaintenance: string;
@@ -73,24 +79,293 @@ const statusMap: Record<string, any> = {
   scrapped: { label: "已报废", variant: "destructive" as const },
 };
 
+const moldToolingStatusMap: Record<string, { label: string; className: string }> = {
+  active: { label: "启用", className: "bg-green-100 text-green-700" },
+  maintenance: { label: "保养中", className: "bg-amber-100 text-amber-700" },
+  idle: { label: "闲置", className: "bg-slate-100 text-slate-700" },
+  scrapped: { label: "报废", className: "bg-rose-100 text-rose-700" },
+};
+
+const assetTypeMap: Record<string, string> = {
+  equipment: "设备",
+  mold: "模具",
+  tooling: "工装",
+};
+
 
 
 const departmentOptions = ["生产部", "质量部", "研发部", "仓储部", "设备部"];
 const locationOptions = ["生产车间A区", "生产车间B区", "灭菌车间", "包装车间", "检验室", "仓库"];
 
+export const defaultEquipmentRecords: Equipment[] = [
+  {
+    id: 1,
+    code: "EQ-001",
+    name: "挤出机 A",
+    model: "EX-180",
+    manufacturer: "苏州精工",
+    serialNo: "EXA-202601",
+    purchaseDate: "2025-01-10",
+    warrantyDate: "2027-01-10",
+    location: "生产车间A区",
+    department: "生产部",
+    responsible: "许大志",
+    status: "normal",
+    lastMaintenance: "2026-02-20",
+    nextMaintenance: "2026-03-20",
+    maintenanceCycle: 30,
+    assetValue: 180000,
+    remarks: "主挤出产线设备",
+  },
+  {
+    id: 2,
+    code: "EQ-002",
+    name: "挤出机 B",
+    model: "EX-200",
+    manufacturer: "苏州精工",
+    serialNo: "EXB-202602",
+    purchaseDate: "2025-01-20",
+    warrantyDate: "2027-01-20",
+    location: "生产车间A区",
+    department: "生产部",
+    responsible: "许大志",
+    status: "normal",
+    lastMaintenance: "2026-02-18",
+    nextMaintenance: "2026-03-18",
+    maintenanceCycle: 30,
+    assetValue: 195000,
+    remarks: "备用挤出设备",
+  },
+  {
+    id: 3,
+    code: "EQ-003",
+    name: "冷却水系统",
+    model: "CW-90",
+    manufacturer: "昆山冷机",
+    serialNo: "CW-202603",
+    purchaseDate: "2025-02-01",
+    warrantyDate: "2027-02-01",
+    location: "生产车间A区",
+    department: "生产部",
+    responsible: "王丽",
+    status: "normal",
+    lastMaintenance: "2026-02-25",
+    nextMaintenance: "2026-03-25",
+    maintenanceCycle: 30,
+    assetValue: 68000,
+    remarks: "挤出冷却辅助设备",
+  },
+  {
+    id: 4,
+    code: "EQ-004",
+    name: "精洗机",
+    model: "QX-120",
+    manufacturer: "无锡净化",
+    serialNo: "QX-202604",
+    purchaseDate: "2025-02-15",
+    warrantyDate: "2027-02-15",
+    location: "生产车间B区",
+    department: "生产部",
+    responsible: "张敏",
+    status: "normal",
+    lastMaintenance: "2026-02-28",
+    nextMaintenance: "2026-03-30",
+    maintenanceCycle: 30,
+    assetValue: 86000,
+    remarks: "精洗工序使用",
+  },
+  {
+    id: 5,
+    code: "EQ-005",
+    name: "粗洗机",
+    model: "CX-100",
+    manufacturer: "无锡净化",
+    serialNo: "CX-202605",
+    purchaseDate: "2025-02-12",
+    warrantyDate: "2027-02-12",
+    location: "生产车间B区",
+    department: "生产部",
+    responsible: "张敏",
+    status: "normal",
+    lastMaintenance: "2026-02-26",
+    nextMaintenance: "2026-03-26",
+    maintenanceCycle: 30,
+    assetValue: 74000,
+    remarks: "粗洗工序使用",
+  },
+  {
+    id: 6,
+    code: "EQ-006",
+    name: "混炼机",
+    model: "HL-80",
+    manufacturer: "上海混炼",
+    serialNo: "HL-202606",
+    purchaseDate: "2025-03-01",
+    warrantyDate: "2027-03-01",
+    location: "生产车间A区",
+    department: "生产部",
+    responsible: "赵峰",
+    status: "normal",
+    lastMaintenance: "2026-03-01",
+    nextMaintenance: "2026-03-31",
+    maintenanceCycle: 30,
+    assetValue: 122000,
+    remarks: "混炼工序主设备",
+  },
+  {
+    id: 7,
+    code: "EQ-007",
+    name: "印刷机",
+    model: "YS-60",
+    manufacturer: "常州印机",
+    serialNo: "YS-202607",
+    purchaseDate: "2025-03-05",
+    warrantyDate: "2027-03-05",
+    location: "包装车间",
+    department: "生产部",
+    responsible: "陈静",
+    status: "maintenance",
+    lastMaintenance: "2026-03-05",
+    nextMaintenance: "2026-04-04",
+    maintenanceCycle: 30,
+    assetValue: 98000,
+    remarks: "印刷参数调校中",
+  },
+  {
+    id: 8,
+    code: "EQ-008",
+    name: "封口机",
+    model: "FK-50",
+    manufacturer: "常州印机",
+    serialNo: "FK-202608",
+    purchaseDate: "2025-03-08",
+    warrantyDate: "2027-03-08",
+    location: "包装车间",
+    department: "生产部",
+    responsible: "陈静",
+    status: "normal",
+    lastMaintenance: "2026-03-02",
+    nextMaintenance: "2026-04-01",
+    maintenanceCycle: 30,
+    assetValue: 56000,
+    remarks: "封口工序使用",
+  },
+  {
+    id: 9,
+    code: "EQ-009",
+    name: "纯化水系统",
+    model: "PW-300",
+    manufacturer: "苏州水处理",
+    serialNo: "PW-202609",
+    purchaseDate: "2025-03-10",
+    warrantyDate: "2027-03-10",
+    location: "生产车间B区",
+    department: "生产部",
+    responsible: "刘超",
+    status: "normal",
+    lastMaintenance: "2026-03-01",
+    nextMaintenance: "2026-03-29",
+    maintenanceCycle: 28,
+    assetValue: 150000,
+    remarks: "清洗供水设备",
+  },
+  {
+    id: 10,
+    code: "EQ-010",
+    name: "空压机",
+    model: "KY-75",
+    manufacturer: "苏州动力",
+    serialNo: "KY-202610",
+    purchaseDate: "2025-03-12",
+    warrantyDate: "2027-03-12",
+    location: "生产车间A区",
+    department: "生产部",
+    responsible: "刘超",
+    status: "repair",
+    lastMaintenance: "2026-02-15",
+    nextMaintenance: "2026-03-15",
+    maintenanceCycle: 30,
+    assetValue: 88000,
+    remarks: "待更换阀组",
+  },
+];
+
+export function normalizeEquipmentRecord(record: any): Equipment {
+  return {
+    id: Number(record?.id || 0),
+    code: String(record?.code || ""),
+    name: String(record?.name || ""),
+    model: String(record?.model || ""),
+    manufacturer: String(record?.manufacturer || ""),
+    serialNo: String(record?.serialNo || ""),
+    purchaseDate: formatDateValue(record?.purchaseDate) || "",
+    warrantyDate: formatDateValue(record?.warrantyDate) || "",
+    location: String(record?.location || ""),
+    department: String(record?.department || ""),
+    responsible: String(record?.responsible || ""),
+    inspectionRequirement: String(record?.inspectionRequirement || ""),
+    maintenanceRequirement: String(record?.maintenanceRequirement || ""),
+    status: (record?.status || "normal") as Equipment["status"],
+    lastMaintenance: record?.lastMaintenance
+      ? (formatDateValue(record.lastMaintenance) || "")
+      : record?.lastMaintenanceDate
+        ? (formatDateValue(record.lastMaintenanceDate) || "")
+        : "",
+    nextMaintenance: record?.nextMaintenance
+      ? (formatDateValue(record.nextMaintenance) || "")
+      : record?.nextMaintenanceDate
+        ? (formatDateValue(record.nextMaintenanceDate) || "")
+        : "",
+    maintenanceCycle: Number(record?.maintenanceCycle || 30),
+    assetValue: Number(record?.assetValue || 0),
+    remarks: String(record?.remarks || record?.remark || ""),
+  };
+}
+
 export default function EquipmentPage() {
+  const PAGE_SIZE = 10;
   const { data: _dbData = [], isLoading, refetch } = trpc.equipment.list.useQuery();
-  const createMutation = trpc.equipment.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
-  const updateMutation = trpc.equipment.update.useMutation({ onSuccess: () => { refetch(); toast.success("更新成功"); } });
-  const deleteMutation = trpc.equipment.delete.useMutation({ onSuccess: () => { refetch(); toast.success("删除成功"); } });
-  const equipments = _dbData as any[];
+  const { data: inspectionData = [] } = trpc.equipmentInspections.list.useQuery();
+  const { data: maintenanceData = [] } = trpc.equipmentMaintenances.list.useQuery();
+  const createMutation = trpc.equipment.create.useMutation({
+    onSuccess: () => {
+      refetch();
+      setDialogOpen(false);
+      toast.success("创建成功");
+    },
+  });
+  const updateMutation = trpc.equipment.update.useMutation({
+    onSuccess: () => {
+      refetch();
+      setDialogOpen(false);
+      toast.success("更新成功");
+    },
+  });
+  const deleteMutation = trpc.equipment.delete.useMutation({
+    onSuccess: () => {
+      refetch();
+      toast.success("删除成功");
+    },
+  });
+  const equipments = useMemo<Equipment[]>(
+    () =>
+      (((_dbData as any[]) || []).length > 0
+        ? (_dbData as any[]).map(normalizeEquipmentRecord)
+        : defaultEquipmentRecords) as Equipment[],
+    [_dbData]
+  );
+  const [moldToolingRecords] = useState<MoldToolingRecord[]>(loadInitialMoldToolingRecords);
   const [searchTerm, setSearchTerm] = useState("");
+  const [assetTypeFilter, setAssetTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [viewingEquipment, setViewingEquipment] = useState<Equipment | null>(null);
+  const [viewingMoldTooling, setViewingMoldTooling] = useState<MoldToolingRecord | null>(null);
+  const [moldToolingViewDialogOpen, setMoldToolingViewDialogOpen] = useState(false);
   const { canDelete } = usePermission();
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [formData, setFormData] = useState({
     code: "",
@@ -103,6 +378,8 @@ export default function EquipmentPage() {
     location: "",
     department: "",
     responsible: "",
+    inspectionRequirement: "",
+    maintenanceRequirement: "",
     status: "normal",
     lastMaintenance: "",
     nextMaintenance: "",
@@ -111,14 +388,79 @@ export default function EquipmentPage() {
     remarks: "",
   });
 
-  const filteredEquipments = equipments.filter((e: any) => {
+  const assets = useMemo(
+    () => [
+      ...equipments.map((equipment) => ({
+        id: `equipment-${equipment.id}`,
+        assetType: "equipment" as const,
+        code: equipment.code,
+        name: equipment.name,
+        model: equipment.model,
+        location: equipment.location,
+        status: equipment.status,
+        responsibleField: equipment.department || "-",
+        dateField: formatDateValue(equipment.nextMaintenance),
+        raw: equipment,
+      })),
+      ...moldToolingRecords.map((record) => ({
+        id: `mold-${record.id}`,
+        assetType: record.type,
+        code: record.code,
+        name: record.name,
+        model: record.model,
+        location: record.location,
+        status: record.status,
+        responsibleField: record.applicableProcess || "-",
+        dateField: formatDateValue(record.lastCheckDate),
+        raw: record,
+      })),
+    ],
+    [equipments, moldToolingRecords]
+  );
+
+  const filteredAssets = assets.filter((asset) => {
+    const keyword = searchTerm.toLowerCase();
     const matchesSearch =
-      String(e.code ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(e.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(e.model ?? "").toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "all" || e.status === statusFilter;
-    return matchesSearch && matchesStatus;
+      String(asset.code ?? "").toLowerCase().includes(keyword) ||
+      String(asset.name ?? "").toLowerCase().includes(keyword) ||
+      String(asset.model ?? "").toLowerCase().includes(keyword) ||
+      String(asset.location ?? "").toLowerCase().includes(keyword) ||
+      String(asset.responsibleField ?? "").toLowerCase().includes(keyword);
+    const matchesType = assetTypeFilter === "all" || asset.assetType === assetTypeFilter;
+    const matchesStatus = statusFilter === "all" || asset.status === statusFilter;
+    return matchesSearch && matchesType && matchesStatus;
   });
+  const totalPages = Math.max(1, Math.ceil(filteredAssets.length / PAGE_SIZE));
+  const pagedAssets = filteredAssets.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, assetTypeFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  const equipmentInspectionRows = useMemo(
+    () =>
+      ((inspectionData as any[]) || []).map((record: any) => ({
+        ...record,
+        inspectionDate: formatDateValue(record?.inspectionDate) || "",
+        detailItems: Array.isArray(record?.detailItems) ? record.detailItems : [],
+      })),
+    [inspectionData]
+  );
+
+  const equipmentMaintenanceRows = useMemo(
+    () =>
+      ((maintenanceData as any[]) || []).map((record: any) => ({
+        ...record,
+        maintenanceDate: formatDateValue(record?.maintenanceDate) || "",
+        nextMaintenanceDate: formatDateValue(record?.nextMaintenanceDate) || "",
+        detailItems: Array.isArray(record?.detailItems) ? record.detailItems : [],
+      })),
+    [maintenanceData]
+  );
 
   const handleAdd = () => {
     setEditingEquipment(null);
@@ -134,6 +476,8 @@ export default function EquipmentPage() {
       location: "",
       department: "",
       responsible: "",
+      inspectionRequirement: "",
+      maintenanceRequirement: "",
       status: "normal",
       lastMaintenance: "",
       nextMaintenance: "",
@@ -157,6 +501,8 @@ export default function EquipmentPage() {
       location: equipment.location,
       department: equipment.department,
       responsible: equipment.responsible,
+      inspectionRequirement: equipment.inspectionRequirement || "",
+      maintenanceRequirement: equipment.maintenanceRequirement || "",
       status: equipment.status,
       lastMaintenance: equipment.lastMaintenance,
       nextMaintenance: equipment.nextMaintenance,
@@ -178,15 +524,14 @@ export default function EquipmentPage() {
       return;
     }
     deleteMutation.mutate({ id: equipment.id });
-    toast.success("设备已删除");
   };
 
-  const handleMaintenance = (equipment: Equipment) => {
-    const today = new Date().toISOString().split("T")[0];
-    const nextDate = new Date();
-    nextDate.setDate(nextDate.getDate() + equipment.maintenanceCycle);
-    
-    toast.success("保养完成", { description: `下次保养日期：${nextDate.toISOString().split("T")[0]}` });
+  const handleInspection = () => {
+    window.location.href = "/production/equipment-inspection";
+  };
+
+  const handleMaintenance = () => {
+    window.location.href = "/production/equipment-maintenance";
   };
 
   const handleSubmit = () => {
@@ -196,38 +541,76 @@ export default function EquipmentPage() {
     }
 
     if (editingEquipment) {
-      toast.success("设备信息已更新");
+      updateMutation.mutate({
+        id: editingEquipment.id,
+        data: {
+          code: formData.code,
+          name: formData.name,
+          model: formData.model,
+          manufacturer: formData.manufacturer,
+          serialNo: formData.serialNo,
+          purchaseDate: formData.purchaseDate || undefined,
+          warrantyDate: formData.warrantyDate || undefined,
+          location: formData.location,
+          department: formData.department,
+          responsible: formData.responsible,
+          inspectionRequirement: formData.inspectionRequirement,
+          maintenanceRequirement: formData.maintenanceRequirement,
+          status: formData.status as Equipment["status"],
+          lastMaintenanceDate: formData.lastMaintenance || undefined,
+          nextMaintenanceDate: formData.nextMaintenance || undefined,
+          maintenanceCycle: Number(formData.maintenanceCycle || 30),
+          assetValue: Number(formData.assetValue || 0),
+          remark: formData.remarks,
+        },
+      });
     } else {
-      const newEquipment: Equipment = {
-        id: Math.max(...equipments.map((e: any) => e.id)) + 1,
-        ...formData,
+      createMutation.mutate({
+        code: formData.code,
+        name: formData.name,
+        model: formData.model,
+        manufacturer: formData.manufacturer,
+        serialNo: formData.serialNo,
+        purchaseDate: formData.purchaseDate || undefined,
+        warrantyDate: formData.warrantyDate || undefined,
+        location: formData.location,
+        department: formData.department,
+        responsible: formData.responsible,
+        inspectionRequirement: formData.inspectionRequirement,
+        maintenanceRequirement: formData.maintenanceRequirement,
         status: formData.status as Equipment["status"],
-      };
-      toast.success("设备添加成功");
+        lastMaintenanceDate: formData.lastMaintenance || undefined,
+        nextMaintenanceDate: formData.nextMaintenance || undefined,
+        maintenanceCycle: Number(formData.maintenanceCycle || 30),
+        assetValue: Number(formData.assetValue || 0),
+        remark: formData.remarks,
+      });
     }
-    setDialogOpen(false);
   };
 
   const normalCount = equipments.filter((e: any) => e.status === "normal").length;
-  const maintenanceCount = equipments.filter((e: any) => e.status === "maintenance").length;
-  const needMaintenanceCount = equipments.filter((e: any) => {
-    const nextDate = new Date(e.nextMaintenance);
-    const today = new Date();
-    const diffDays = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDays <= 7 && e.status === "normal";
-  }).length;
+  const moldToolingCount = moldToolingRecords.length;
 
-  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => {
+    const renderValue = (value: React.ReactNode): React.ReactNode => {
+      if (value == null || value === "") return "-";
+      if (value instanceof Date) return formatDateValue(value) || "-";
+      if (Array.isArray(value)) {
+        const items = value
+          .map((item) => item instanceof Date ? (formatDateValue(item) || "-") : item)
+          .filter((item) => item != null && item !== "");
+        return items.length > 0 ? items.join(" ") : "-";
+      }
+      return value;
+    };
 
-    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
-
-      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
-
-      <span className="flex-1 text-sm text-right break-all">{children}</span>
-
-    </div>
-
-  );
+    return (
+      <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+        <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+        <span className="flex-1 text-sm text-right break-all">{renderValue(children)}</span>
+      </div>
+    );
+  };
 
 
   return (
@@ -254,26 +637,26 @@ export default function EquipmentPage() {
         <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">设备总数</p>
+              <p className="text-sm text-muted-foreground">档案总数</p>
+              <p className="text-2xl font-bold">{assets.length}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">设备数量</p>
               <p className="text-2xl font-bold">{equipments.length}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">正常运行</p>
+              <p className="text-sm text-muted-foreground">模具工装</p>
+              <p className="text-2xl font-bold text-green-600">{moldToolingCount}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">设备正常运行</p>
               <p className="text-2xl font-bold text-green-600">{normalCount}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">保养中</p>
-              <p className="text-2xl font-bold text-amber-600">{maintenanceCount}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">待保养</p>
-              <p className="text-2xl font-bold text-blue-600">{needMaintenanceCount}</p>
             </CardContent>
           </Card>
         </div>
@@ -281,11 +664,21 @@ export default function EquipmentPage() {
         {/* 搜索和筛选 */}
         <Card>
           <CardContent className="p-4">
-            <div className="flex flex-col md:flex-row gap-4">
+            <div className="space-y-4">
+              <Tabs value={assetTypeFilter} onValueChange={setAssetTypeFilter}>
+                <TabsList className="grid w-full grid-cols-4 md:w-[420px]">
+                  <TabsTrigger value="all">全部</TabsTrigger>
+                  <TabsTrigger value="equipment">设备</TabsTrigger>
+                  <TabsTrigger value="mold">模具</TabsTrigger>
+                  <TabsTrigger value="tooling">工装</TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              <div className="flex flex-col md:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="搜索设备编号、名称、型号..."
+                  placeholder="搜索编号、名称、型号、位置..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9"
@@ -298,11 +691,14 @@ export default function EquipmentPage() {
                 <SelectContent>
                   <SelectItem value="all">全部状态</SelectItem>
                   <SelectItem value="normal">正常</SelectItem>
+                  <SelectItem value="active">启用</SelectItem>
                   <SelectItem value="maintenance">保养中</SelectItem>
                   <SelectItem value="repair">维修中</SelectItem>
+                  <SelectItem value="idle">闲置</SelectItem>
                   <SelectItem value="scrapped">已报废</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
             </div>
           </CardContent>
         </Card>
@@ -313,38 +709,49 @@ export default function EquipmentPage() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/60">
-                  <TableHead className="w-[90px] text-center font-bold">设备编号</TableHead>
-                  <TableHead className="text-center font-bold">设备名称</TableHead>
+                  <TableHead className="w-[90px] text-center font-bold">资产编号</TableHead>
+                  <TableHead className="text-center font-bold">资产名称</TableHead>
+                  <TableHead className="w-[80px] text-center font-bold">类别</TableHead>
                   <TableHead className="w-[90px] text-center font-bold">型号规格</TableHead>
-                  <TableHead className="w-[110px] text-center font-bold">安装位置</TableHead>
-                  <TableHead className="w-[80px] text-center font-bold">使用部门</TableHead>
+                  <TableHead className="w-[110px] text-center font-bold">位置</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">部门/工序</TableHead>
                   <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
-                  <TableHead className="w-[100px] text-center font-bold">下次保养</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">保养/点检</TableHead>
                   <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredEquipments.map((equipment: any) => {
-                  const nextDate = new Date(equipment.nextMaintenance);
+                {pagedAssets.map((asset: any) => {
+                  const isEquipment = asset.assetType === "equipment";
+                  const equipment = isEquipment ? asset.raw as Equipment : null;
+                  const moldTooling = !isEquipment ? asset.raw as MoldToolingRecord : null;
+                  const nextDate = isEquipment && equipment?.nextMaintenance ? new Date(equipment.nextMaintenance) : null;
                   const today = new Date();
-                  const diffDays = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                  const isNearMaintenance = diffDays <= 7 && equipment.status === "normal";
+                  const diffDays = nextDate ? Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : 999;
+                  const isNearMaintenance = isEquipment && diffDays <= 7 && equipment?.status === "normal";
                   
                   return (
-                    <TableRow key={equipment.id}>
-                      <TableCell className="text-center font-medium">{equipment.code}</TableCell>
-                      <TableCell className="text-center">{equipment.name}</TableCell>
-                      <TableCell className="text-center">{equipment.model}</TableCell>
-                      <TableCell className="text-center">{equipment.location}</TableCell>
-                      <TableCell className="text-center">{equipment.department}</TableCell>
+                    <TableRow key={asset.id}>
+                      <TableCell className="text-center font-medium">{asset.code}</TableCell>
+                      <TableCell className="text-center">{asset.name}</TableCell>
+                      <TableCell className="text-center">{assetTypeMap[asset.assetType] || "-"}</TableCell>
+                      <TableCell className="text-center">{asset.model}</TableCell>
+                      <TableCell className="text-center">{asset.location}</TableCell>
+                      <TableCell className="text-center">{asset.responsibleField}</TableCell>
                       <TableCell className="text-center">
-                        <Badge variant={statusMap[equipment.status]?.variant || "outline"} className={getStatusSemanticClass(equipment.status, statusMap[equipment.status]?.label)}>
-                          {statusMap[equipment.status]?.label || String(equipment.status ?? "-")}
-                        </Badge>
+                        {isEquipment ? (
+                          <Badge variant={statusMap[equipment?.status || ""]?.variant || "outline"} className={getStatusSemanticClass(equipment?.status, statusMap[equipment?.status || ""]?.label)}>
+                            {statusMap[equipment?.status || ""]?.label || String(equipment?.status ?? "-")}
+                          </Badge>
+                        ) : (
+                          <Badge className={moldToolingStatusMap[moldTooling?.status || ""]?.className}>
+                            {moldToolingStatusMap[moldTooling?.status || ""]?.label || String(moldTooling?.status ?? "-")}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center gap-1">
-                          {equipment.nextMaintenance}
+                          {asset.dateField}
                           {isNearMaintenance && (
                             <AlertTriangle className="h-4 w-4 text-amber-500" />
                           )}
@@ -358,21 +765,40 @@ export default function EquipmentPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleView(equipment)}>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                if (isEquipment && equipment) {
+                                  handleView(equipment);
+                                  return;
+                                }
+                                if (moldTooling) {
+                                  setViewingMoldTooling(moldTooling);
+                                  setMoldToolingViewDialogOpen(true);
+                                }
+                              }}
+                            >
                               <Eye className="h-4 w-4 mr-2" />
                               查看详情
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleEdit(equipment)}>
-                              <Edit className="h-4 w-4 mr-2" />
-                              编辑
-                            </DropdownMenuItem>
-                            {equipment.status !== "scrapped" && (
-                              <DropdownMenuItem onClick={() => handleMaintenance(equipment)}>
-                                <Settings className="h-4 w-4 mr-2" />
-                                完成保养
+                            {isEquipment && equipment ? (
+                              <DropdownMenuItem onClick={() => handleInspection()}>
+                                <Plus className="h-4 w-4 mr-2" />
+                                新增点检
                               </DropdownMenuItem>
-                            )}
-                            {canDelete && (
+                            ) : null}
+                            {isEquipment && equipment ? (
+                              <DropdownMenuItem onClick={() => handleEdit(equipment)}>
+                                <Edit className="h-4 w-4 mr-2" />
+                                编辑
+                              </DropdownMenuItem>
+                            ) : null}
+                            {isEquipment && equipment?.status !== "scrapped" ? (
+                              <DropdownMenuItem onClick={() => handleMaintenance()}>
+                                <Settings className="h-4 w-4 mr-2" />
+                                新增保养
+                              </DropdownMenuItem>
+                            ) : null}
+                            {canDelete && isEquipment && equipment ? (
                               <DropdownMenuItem
                                 onClick={() => handleDelete(equipment)}
                                 className="text-destructive"
@@ -380,7 +806,7 @@ export default function EquipmentPage() {
                                 <Trash2 className="h-4 w-4 mr-2" />
                                 删除
                               </DropdownMenuItem>
-                            )}
+                            ) : null}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -391,10 +817,11 @@ export default function EquipmentPage() {
             </Table>
           </CardContent>
         </Card>
+        <TablePaginationFooter total={filteredAssets.length} page={currentPage} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
 
         {/* 新建/编辑对话框 */}
         <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DraggableDialogContent>
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingEquipment ? "编辑设备" : "新增设备"}</DialogTitle>
               <DialogDescription>
@@ -462,18 +889,16 @@ export default function EquipmentPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>购置日期</Label>
-                  <Input
-                    type="date"
+                  <DateTextInput
                     value={formData.purchaseDate}
-                    onChange={(e) => setFormData({ ...formData, purchaseDate: e.target.value })}
+                    onChange={(value) => setFormData({ ...formData, purchaseDate: value })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>保修截止</Label>
-                  <Input
-                    type="date"
+                  <DateTextInput
                     value={formData.warrantyDate}
-                    onChange={(e) => setFormData({ ...formData, warrantyDate: e.target.value })}
+                    onChange={(value) => setFormData({ ...formData, warrantyDate: value })}
                   />
                 </div>
               </div>
@@ -544,18 +969,16 @@ export default function EquipmentPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>上次保养</Label>
-                  <Input
-                    type="date"
+                  <DateTextInput
                     value={formData.lastMaintenance}
-                    onChange={(e) => setFormData({ ...formData, lastMaintenance: e.target.value })}
+                    onChange={(value) => setFormData({ ...formData, lastMaintenance: value })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>下次保养</Label>
-                  <Input
-                    type="date"
+                  <DateTextInput
                     value={formData.nextMaintenance}
-                    onChange={(e) => setFormData({ ...formData, nextMaintenance: e.target.value })}
+                    onChange={(value) => setFormData({ ...formData, nextMaintenance: value })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -564,6 +987,27 @@ export default function EquipmentPage() {
                     type="number"
                     value={formData.maintenanceCycle}
                     onChange={(e) => setFormData({ ...formData, maintenanceCycle: parseInt(e.target.value) || 30 })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>点检要求</Label>
+                  <Textarea
+                    value={formData.inspectionRequirement}
+                    onChange={(e) => setFormData({ ...formData, inspectionRequirement: e.target.value })}
+                    placeholder="填写该设备的点检要求，如开机前检查电源、气压、润滑、紧固件等"
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>保养要求</Label>
+                  <Textarea
+                    value={formData.maintenanceRequirement}
+                    onChange={(e) => setFormData({ ...formData, maintenanceRequirement: e.target.value })}
+                    placeholder="填写该设备的保养要求，如清洁、润滑、更换耗材、空载试运行等"
+                    rows={3}
                   />
                 </div>
               </div>
@@ -588,12 +1032,10 @@ export default function EquipmentPage() {
             </DialogFooter>
           </DraggableDialogContent>
         </DraggableDialog>
-
-        '''
 {/* 查看详情对话框 */}
 {viewingEquipment && (
 <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-  <DraggableDialogContent>
+  <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
     <div className="border-b pb-3">
       <h2 className="text-lg font-semibold">设备详情</h2>
       <p className="text-sm text-muted-foreground">
@@ -608,6 +1050,13 @@ export default function EquipmentPage() {
 
     <div className="space-y-6 py-4">
       {(() => {
+        const inspectionRecords = equipmentInspectionRows
+          .filter((record: any) => Number(record.equipmentId) === Number(viewingEquipment.id))
+          .slice(0, 5);
+        const maintenanceRecords = equipmentMaintenanceRows
+          .filter((record: any) => Number(record.equipmentId) === Number(viewingEquipment.id))
+          .slice(0, 5);
+
         return (
           <>
             <div>
@@ -663,6 +1112,108 @@ export default function EquipmentPage() {
               </div>
             </div>
 
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">点检要求</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3 whitespace-pre-wrap">
+                {viewingEquipment.inspectionRequirement || "未维护点检要求"}
+              </p>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">保养要求</h3>
+              <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3 whitespace-pre-wrap">
+                {viewingEquipment.maintenanceRequirement || "未维护保养要求"}
+              </p>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">点检明细</h3>
+                <Button variant="outline" size="sm" onClick={() => handleInspection()}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  新增点检
+                </Button>
+              </div>
+              <div className="rounded-lg border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>点检日期</TableHead>
+                      <TableHead>点检类型</TableHead>
+                      <TableHead>结果</TableHead>
+                      <TableHead>点检人</TableHead>
+                      <TableHead>点检项目</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {inspectionRecords.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">暂无点检记录</TableCell>
+                      </TableRow>
+                    ) : (
+                      inspectionRecords.map((record: any) => (
+                        <TableRow key={record.id}>
+                          <TableCell>{formatDateValue(record.inspectionDate)}</TableCell>
+                          <TableCell>{record.inspectionType ? ({ daily: "日点检", shift: "班次点检", weekly: "周点检", monthly: "月点检", special: "专项点检" } as Record<string, string>)[record.inspectionType] || record.inspectionType : "-"}</TableCell>
+                          <TableCell>
+                            <Badge variant={record.result === "shutdown" ? "destructive" : record.result === "abnormal" ? "secondary" : "default"}>
+                              {record.result === "shutdown" ? "停机" : record.result === "abnormal" ? "异常" : "正常"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{record.inspector || "-"}</TableCell>
+                          <TableCell>{Array.isArray(record.detailItems) && record.detailItems.length > 0 ? record.detailItems.map((item: any) => item.itemName).filter(Boolean).join("、") : "-"}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">保养明细</h3>
+                <Button variant="outline" size="sm" onClick={() => handleMaintenance()}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  新增保养
+                </Button>
+              </div>
+              <div className="rounded-lg border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>保养日期</TableHead>
+                      <TableHead>保养类型</TableHead>
+                      <TableHead>结果</TableHead>
+                      <TableHead>执行人</TableHead>
+                      <TableHead>保养项目</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {maintenanceRecords.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">暂无保养记录</TableCell>
+                      </TableRow>
+                    ) : (
+                      maintenanceRecords.map((record: any) => (
+                        <TableRow key={record.id}>
+                          <TableCell>{formatDateValue(record.maintenanceDate)}</TableCell>
+                          <TableCell>{record.maintenanceType ? ({ routine: "日常保养", periodic: "周期保养", annual: "年度保养", special: "专项保养" } as Record<string, string>)[record.maintenanceType] || record.maintenanceType : "-"}</TableCell>
+                          <TableCell>
+                            <Badge variant={record.result === "need_repair" ? "destructive" : record.result === "pass" ? "default" : "outline"}>
+                              {record.result === "need_repair" ? "需维修" : record.result === "pass" ? "通过" : "待确认"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{record.executor || "-"}</TableCell>
+                          <TableCell>{Array.isArray(record.detailItems) && record.detailItems.length > 0 ? record.detailItems.map((item: any) => item.itemName).filter(Boolean).join("、") : "-"}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
             {viewingEquipment.remarks && (
               <div>
                 <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
@@ -684,10 +1235,80 @@ export default function EquipmentPage() {
         }}>编辑</Button>
       </div>
     </div>
-  </DraggableDialogContent>
+</DraggableDialogContent>
 </DraggableDialog>
 )}
-'''))oxiawt-erp-/client/src/pages/production/Equipment.tsx", has_view_dialog = True, notes = "The FieldRow component is defined inline to avoid polluting the component
+
+        {viewingMoldTooling && (
+          <DraggableDialog open={moldToolingViewDialogOpen} onOpenChange={setMoldToolingViewDialogOpen}>
+            <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
+              <div className="border-b pb-3">
+                <h2 className="text-lg font-semibold">模具工装详情</h2>
+                <p className="text-sm text-muted-foreground">
+                  {viewingMoldTooling.code}
+                  <span className="mx-2">·</span>
+                  {viewingMoldTooling.name}
+                </p>
+              </div>
+
+              <div className="space-y-6 py-4">
+                <div>
+                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                    <div>
+                      <FieldRow label="名称">{viewingMoldTooling.name}</FieldRow>
+                      <FieldRow label="类别">{assetTypeMap[viewingMoldTooling.type]}</FieldRow>
+                      <FieldRow label="型号规格">{viewingMoldTooling.model || "-"}</FieldRow>
+                      <FieldRow label="模腔数">{viewingMoldTooling.cavityCount}</FieldRow>
+                    </div>
+                    <div>
+                      <FieldRow label="适用工序">{viewingMoldTooling.applicableProcess || "-"}</FieldRow>
+                      <FieldRow label="适用产品">{viewingMoldTooling.applicableProduct || "-"}</FieldRow>
+                      <FieldRow label="材质">{viewingMoldTooling.material || "-"}</FieldRow>
+                      <FieldRow label="状态">
+                        <Badge className={moldToolingStatusMap[viewingMoldTooling.status]?.className}>
+                          {moldToolingStatusMap[viewingMoldTooling.status]?.label || viewingMoldTooling.status}
+                        </Badge>
+                      </FieldRow>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">位置与责任</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                    <div>
+                      <FieldRow label="位置">{viewingMoldTooling.location || "-"}</FieldRow>
+                    </div>
+                    <div>
+                      <FieldRow label="责任人">{viewingMoldTooling.responsible || "-"}</FieldRow>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">点检信息</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                    <div>
+                      <FieldRow label="最近点检">{formatDateValue(viewingMoldTooling.lastCheckDate)}</FieldRow>
+                    </div>
+                  </div>
+                </div>
+
+                {viewingMoldTooling.remarks ? (
+                  <div>
+                    <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+                    <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{viewingMoldTooling.remarks}</p>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t">
+                <Button variant="outline" size="sm" onClick={() => setMoldToolingViewDialogOpen(false)}>关闭</Button>
+              </div>
+            </DraggableDialogContent>
+          </DraggableDialog>
+        )}
       </div>
     </ERPLayout>
   );

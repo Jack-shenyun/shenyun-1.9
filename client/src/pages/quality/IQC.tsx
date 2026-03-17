@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import QRCode from "qrcode";
 import { trpc } from "@/lib/trpc";
+import { formatDisplayNumber } from "@/lib/formatters";
 import { useAuth } from "@/_core/hooks/useAuth";
+import PrintPreviewButton from "@/components/PrintPreviewButton";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { SignatureStatusCard, SignatureRecord } from "@/components/ElectronicSignature";
@@ -8,15 +11,26 @@ import { ATTACHMENT_ACCEPT } from "@shared/uploadPolicy";
 import {
   PackageSearch, Plus, Search, Edit2, Trash2, Eye, ChevronLeft, ChevronRight,
   X, ChevronDown, Paperclip, FileText, Upload, Check, XCircle, Save, ArrowLeft,
-  Calendar, User, Hash, ClipboardCheck, AlertTriangle, MoreHorizontal,
+  Calendar, User, Hash, ClipboardCheck, AlertTriangle, MoreHorizontal, RefreshCw, QrCode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/formatters";
@@ -118,46 +132,24 @@ function genInspectionNo(seq: number) {
 function calcAvg(vals: string[]): string {
   const nums = vals.map(Number).filter((n) => !isNaN(n));
   if (nums.length === 0) return "";
-  return (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(4);
+  return formatDisplayNumber(nums.reduce((a, b) => a + b, 0) / nums.length);
 }
 
-function autoConclusion(item: InspectionItemForm): "pass" | "fail" | "pending" {
-  if (item.itemType === "qualitative") {
-    if (!item.actualValue) return "pending";
-    const accepted = item.acceptedValues.split(",").map((s) => s.trim()).filter(Boolean);
-    if (accepted.length === 0) return "pending";
-    return accepted.includes(item.actualValue) ? "pass" : "fail";
-  } else {
-    const avg = parseFloat(item.measuredValue);
-    if (isNaN(avg)) return "pending";
-    const min = item.minVal !== "" ? parseFloat(item.minVal) : null;
-    const max = item.maxVal !== "" ? parseFloat(item.maxVal) : null;
-    if (min !== null && avg < min) return "fail";
-    if (max !== null && avg > max) return "fail";
-    return "pass";
-  }
+function formatMeasuredDisplay(value: unknown, digits = 2) {
+  if (value == null || value === "") return "-";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  return formatDisplayNumber(num, { maximumFractionDigits: Math.min(digits, 2) });
 }
 
 function calcQualifiedQtyByState(
+  receivedQtyRaw: string | number | undefined,
   sampleQtyRaw: string | number | undefined,
-  items: InspectionItemForm[],
-  result?: string,
 ): string {
+  const receivedQty = parseFloat(String(receivedQtyRaw ?? "")) || 0;
   const sampleQty = parseFloat(String(sampleQtyRaw ?? "")) || 0;
-  if (sampleQty <= 0) return "0";
-
-  if (items.length > 0) {
-    const conclusions = items.map((it) => autoConclusion(it));
-    const allDone = conclusions.every((c) => c !== "pending");
-    if (allDone) {
-      const allPass = conclusions.every((c) => c === "pass");
-      return allPass ? String(sampleQty) : "0";
-    }
-  }
-
-  if (result === "passed" || result === "conditional_pass") return String(sampleQty);
-  if (result === "failed") return "0";
-  return "0";
+  const qualifiedQty = receivedQty - sampleQty;
+  return String(Math.max(qualifiedQty, 0));
 }
 
 // ==================== 状态流水线组件（Odoo 风格） ====================
@@ -205,6 +197,8 @@ function StatusPipeline({ current, onChange }: { current: string; onChange?: (v:
 // ==================== 主组件 ====================
 export default function IQCPage() {
   const { user } = useAuth();
+  const detailPrintRef = useRef<HTMLDivElement>(null);
+  const formPrintRef = useRef<HTMLDivElement>(null);
 
   // 视图模式：list = 列表视图，form = 表单视图（新建/编辑），detail = 详情视图
   const [viewMode, setViewMode] = useState<"list" | "form" | "detail">("list");
@@ -214,9 +208,14 @@ export default function IQCPage() {
   const [search, setSearch] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
   const [submitting, setSubmitting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<any | null>(null);
 
   const [showReceiptPicker, setShowReceiptPicker] = useState(false);
   const [receiptSearch, setReceiptSearch] = useState("");
+  const [showQrUploadDialog, setShowQrUploadDialog] = useState(false);
+  const [qrUploadDataUrl, setQrUploadDataUrl] = useState("");
 
   const [formData, setFormData] = useState<FormData>({
     inspectionNo: "", reportMode: "online",
@@ -241,6 +240,7 @@ export default function IQCPage() {
 
   // 当前 Tab
   const [activeTab, setActiveTab] = useState("items");
+  const [qualifiedQtyTouched, setQualifiedQtyTouched] = useState(false);
 
   const [lastAppliedReqId, setLastAppliedReqId] = useState<number | null>(null);
 
@@ -264,17 +264,44 @@ export default function IQCPage() {
     return ids;
   }, [iqcList, editId]);
 
+  const linkedReceiptItemIds = useMemo(() => {
+    const ids = new Set<number>();
+    (iqcList as any[]).forEach((r: any) => {
+      if (r.goodsReceiptItemId) {
+        ids.add(r.goodsReceiptItemId);
+      }
+    });
+    return ids;
+  }, [iqcList]);
+
   const { data: detailData } = trpc.iqcInspections.getById.useQuery(
     { id: detailId! }, { enabled: !!detailId }
   );
   const { data: editData } = trpc.iqcInspections.getById.useQuery(
     { id: editId! }, { enabled: !!editId }
   );
+  const { data: attachmentPool = [] } = trpc.iqcInspections.getAttachmentPool.useQuery(
+    { inspectionNo: formData.inspectionNo },
+    {
+      enabled: viewMode === "form" && activeTab === "attachments" && !!formData.inspectionNo,
+      refetchInterval: viewMode === "form" && activeTab === "attachments" && !!formData.inspectionNo ? 3000 : false,
+    },
+  );
+  const { data: mobileUploadLink } = trpc.iqcInspections.getMobileUploadLink.useQuery(
+    { inspectionNo: formData.inspectionNo, productName: formData.productName },
+    {
+      enabled: showQrUploadDialog && !!formData.inspectionNo,
+    },
+  );
 
   const { data: receiptList = [] } = trpc.goodsReceipts.list.useQuery(
     { search: receiptSearch || undefined, limit: 100 },
     { enabled: showReceiptPicker }
   );
+
+  const { data: pendingReceiptList = [], refetch: refetchPendingReceipts } = trpc.goodsReceipts.list.useQuery({
+    limit: 200,
+  });
 
   const { data: allUsers = [] } = trpc.users.list.useQuery();
   const qualityUsers = (allUsers as any[]).filter((u: any) =>
@@ -320,6 +347,7 @@ export default function IQCPage() {
         result: d.result ?? "pending",
         remark: d.remark ?? "",
       });
+      setQualifiedQtyTouched(true);
       setItems((d.items ?? []).map((it: any) => {
         const sv: string[] = it.sampleValues ? JSON.parse(it.sampleValues) : [it.measuredValue ?? ""];
         return {
@@ -352,14 +380,65 @@ export default function IQCPage() {
     }
   }, [editId, editData]);
 
-  // 自动计算合格数量（检验项完成优先；否则使用检验结果兜底）
   useEffect(() => {
-    const qualifiedQty = calcQualifiedQtyByState(formData.sampleQty, items, formData.result);
-    setFormData((p) => ({
-      ...p,
-      qualifiedQty,
-    }));
-  }, [items, formData.sampleQty, formData.result]);
+    const params = new URLSearchParams(window.location.search);
+    const receiptId = Number(params.get("receiptId") || 0);
+    if (!receiptId || viewMode !== "list") return;
+    const matchedReceipt = (pendingReceiptList as any[]).find((receipt: any) => Number(receipt.id) === receiptId);
+    const matchedItem = matchedReceipt?.items?.find((item: any) => item?.id && !linkedReceiptItemIds.has(item.id));
+    if (!matchedReceipt || !matchedItem) return;
+    openCreateFromReceiptItem(matchedReceipt, matchedItem);
+    params.delete("receiptId");
+    const nextQuery = params.toString();
+    window.history.replaceState({}, "", nextQuery ? `/quality/iqc?${nextQuery}` : "/quality/iqc");
+  }, [linkedReceiptItemIds, pendingReceiptList, viewMode]);
+
+  useEffect(() => {
+    const syncedRows = (attachmentPool as any[])
+      .filter((item: any) => item?.filePath)
+      .map((item: any) => ({
+        key: `pool-${item.filePath}`,
+        fileType: item.mimeType || "",
+        recordNo: formData.inspectionNo,
+        recordName: item.fileName || "",
+        conclusion: "符合",
+        fileUrl: item.filePath,
+      }));
+    if (syncedRows.length === 0) return;
+    setAttachments((prev) => {
+      const rows = prev.filter((item) => item.fileUrl || item.recordName);
+      const existing = new Set(rows.map((item) => item.fileUrl));
+      const merged = [...rows];
+      syncedRows.forEach((row) => {
+        if (!existing.has(row.fileUrl)) {
+          merged.push(row);
+        }
+      });
+      return merged.length > 0 ? merged : [emptyAttachment()];
+    });
+  }, [attachmentPool, formData.inspectionNo]);
+
+  useEffect(() => {
+    if (!showQrUploadDialog || !mobileUploadLink?.token || !formData.inspectionNo) {
+      setQrUploadDataUrl("");
+      return;
+    }
+    const uploadUrl = `${window.location.origin}/quality/iqc/mobile-upload?inspectionNo=${encodeURIComponent(formData.inspectionNo)}&productName=${encodeURIComponent(formData.productName || "")}&token=${encodeURIComponent(mobileUploadLink.token)}`;
+    QRCode.toDataURL(uploadUrl, { width: 220, margin: 1 })
+      .then(setQrUploadDataUrl)
+      .catch(() => setQrUploadDataUrl(""));
+  }, [showQrUploadDialog, mobileUploadLink, formData.inspectionNo, formData.productName]);
+
+  // 自动带出合格数量：默认=到货数量-抽样数量，可手动调整
+  useEffect(() => {
+    if (qualifiedQtyTouched) return;
+    const qualifiedQty = calcQualifiedQtyByState(formData.receivedQty, formData.sampleQty);
+    setFormData((p) => (
+      p.qualifiedQty === qualifiedQty
+        ? p
+        : { ...p, qualifiedQty }
+    ));
+  }, [formData.receivedQty, formData.sampleQty, qualifiedQtyTouched]);
 
   // 产品编码变化时自动匹配检验要求
   useEffect(() => {
@@ -412,19 +491,48 @@ export default function IQCPage() {
       toast.success("来料检验单已创建");
       refetch();
       setEditId(data.id);
+      if (formData.inspectionNo) {
+        clearPendingUploadsMutation.mutate({ inspectionNo: formData.inspectionNo });
+      }
       setSubmitting(false);
     },
     onError: (e: any) => { toast.error("创建失败：" + e.message); setSubmitting(false); },
   });
   const updateMutation = trpc.iqcInspections.update.useMutation({
-    onSuccess: () => { toast.success("已更新"); refetch(); setSubmitting(false); },
+    onSuccess: () => {
+      toast.success("已更新");
+      refetch();
+      if (formData.inspectionNo) {
+        clearPendingUploadsMutation.mutate({ inspectionNo: formData.inspectionNo });
+      }
+      setSubmitting(false);
+    },
     onError: (e: any) => { toast.error("更新失败：" + e.message); setSubmitting(false); },
   });
   const deleteMutation = trpc.iqcInspections.delete.useMutation({
-    onSuccess: () => { toast.success("已删除"); refetch(); setViewMode("list"); },
+    onSuccess: () => {
+      toast.success("已删除");
+      refetch();
+      refetchPendingReceipts();
+      setDeleteDialogOpen(false);
+      setRecordToDelete(null);
+      setViewMode("list");
+    },
+    onError: (e: any) => toast.error("删除失败：" + e.message),
+  });
+  const deleteReceiptMutation = trpc.goodsReceipts.delete.useMutation({
+    onSuccess: () => {
+      toast.success("已删除来料到货单");
+      refetch();
+      refetchPendingReceipts();
+      setDeleteDialogOpen(false);
+      setRecordToDelete(null);
+      setViewMode("list");
+    },
     onError: (e: any) => toast.error("删除失败：" + e.message),
   });
   const uploadAttachmentsMutation = trpc.iqcInspections.uploadAttachments.useMutation();
+  const clearPendingUploadsMutation = trpc.iqcInspections.clearPendingUploads.useMutation();
   const saveSignatureMutation = trpc.iqcInspections.saveSignature.useMutation({
     onError: (e: any) => toast.error("签名保存失败：" + e.message),
   });
@@ -482,6 +590,7 @@ export default function IQCPage() {
     setAttachments([emptyAttachment()]);
     setUploadFiles([]);
     setSignatures([]);
+    setQualifiedQtyTouched(false);
     setActiveTab("items");
     setViewMode("form");
   }
@@ -504,6 +613,46 @@ export default function IQCPage() {
     setDetailId(null);
   }
 
+  function openCreateFromReceiptItem(receipt: any, item: any) {
+    setEditId(null);
+    setDetailId(null);
+    setLastAppliedReqId(null);
+    const seq = (iqcList as any[]).length + 1;
+    setFormData({
+      inspectionNo: genInspectionNo(seq),
+      reportMode: "online",
+      goodsReceiptId: receipt.id,
+      goodsReceiptNo: receipt.receiptNo,
+      goodsReceiptItemId: item.id,
+      productId: item.productId ?? null,
+      productCode: item.materialCode ?? "",
+      productName: item.materialName ?? "",
+      specification: item.specification ?? "",
+      supplierId: receipt.supplierId ?? null,
+      supplierName: receipt.supplierName ?? "",
+      supplierCode: receipt.supplierCode ?? "",
+      batchNo: item.batchNo ?? "",
+      sterilizationBatchNo: item.sterilizationBatchNo ?? "",
+      receivedQty: item.receivedQty ?? "",
+      sampleQty: "",
+      qualifiedQty: "",
+      unit: item.unit ?? "",
+      inspectionRequirementId: null,
+      inspectionDate: today(),
+      inspectorId: (user as any)?.id ?? null,
+      inspectorName: (user as any)?.name ?? "",
+      result: "pending",
+      remark: "",
+    });
+    setItems([]);
+    setAttachments([emptyAttachment()]);
+    setUploadFiles([]);
+    setSignatures([]);
+    setQualifiedQtyTouched(false);
+    setActiveTab("items");
+    setViewMode("form");
+  }
+
   function selectReceiptItem(receipt: any, item: any) {
     setFormData((p) => ({
       ...p,
@@ -522,6 +671,7 @@ export default function IQCPage() {
       receivedQty: item.receivedQty ?? "",
       unit: item.unit ?? "",
     }));
+    setQualifiedQtyTouched(false);
     setShowReceiptPicker(false);
   }
 
@@ -536,7 +686,6 @@ export default function IQCPage() {
           const allSame = patch.sampleValues.every((v) => v === patch.sampleValues![0]);
           updated.actualValue = allSame ? patch.sampleValues[0] : patch.sampleValues.join(",");
         }
-        updated.conclusion = autoConclusion(updated);
       }
       next[idx] = updated;
       return next;
@@ -552,7 +701,6 @@ export default function IQCPage() {
       item.sampleCount = count;
       item.sampleValues = newVals;
       if (item.itemType === "quantitative") item.measuredValue = calcAvg(newVals);
-      item.conclusion = autoConclusion(item);
       next[idx] = item;
       return next;
     });
@@ -583,6 +731,7 @@ export default function IQCPage() {
         );
         const uploaded = await uploadAttachmentsMutation.mutateAsync({
           inspectionNo: formData.inspectionNo,
+          productName: formData.productName,
           files: filesPayload,
         });
         savedFilePaths = [...savedFilePaths, ...((uploaded as any[]) || [])];
@@ -590,11 +739,10 @@ export default function IQCPage() {
       }
       const attJson = JSON.stringify(savedFilePaths);
       const finalResult = overrideResult ?? formData.result;
-      const computedQualifiedQty = calcQualifiedQtyByState(formData.sampleQty, items, finalResult);
       const payload = {
         ...formData,
         result: finalResult,
-        qualifiedQty: computedQualifiedQty,
+        qualifiedQty: formData.qualifiedQty,
         goodsReceiptId: formData.goodsReceiptId ?? undefined,
         goodsReceiptItemId: formData.goodsReceiptItemId ?? undefined,
         productId: formData.productId ?? undefined,
@@ -631,7 +779,60 @@ export default function IQCPage() {
     }
   }
 
-  const list = iqcList as any[];
+  const pendingRows = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return (pendingReceiptList as any[])
+      .filter((receipt: any) => receipt.status !== "warehoused")
+      .flatMap((receipt: any) =>
+        (receipt.items ?? [])
+          .filter((item: any) => item?.id && !linkedReceiptItemIds.has(item.id))
+          .map((item: any) => ({
+            id: `pending-${receipt.id}-${item.id}`,
+            sourceType: "receipt_pending",
+            result: "pending",
+            inspectionNo: "待创建",
+            goodsReceiptNo: receipt.receiptNo,
+            goodsReceiptId: receipt.id,
+            goodsReceiptItemId: item.id,
+            productName: item.materialName ?? "",
+            specification: item.specification ?? "",
+            supplierName: receipt.supplierName ?? "",
+            batchNo: item.batchNo ?? "",
+            receivedQty: item.receivedQty ?? "",
+            sampleQty: "",
+            qualifiedQty: "",
+            unit: item.unit ?? "",
+            inspectorName: "",
+            inspectionDate: null,
+            rawReceipt: receipt,
+            rawItem: item,
+          }))
+      )
+      .filter((row: any) => {
+        if (resultFilter !== "all" && resultFilter !== "pending") return false;
+        if (!keyword) return true;
+        return [
+          row.inspectionNo,
+          row.goodsReceiptNo,
+          row.productName,
+          row.specification,
+          row.supplierName,
+          row.batchNo,
+        ].some((value) => String(value ?? "").toLowerCase().includes(keyword));
+      });
+  }, [pendingReceiptList, linkedReceiptItemIds, resultFilter, search]);
+
+  const inspectionRows = useMemo(() => {
+    return (iqcList as any[]).map((row: any) => ({
+      ...row,
+      sourceType: "inspection",
+    }));
+  }, [iqcList]);
+
+  const list = [...pendingRows, ...inspectionRows];
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+  const paginatedList = list.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // 统计
   const stats = useMemo(() => ({
@@ -642,6 +843,33 @@ export default function IQCPage() {
     conditional: list.filter((r) => r.result === "conditional_pass").length,
   }), [list]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, resultFilter, list.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  function handleDeleteClick(row: any, deleteTarget: "inspection" | "receipt" = "receipt") {
+    setRecordToDelete({ ...row, deleteTarget });
+    setDeleteDialogOpen(true);
+  }
+
+  function handleDeleteConfirm() {
+    if ((recordToDelete?.sourceType === "receipt_pending" || recordToDelete?.deleteTarget === "receipt") && recordToDelete?.goodsReceiptId) {
+      deleteReceiptMutation.mutate({ id: Number(recordToDelete.goodsReceiptId) });
+      return;
+    }
+    if (recordToDelete?.id) {
+      deleteMutation.mutate({ id: recordToDelete.id });
+    }
+    setDeleteDialogOpen(false);
+    setRecordToDelete(null);
+  }
+
   // 列表中当前记录的前后导航
   const currentListIdx = list.findIndex((r) => r.id === (editId ?? detailId));
 
@@ -649,123 +877,231 @@ export default function IQCPage() {
   if (viewMode === "list") {
     return (
       <ERPLayout>
-        <div className="p-6 space-y-4">
-          {/* 标题栏 */}
-          <div className="flex items-center justify-between">
+        <div className="space-y-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-3">
-              <PackageSearch className="w-6 h-6 text-primary" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                <PackageSearch className="h-5 w-5 text-primary" />
+              </div>
               <div>
-                <h1 className="text-xl font-bold">来料检验（IQC）</h1>
+                <h2 className="text-xl font-bold tracking-tight">来料检验（IQC）</h2>
                 <p className="text-sm text-muted-foreground">原材料入库前的质量检验</p>
               </div>
             </div>
-            <Button onClick={openCreate} className="gap-2">
-              <Plus className="w-4 h-4" />新建检验
-            </Button>
-          </div>
-
-          {/* 筛选栏 */}
-          <div className="flex gap-3 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="搜索检验编号、产品名称..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => { refetch(); refetchPendingReceipts(); }}>
+                <RefreshCw className="mr-1 h-4 w-4" />
+                刷新
+              </Button>
+              <Button size="sm" onClick={openCreate} className="gap-2">
+                <Plus className="h-4 w-4" />新建检验
+              </Button>
             </div>
-            <Select value={resultFilter} onValueChange={setResultFilter}>
-              <SelectTrigger className="w-36"><SelectValue placeholder="检验结果" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="pending">待检验</SelectItem>
-                <SelectItem value="passed">合格</SelectItem>
-                <SelectItem value="failed">不合格</SelectItem>
-                <SelectItem value="conditional_pass">条件合格</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
 
-          {/* 统计卡片 */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-5">
             {[
+              { label: "检验总数", count: stats.total, color: "text-foreground" },
               { label: "待检验", count: stats.pending, color: "text-blue-600" },
               { label: "合格", count: stats.passed, color: "text-green-600" },
               { label: "不合格", count: stats.failed, color: "text-red-600" },
               { label: "条件合格", count: stats.conditional, color: "text-orange-600" },
             ].map((s) => (
-              <div key={s.label} className="bg-card border rounded-lg p-4">
-                <div className={`text-2xl font-bold ${s.color}`}>{s.count}</div>
-                <div className="text-sm text-muted-foreground">{s.label}</div>
-              </div>
+              <Card key={s.label}>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">{s.label}</p>
+                  <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
+                </CardContent>
+              </Card>
             ))}
           </div>
 
-          {/* 列表 */}
-          <div className="border rounded-lg overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>检验编号</TableHead>
-                  <TableHead>到货单号</TableHead>
-                  <TableHead>产品名称</TableHead>
-                  <TableHead>规格</TableHead>
-                  <TableHead>供应商</TableHead>
-                  <TableHead>批次号</TableHead>
-                  <TableHead>到货数量</TableHead>
-                  <TableHead>抽样数量</TableHead>
-                  <TableHead>合格数量</TableHead>
-                  <TableHead>检验员</TableHead>
-                  <TableHead>检验日期</TableHead>
-                  <TableHead>结果</TableHead>
-                  <TableHead className="w-16">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {list.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={13} className="text-center text-muted-foreground py-8">暂无检验记录</TableCell>
-                  </TableRow>
-                ) : list.map((row: any) => (
-                  <TableRow key={row.id} className="cursor-pointer hover:bg-muted/30" onClick={() => openDetail(row.id)}>
-                    <TableCell className="font-mono text-sm text-primary">{row.inspectionNo}</TableCell>
-                    <TableCell className="text-sm">{row.goodsReceiptNo ?? "-"}</TableCell>
-                    <TableCell>{row.productName}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{row.specification ?? "-"}</TableCell>
-                    <TableCell className="text-sm">{row.supplierName ?? "-"}</TableCell>
-                    <TableCell className="text-sm">{row.batchNo ?? "-"}</TableCell>
-                    <TableCell className="text-sm">{row.receivedQty ? `${parseFloat(row.receivedQty)} ${row.unit ?? ""}` : "-"}</TableCell>
-                    <TableCell className="text-sm">{row.sampleQty ? parseFloat(row.sampleQty) : "-"}</TableCell>
-                    <TableCell className="text-sm">{row.qualifiedQty ? parseFloat(row.qualifiedQty) : "-"}</TableCell>
-                    <TableCell className="text-sm">{row.inspectorName ?? "-"}</TableCell>
-                    <TableCell className="text-sm">{row.inspectionDate ? formatDate(row.inspectionDate) : "-"}</TableCell>
-                    <TableCell>
-                      <Badge variant={RESULT_MAP[row.result]?.variant ?? "secondary"}>
-                        {RESULT_MAP[row.result]?.label ?? row.result}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" className="h-7 w-7">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEdit(row.id); }}>
-                            <Edit2 className="w-4 h-4 mr-2" />编辑
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={(e) => { e.stopPropagation(); if (confirm("确认删除？")) deleteMutation.mutate({ id: row.id }); }}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />删除
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex flex-col gap-4 md:flex-row">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="搜索检验编号、产品名称..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Select value={resultFilter} onValueChange={setResultFilter}>
+                  <SelectTrigger className="w-full md:w-[180px]">
+                    <SelectValue placeholder="检验结果" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部状态</SelectItem>
+                    <SelectItem value="pending">待检验</SelectItem>
+                    <SelectItem value="passed">合格</SelectItem>
+                    <SelectItem value="failed">不合格</SelectItem>
+                    <SelectItem value="conditional_pass">条件合格</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>检验编号</TableHead>
+                      <TableHead>到货单号</TableHead>
+                      <TableHead>产品名称</TableHead>
+                      <TableHead>规格</TableHead>
+                      <TableHead>供应商</TableHead>
+                      <TableHead>批次号</TableHead>
+                      <TableHead>到货数量</TableHead>
+                      <TableHead>抽样数量</TableHead>
+                      <TableHead>合格数量</TableHead>
+                      <TableHead>检验员</TableHead>
+                      <TableHead>检验日期</TableHead>
+                      <TableHead>结果</TableHead>
+                      <TableHead className="w-16">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedList.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={13} className="py-8 text-center text-muted-foreground">
+                          暂无检验记录或待检验来料
+                        </TableCell>
+                      </TableRow>
+                    ) : paginatedList.map((row: any) => (
+                      <TableRow
+                        key={row.id}
+                        className="cursor-pointer hover:bg-muted/30"
+                        onClick={() => {
+                          if (row.sourceType === "receipt_pending") {
+                            openCreateFromReceiptItem(row.rawReceipt, row.rawItem);
+                            return;
+                          }
+                          openDetail(row.id);
+                        }}
+                      >
+                        <TableCell className="font-mono text-sm text-primary">{row.inspectionNo}</TableCell>
+                        <TableCell className="text-sm">{row.goodsReceiptNo ?? "-"}</TableCell>
+                        <TableCell>{row.productName}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{row.specification ?? "-"}</TableCell>
+                        <TableCell className="text-sm">{row.supplierName ?? "-"}</TableCell>
+                        <TableCell className="text-sm">{row.batchNo ?? "-"}</TableCell>
+                        <TableCell className="text-sm">{row.receivedQty ? `${parseFloat(row.receivedQty)} ${row.unit ?? ""}` : "-"}</TableCell>
+                        <TableCell className="text-sm">{row.sampleQty ? parseFloat(row.sampleQty) : "-"}</TableCell>
+                        <TableCell className="text-sm">{row.qualifiedQty ? parseFloat(row.qualifiedQty) : "-"}</TableCell>
+                        <TableCell className="text-sm">{row.inspectorName ?? "-"}</TableCell>
+                        <TableCell className="text-sm">{row.inspectionDate ? formatDate(row.inspectionDate) : "-"}</TableCell>
+                        <TableCell>
+                          <Badge variant={RESULT_MAP[row.result]?.variant ?? "secondary"}>
+                            {RESULT_MAP[row.result]?.label ?? row.result}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                              <Button variant="ghost" size="icon" className="h-7 w-7">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {row.sourceType === "receipt_pending" ? (
+                                <>
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openCreateFromReceiptItem(row.rawReceipt, row.rawItem); }}>
+                                    <Plus className="mr-2 h-4 w-4" />开始检验
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteClick(row, "receipt");
+                                    }}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />删除
+                                  </DropdownMenuItem>
+                                </>
+                              ) : (
+                                <>
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDetail(row.id); }}>
+                                    <Eye className="mr-2 h-4 w-4" />查看
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEdit(row.id); }}>
+                                    <Edit2 className="mr-2 h-4 w-4" />编辑
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="text-destructive"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteClick(row, row.goodsReceiptId ? "receipt" : "inspection");
+                                    }}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />删除
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {list.length > 0 && (
+            <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3">
+              <div className="text-sm text-muted-foreground">
+                显示 {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, list.length)} 条，
+                共 {list.length} 条，第 {currentPage} / {totalPages} 页
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  disabled={currentPage === 1}
+                >
+                  上一页
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  下一页
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
+
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认删除</AlertDialogTitle>
+              <AlertDialogDescription>
+                {(recordToDelete?.sourceType === "receipt_pending" || recordToDelete?.deleteTarget === "receipt")
+                  ? `确认删除到货单 ${recordToDelete?.goodsReceiptNo || ""} 吗？这会删除该到货单下的全部来料明细及关联检验记录，且无法撤销。`
+                  : `确认删除检验单 ${recordToDelete?.inspectionNo || ""} 吗？此操作无法撤销。`}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setRecordToDelete(null)}>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteConfirm}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                确认删除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </ERPLayout>
     );
   }
@@ -790,6 +1126,10 @@ export default function IQCPage() {
                 <span className="font-semibold">{d.inspectionNo}</span>
               </div>
               <div className="flex items-center gap-2">
+                <PrintPreviewButton
+                  title={`来料检验详情 - ${d.inspectionNo}`}
+                  targetRef={detailPrintRef}
+                />
                 <Button variant="outline" size="sm" onClick={() => openEdit(d.id)}>
                   <Edit2 className="w-3.5 h-3.5 mr-1.5" />编辑
                 </Button>
@@ -814,30 +1154,47 @@ export default function IQCPage() {
             </div>
           </div>
 
-          {/* 详情内容 */}
-          <div className="flex-1 overflow-auto">
-            <div className="max-w-5xl mx-auto px-6 py-6">
-              {/* 标题 */}
-              <h2 className="text-2xl font-bold mb-6">{d.inspectionNo}</h2>
+        {/* 详情内容 */}
+        <div className="flex-1 overflow-auto">
+          <div ref={detailPrintRef} className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+            <Card>
+              <CardContent className="p-5 md:p-6">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold">{d.inspectionNo}</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">来料检验详情与结果汇总</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{d.reportMode === "offline" ? "线下填写" : "线上填写"}</Badge>
+                    <Badge variant={RESULT_MAP[d.result]?.variant ?? "secondary"}>
+                      {RESULT_MAP[d.result]?.label ?? d.result}
+                    </Badge>
+                  </div>
+                </div>
 
-              {/* 两列字段布局 */}
-              <div className="grid grid-cols-2 gap-x-12 gap-y-3 mb-8">
-                <FieldRow label="产品名称" value={d.productName} />
-                <FieldRow label="到货单号" value={d.goodsReceiptNo} link />
-                <FieldRow label="规格型号" value={d.specification} />
-                <FieldRow label="批次号" value={d.batchNo} />
-                <FieldRow label="供应商" value={d.supplierName} />
-                <FieldRow label="到货数量" value={d.receivedQty ? `${parseFloat(d.receivedQty)} ${d.unit ?? ""}` : "-"} />
-                <FieldRow label="抽样数量" value={d.sampleQty} />
-                <FieldRow label="合格数量" value={d.qualifiedQty} />
-                <FieldRow label="检验员" value={d.inspectorName} />
-                <FieldRow label="检验日期" value={d.inspectionDate ? formatDate(d.inspectionDate) : "-"} />
-                <FieldRow label="填报方式" value={d.reportMode === "offline" ? "线下填写" : "线上填写"} />
-              </div>
+                <div className="mt-6">
+                  <div className="mb-3 text-sm font-medium">基础信息</div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <FieldRow label="产品名称" value={d.productName} />
+                    <FieldRow label="到货单号" value={d.goodsReceiptNo} link />
+                    <FieldRow label="规格型号" value={d.specification} />
+                    <FieldRow label="批次号" value={d.batchNo} />
+                    <FieldRow label="供应商" value={d.supplierName} />
+                    <FieldRow label="到货数量" value={d.receivedQty ? `${parseFloat(d.receivedQty)} ${d.unit ?? ""}` : "-"} />
+                    <FieldRow label="抽样数量" value={d.sampleQty} />
+                    <FieldRow label="合格数量" value={d.qualifiedQty} />
+                    <FieldRow label="检验员" value={d.inspectorName} />
+                    <FieldRow label="检验日期" value={d.inspectionDate ? formatDate(d.inspectionDate) : "-"} />
+                    <FieldRow label="填报方式" value={d.reportMode === "offline" ? "线下填写" : "线上填写"} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
-              {/* Tab 页签 */}
-              <Tabs defaultValue="items" className="w-full">
-                <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
+            <Card>
+              <CardContent className="p-5 md:p-6">
+                <Tabs defaultValue="items" className="w-full">
+                  <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
                   <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                     检验项目
                   </TabsTrigger>
@@ -852,66 +1209,66 @@ export default function IQCPage() {
                   </TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="items" className="mt-4">
+                  <TabsContent value="items" className="mt-5">
                   {d.items?.length > 0 ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-10">#</TableHead>
-                          <TableHead>项目名称</TableHead>
-                          <TableHead className="w-20">类型</TableHead>
-                          <TableHead>检验标准</TableHead>
-                          <TableHead>实测值</TableHead>
-                          <TableHead className="w-20">结论</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {d.items.map((it: any, idx: number) => (
-                          <TableRow key={it.id}>
-                            <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                            <TableCell className="font-medium">{it.itemName}</TableCell>
-                            <TableCell>
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
-                                {it.itemType === "quantitative" ? "定量" : "定性"}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {it.itemType === "quantitative"
-                                ? `${it.minVal ?? ""}～${it.maxVal ?? ""} ${it.unit ?? ""}`
-                                : it.acceptedValues ?? "-"
-                              }
-                            </TableCell>
-                            <TableCell>
-                              {it.itemType === "quantitative" ? (
-                                <div>
-                                  <span className="font-medium">{it.measuredValue ? parseFloat(it.measuredValue).toFixed(2) : "-"}</span>
-                                  {it.sampleValues && (() => {
-                                    try { const sv = JSON.parse(it.sampleValues); return <span className="text-xs text-muted-foreground ml-1">[{sv.join(", ")}]</span>; } catch { return null; }
-                                  })()}
-                                </div>
-                              ) : (
-                                <span>{it.actualValue ?? "-"}</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <span className={`text-sm font-medium ${CONCLUSION_MAP[it.conclusion]?.color ?? ""}`}>
-                                {CONCLUSION_MAP[it.conclusion]?.label ?? it.conclusion}
-                              </span>
-                            </TableCell>
+                    <div className="overflow-hidden rounded-lg border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">#</TableHead>
+                            <TableHead>项目名称</TableHead>
+                            <TableHead>检验标准</TableHead>
+                            <TableHead>实测值</TableHead>
+                            <TableHead className="w-20">结论</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {d.items.map((it: any, idx: number) => (
+                            <TableRow key={it.id}>
+                              <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                              <TableCell className="font-medium">{it.itemName}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {it.itemType === "quantitative" ? (
+                                  <div className="space-y-1">
+                                    <div>范围：{`${it.minVal ?? "-"} ～ ${it.maxVal ?? "-"} ${it.unit ?? ""}`.trim()}</div>
+                                    {it.standard ? <div className="text-xs text-muted-foreground">标准：{it.standard}</div> : null}
+                                  </div>
+                                ) : (
+                                  it.acceptedValues ?? "-"
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {it.itemType === "quantitative" ? (
+                                  <div>
+                                    <span className="font-medium">{formatMeasuredDisplay(it.measuredValue)}</span>
+                                    {it.sampleValues && (() => {
+                                      try { const sv = JSON.parse(it.sampleValues); return <span className="text-xs text-muted-foreground ml-1">[{sv.join(", ")}]</span>; } catch { return null; }
+                                    })()}
+                                  </div>
+                                ) : (
+                                  <span>{it.actualValue ?? "-"}</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <span className={`text-sm font-medium ${CONCLUSION_MAP[it.conclusion]?.color ?? ""}`}>
+                                  {CONCLUSION_MAP[it.conclusion]?.label ?? it.conclusion}
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   ) : (
-                    <div className="text-center text-muted-foreground py-8">暂无检验项目</div>
+                    <div className="rounded-lg border border-dashed bg-muted/10 py-10 text-center text-muted-foreground">暂无检验项目</div>
                   )}
-                </TabsContent>
+                  </TabsContent>
 
-                <TabsContent value="attachments" className="mt-4">
+                  <TabsContent value="attachments" className="mt-5">
                   {(() => {
                     try {
                       const atts = d.attachments ? JSON.parse(d.attachments) : [];
-                      if (!atts.length) return <div className="text-center text-muted-foreground py-8">暂无附件</div>;
+                      if (!atts.length) return <div className="rounded-lg border border-dashed bg-muted/10 py-10 text-center text-muted-foreground">暂无附件</div>;
                       return (
                         <div className="space-y-2">
                           {atts.map((att: any, idx: number) => (
@@ -925,11 +1282,11 @@ export default function IQCPage() {
                           ))}
                         </div>
                       );
-                    } catch { return <div className="text-center text-muted-foreground py-8">暂无附件</div>; }
+                    } catch { return <div className="rounded-lg border border-dashed bg-muted/10 py-10 text-center text-muted-foreground">暂无附件</div>; }
                   })()}
-                </TabsContent>
+                  </TabsContent>
 
-                <TabsContent value="signatures" className="mt-4">
+                  <TabsContent value="signatures" className="mt-5">
                   {detailSigs.length > 0 ? (
                     <SignatureStatusCard
                       documentType="IQC"
@@ -938,16 +1295,18 @@ export default function IQCPage() {
                       signatures={detailSigs}
                     />
                   ) : (
-                    <div className="text-center text-muted-foreground py-8">暂无签名记录</div>
+                    <div className="rounded-lg border border-dashed bg-muted/10 py-10 text-center text-muted-foreground">暂无签名记录</div>
                   )}
-                </TabsContent>
+                  </TabsContent>
 
-                <TabsContent value="notes" className="mt-4">
-                  <div className="text-sm whitespace-pre-wrap">{d.remark || "暂无备注"}</div>
-                </TabsContent>
-              </Tabs>
-            </div>
+                  <TabsContent value="notes" className="mt-5">
+                    <div className="rounded-lg border bg-muted/10 p-4 text-sm whitespace-pre-wrap">{d.remark || "暂无备注"}</div>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
           </div>
+        </div>
         </div>
       </ERPLayout>
     );
@@ -968,6 +1327,10 @@ export default function IQCPage() {
               <span className="font-semibold">{editId ? formData.inspectionNo : "新建"}</span>
             </div>
             <div className="flex items-center gap-2">
+              <PrintPreviewButton
+                title={editId ? `来料检验表单 - ${formData.inspectionNo}` : "新建来料检验"}
+                targetRef={formPrintRef}
+              />
               {/* 合格/不合格快捷按钮 */}
               <Button
                 size="sm"
@@ -998,152 +1361,168 @@ export default function IQCPage() {
               </Button>
             </div>
           </div>
-          <div className="flex items-center justify-between mt-2">
-            <div />
-            <StatusPipeline current={formData.result} onChange={(v) => setFormData((p) => ({ ...p, result: v }))} />
-          </div>
         </div>
 
         {/* 表单内容 */}
         <div className="flex-1 overflow-auto">
-          <div className="max-w-5xl mx-auto px-6 py-6">
-            {/* 两列字段布局 */}
-            <div className="grid grid-cols-2 gap-x-12 gap-y-4 mb-8">
-              {/* 左列 */}
-              <EditFieldRow label="产品名称" required>
-                <div className="flex gap-2">
-                  <Input
-                    value={formData.productName}
-                    onChange={(e) => setFormData((p) => ({ ...p, productName: e.target.value }))}
-                    placeholder="产品名称"
-                    className="flex-1"
-                  />
-                  <Button type="button" variant="outline" size="sm" onClick={() => setShowReceiptPicker(true)}>
-                    <ChevronDown className="w-3 h-3 mr-1" />
-                    {formData.goodsReceiptNo || "关联到货单"}
-                  </Button>
+          <div ref={formPrintRef} className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+            <Card>
+              <CardContent className="p-5 md:p-6">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold">{editId ? formData.inspectionNo : "新建来料检验"}</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">统一录入来料基础信息、检验项目与附件资料</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{formData.reportMode === "offline" ? "线下填写" : "线上填写"}</Badge>
+                    <Badge variant={RESULT_MAP[formData.result]?.variant ?? "secondary"}>
+                      {RESULT_MAP[formData.result]?.label ?? formData.result}
+                    </Badge>
+                  </div>
                 </div>
-              </EditFieldRow>
-              <EditFieldRow label="检验编号">
-                <Input
-                  value={formData.inspectionNo}
-                  onChange={(e) => setFormData((p) => ({ ...p, inspectionNo: e.target.value }))}
-                  className="bg-muted/30"
-                />
-              </EditFieldRow>
 
-              <EditFieldRow label="规格型号">
-                <Input
-                  value={formData.specification}
-                  onChange={(e) => setFormData((p) => ({ ...p, specification: e.target.value }))}
-                  placeholder="规格型号"
-                />
-              </EditFieldRow>
-              <EditFieldRow label="检验日期" required>
-                <Input
-                  type="date"
-                  value={formData.inspectionDate}
-                  onChange={(e) => setFormData((p) => ({ ...p, inspectionDate: e.target.value }))}
-                />
-              </EditFieldRow>
+                <div className="mt-6">
+                  <div className="mb-3 text-sm font-medium">基础信息</div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <EditFieldRow label="产品名称" required>
+                      <div className="flex gap-2">
+                        <Input
+                          value={formData.productName}
+                          onChange={(e) => setFormData((p) => ({ ...p, productName: e.target.value }))}
+                          placeholder="产品名称"
+                          className="flex-1"
+                        />
+                        <Button type="button" variant="outline" size="sm" onClick={() => setShowReceiptPicker(true)}>
+                          <ChevronDown className="w-3 h-3 mr-1" />
+                          {formData.goodsReceiptNo || "关联到货单"}
+                        </Button>
+                      </div>
+                    </EditFieldRow>
+                    <EditFieldRow label="检验编号">
+                      <Input
+                        value={formData.inspectionNo}
+                        onChange={(e) => setFormData((p) => ({ ...p, inspectionNo: e.target.value }))}
+                        className="bg-muted/30"
+                      />
+                    </EditFieldRow>
 
-              <EditFieldRow label="供应商">
-                <Input
-                  value={formData.supplierName}
-                  onChange={(e) => setFormData((p) => ({ ...p, supplierName: e.target.value }))}
-                  placeholder="供应商名称"
-                />
-              </EditFieldRow>
-              <EditFieldRow label="检验员" required>
-                <Select
-                  value={formData.inspectorId ? String(formData.inspectorId) : "__manual__"}
-                  onValueChange={(v) => {
-                    if (v === "__manual__") return;
-                    const u = qualityUsers.find((u: any) => String(u.id) === v);
-                    setFormData((p) => ({ ...p, inspectorId: u ? u.id : null, inspectorName: u ? u.name : p.inspectorName }));
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择检验员" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {qualityUsers.map((u: any) => (
-                      <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
-                    ))}
-                    <SelectItem value="__manual__">手动输入</SelectItem>
-                  </SelectContent>
-                </Select>
-              </EditFieldRow>
+                    <EditFieldRow label="规格型号">
+                      <Input
+                        value={formData.specification}
+                        onChange={(e) => setFormData((p) => ({ ...p, specification: e.target.value }))}
+                        placeholder="规格型号"
+                      />
+                    </EditFieldRow>
+                    <EditFieldRow label="检验日期" required>
+                      <Input
+                        type="date"
+                        value={formData.inspectionDate}
+                        onChange={(e) => setFormData((p) => ({ ...p, inspectionDate: e.target.value }))}
+                      />
+                    </EditFieldRow>
 
-              <EditFieldRow label="批次号">
-                <Input
-                  value={formData.batchNo}
-                  onChange={(e) => setFormData((p) => ({ ...p, batchNo: e.target.value }))}
-                  placeholder="批次号"
-                />
-              </EditFieldRow>
-              <EditFieldRow label="填报方式">
-                <Select
-                  value={formData.reportMode}
-                  onValueChange={(v) => setFormData((p) => ({ ...p, reportMode: v as "online" | "offline" }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="online">线上填写</SelectItem>
-                    <SelectItem value="offline">线下填写</SelectItem>
-                  </SelectContent>
-                </Select>
-              </EditFieldRow>
+                    <EditFieldRow label="供应商">
+                      <Input
+                        value={formData.supplierName}
+                        onChange={(e) => setFormData((p) => ({ ...p, supplierName: e.target.value }))}
+                        placeholder="供应商名称"
+                      />
+                    </EditFieldRow>
+                    <EditFieldRow label="检验员" required>
+                      <Select
+                        value={formData.inspectorId ? String(formData.inspectorId) : "__manual__"}
+                        onValueChange={(v) => {
+                          if (v === "__manual__") return;
+                          const u = qualityUsers.find((u: any) => String(u.id) === v);
+                          setFormData((p) => ({ ...p, inspectorId: u ? u.id : null, inspectorName: u ? u.name : p.inspectorName }));
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择检验员" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {qualityUsers.map((u: any) => (
+                            <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
+                          ))}
+                          <SelectItem value="__manual__">手动输入</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </EditFieldRow>
 
-              <EditFieldRow label="到货数量">
-                <div className="flex gap-2">
-                  <Input
-                    value={formData.receivedQty}
-                    onChange={(e) => setFormData((p) => ({ ...p, receivedQty: e.target.value }))}
-                    placeholder="数量"
-                    className="flex-1"
-                  />
-                  <Input
-                    value={formData.unit}
-                    onChange={(e) => setFormData((p) => ({ ...p, unit: e.target.value }))}
-                    placeholder="单位"
-                    className="w-20"
-                  />
+                    <EditFieldRow label="批次号">
+                      <Input
+                        value={formData.batchNo}
+                        onChange={(e) => setFormData((p) => ({ ...p, batchNo: e.target.value }))}
+                        placeholder="批次号"
+                      />
+                    </EditFieldRow>
+                    <EditFieldRow label="填报方式">
+                      <Select
+                        value={formData.reportMode}
+                        onValueChange={(v) => setFormData((p) => ({ ...p, reportMode: v as "online" | "offline" }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="online">线上填写</SelectItem>
+                          <SelectItem value="offline">线下填写</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </EditFieldRow>
+
+                    <EditFieldRow label="到货数量">
+                      <div className="flex gap-2">
+                        <Input
+                          value={formData.receivedQty}
+                          onChange={(e) => {
+                            setQualifiedQtyTouched(false);
+                            setFormData((p) => ({ ...p, receivedQty: e.target.value }));
+                          }}
+                          placeholder="数量"
+                          className="flex-1"
+                        />
+                        <Input
+                          value={formData.unit}
+                          onChange={(e) => setFormData((p) => ({ ...p, unit: e.target.value }))}
+                          placeholder="单位"
+                          className="w-20"
+                        />
+                      </div>
+                    </EditFieldRow>
+
+                    <EditFieldRow label="抽样数量">
+                      <Input
+                        value={formData.sampleQty}
+                        onChange={(e) => {
+                          setQualifiedQtyTouched(false);
+                          setFormData((p) => ({ ...p, sampleQty: e.target.value }));
+                        }}
+                        placeholder="抽样数量"
+                      />
+                    </EditFieldRow>
+                    <EditFieldRow label="合格数量">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={formData.qualifiedQty}
+                          onChange={(e) => {
+                            setQualifiedQtyTouched(true);
+                            setFormData((p) => ({ ...p, qualifiedQty: e.target.value }));
+                          }}
+                          placeholder="默认自动计算，可手动调整"
+                        />
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">默认自动计算</span>
+                      </div>
+                    </EditFieldRow>
+                  </div>
                 </div>
-              </EditFieldRow>
-              <EditFieldRow label="灭菌批号">
-                <Input
-                  value={formData.sterilizationBatchNo}
-                  onChange={(e) => setFormData((p) => ({ ...p, sterilizationBatchNo: e.target.value }))}
-                  placeholder="灭菌批号"
-                />
-              </EditFieldRow>
+              </CardContent>
+            </Card>
 
-              <EditFieldRow label="抽样数量">
-                <Input
-                  value={formData.sampleQty}
-                  onChange={(e) => setFormData((p) => ({ ...p, sampleQty: e.target.value }))}
-                  placeholder="抽样数量"
-                />
-              </EditFieldRow>
-              <EditFieldRow label="合格数量">
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={formData.qualifiedQty}
-                    readOnly
-                    className="bg-muted/50 cursor-not-allowed"
-                    placeholder="检验完成后自动计算"
-                  />
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">自动计算</span>
-                </div>
-              </EditFieldRow>
-            </div>
-
-            {/* Tab 页签 */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
+            <Card>
+              <CardContent className="p-5 md:p-6">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                  <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
                 <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
                   检验项目 {items.length > 0 && `(${items.length})`}
                 </TabsTrigger>
@@ -1159,7 +1538,7 @@ export default function IQCPage() {
               </TabsList>
 
               {/* 检验项目 Tab */}
-              <TabsContent value="items" className="mt-4">
+                  <TabsContent value="items" className="mt-5">
                 {formData.reportMode === "online" && (
                   <div className="space-y-4">
                     {/* 检验要求自动关联提示 + 添加项目按钮 */}
@@ -1181,130 +1560,140 @@ export default function IQCPage() {
 
                     {/* 检验项目表格 */}
                     {items.length === 0 ? (
-                      <div className="border rounded-lg p-8 text-center text-muted-foreground text-sm">
+                      <div className="rounded-lg border border-dashed bg-muted/10 p-8 text-center text-sm text-muted-foreground">
                         选择产品后将自动关联检验要求并带入检验项目，也可点击“添加项目”手动添加
                       </div>
                     ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-10">#</TableHead>
-                            <TableHead className="w-[140px]">项目名称</TableHead>
-                            <TableHead className="w-[70px]">类型</TableHead>
-                            <TableHead className="w-[180px]">检验要求</TableHead>
-                            <TableHead className="w-[60px]">样品量</TableHead>
-                            <TableHead>数值录入</TableHead>
-                            <TableHead className="w-[80px]">结论</TableHead>
-                            <TableHead className="w-10" />
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {items.map((item, idx) => (
-                            <TableRow key={item.key}>
-                              <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                              <TableCell className="font-medium text-sm">{item.itemName || "-"}</TableCell>
-                              <TableCell>
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-muted">
-                                  {item.itemType === "qualitative" ? "定性" : "定量"}
-                                </span>
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                {item.itemType === "qualitative"
-                                  ? `合格值：${item.acceptedValues || "合格/不合格"}`
-                                  : `${item.minVal || ""} ~ ${item.maxVal || ""} ${item.unit || ""}`
-                                }
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  type="number" min={1} max={20}
-                                  value={item.sampleCount}
-                                  onChange={(e) => setSampleCount(idx, Math.max(1, parseInt(e.target.value) || 1))}
-                                  className="h-7 w-14 text-xs"
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1 flex-wrap">
+                      <div className="overflow-hidden rounded-lg border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-10">#</TableHead>
+                              <TableHead className="w-[160px]">项目名称</TableHead>
+                              <TableHead className="w-[220px]">检验要求</TableHead>
+                              <TableHead className="w-[60px]">样品量</TableHead>
+                              <TableHead className="min-w-[320px]">数值录入</TableHead>
+                              <TableHead className="w-[120px] pl-4">结论</TableHead>
+                              <TableHead className="w-10" />
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {items.map((item, idx) => (
+                              <TableRow key={item.key}>
+                                <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                                <TableCell className="font-medium text-sm">{item.itemName || "-"}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
                                   {item.itemType === "qualitative" ? (
-                                    Array.from({ length: item.sampleCount }).map((_, si) => (
-                                      <Select
-                                        key={si}
-                                        value={item.sampleValues[si] || ""}
-                                        onValueChange={(v) => {
-                                          const newVals = [...item.sampleValues];
-                                          newVals[si] = v;
-                                          updateItem(idx, { sampleValues: newVals });
-                                        }}
-                                      >
-                                        <SelectTrigger className="h-7 w-20 text-xs"><SelectValue placeholder="-" /></SelectTrigger>
-                                        <SelectContent>
-                                          {item.acceptedValues.split(",").map((v) => v.trim()).filter(Boolean).map((v) => (
-                                            <SelectItem key={v} value={v}>{v}</SelectItem>
-                                          ))}
-                                          {item.acceptedValues.split(",").map((v) => v.trim()).filter(Boolean).length === 0 && (
-                                            <>
-                                              <SelectItem value="合格">合格</SelectItem>
-                                              <SelectItem value="不合格">不合格</SelectItem>
-                                            </>
-                                          )}
-                                        </SelectContent>
-                                      </Select>
-                                    ))
+                                    <div className="space-y-1">
+                                      <div>{`合格值：${item.acceptedValues || "合格/不合格"}`}</div>
+                                      {item.standard ? <div className="text-[11px] text-muted-foreground">标准：{item.standard}</div> : null}
+                                    </div>
                                   ) : (
-                                    <>
-                                      {Array.from({ length: item.sampleCount }).map((_, si) => (
-                                        <Input
+                                    <div className="space-y-1">
+                                      <div>{`范围：${item.minVal || "-"} ~ ${item.maxVal || "-"} ${item.unit || ""}`.trim()}</div>
+                                      {item.standard ? <div className="text-[11px] text-muted-foreground">标准：{item.standard}</div> : null}
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Input
+                                    type="number" min={1} max={20}
+                                    value={item.sampleCount}
+                                    onChange={(e) => setSampleCount(idx, Math.max(1, parseInt(e.target.value) || 1))}
+                                    className="h-7 w-14 text-xs"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {item.itemType === "qualitative" ? (
+                                      Array.from({ length: item.sampleCount }).map((_, si) => (
+                                        <Select
                                           key={si}
                                           value={item.sampleValues[si] || ""}
-                                          onChange={(e) => {
+                                          onValueChange={(v) => {
                                             const newVals = [...item.sampleValues];
-                                            newVals[si] = e.target.value;
+                                            newVals[si] = v;
                                             updateItem(idx, { sampleValues: newVals });
                                           }}
-                                          className="h-7 w-16 text-xs"
-                                          placeholder={`${si + 1}`}
-                                        />
-                                      ))}
-                                      {item.measuredValue && (
-                                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                          均值: {parseFloat(item.measuredValue).toFixed(2)} {item.unit}
-                                        </span>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                {(() => {
-                                  const c = autoConclusion(item);
-                                  return (
-                                    <span className={`text-xs font-medium ${CONCLUSION_MAP[c]?.color ?? ""}`}>
-                                      {CONCLUSION_MAP[c]?.label ?? "待判定"}
-                                    </span>
-                                  );
-                                })()}
-                              </TableCell>
-                              <TableCell>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6"
-                                  onClick={() => setItems(items.filter((_, i) => i !== idx))}
-                                >
-                                  <X className="w-3 h-3" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                                        >
+                                          <SelectTrigger className="h-7 w-20 text-xs"><SelectValue placeholder="-" /></SelectTrigger>
+                                          <SelectContent>
+                                            {item.acceptedValues.split(",").map((v) => v.trim()).filter(Boolean).map((v) => (
+                                              <SelectItem key={v} value={v}>{v}</SelectItem>
+                                            ))}
+                                            {item.acceptedValues.split(",").map((v) => v.trim()).filter(Boolean).length === 0 && (
+                                              <>
+                                                <SelectItem value="合格">合格</SelectItem>
+                                                <SelectItem value="不合格">不合格</SelectItem>
+                                              </>
+                                            )}
+                                          </SelectContent>
+                                        </Select>
+                                      ))
+                                    ) : (
+                                      <>
+                                        <div className="grid grid-cols-5 gap-1">
+                                          {Array.from({ length: item.sampleCount }).map((_, si) => (
+                                            <Input
+                                              key={si}
+                                              value={item.sampleValues[si] || ""}
+                                              onChange={(e) => {
+                                                const newVals = [...item.sampleValues];
+                                                newVals[si] = e.target.value;
+                                                updateItem(idx, { sampleValues: newVals });
+                                              }}
+                                              className="h-7 min-w-0 text-xs"
+                                              placeholder={`${si + 1}`}
+                                            />
+                                          ))}
+                                        </div>
+                                        {item.measuredValue && (
+                                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                            均值: {formatMeasuredDisplay(item.measuredValue)} {item.unit}
+                                          </span>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="pl-4">
+                                  <Select
+                                    value={item.conclusion}
+                                    onValueChange={(value) => updateItem(idx, { conclusion: value as "pass" | "fail" | "pending" })}
+                                  >
+                                    <SelectTrigger className="h-7 min-w-[88px] text-xs">
+                                      <SelectValue placeholder="待判定" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="pending">待判定</SelectItem>
+                                      <SelectItem value="pass">合格</SelectItem>
+                                      <SelectItem value="fail">不合格</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6"
+                                    onClick={() => setItems(items.filter((_, i) => i !== idx))}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
                     )}
                   </div>
                 )}
-              </TabsContent>
+                  </TabsContent>
 
               {/* 附件资料 Tab */}
-              <TabsContent value="attachments" className="mt-4">
+                  <TabsContent value="attachments" className="mt-5">
                 <div
                   className={`rounded-lg border-2 border-dashed p-6 transition-colors ${isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/20"}`}
                   onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -1349,10 +1738,28 @@ export default function IQCPage() {
                       <Button type="button" variant="outline" size="sm" onClick={() => document.getElementById("iqc-camera-input")?.click()}>
                         <FileText className="h-3.5 w-3.5 mr-1.5" />拍照上传
                       </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setShowQrUploadDialog(true)}>
+                        <QrCode className="h-3.5 w-3.5 mr-1.5" />二维码上传
+                      </Button>
                     </div>
                     <div className="text-xs text-muted-foreground">支持 JPG、PNG、PDF、Word、Excel，单个文件建议不超过 20MB</div>
                   </div>
                 </div>
+                {attachments.filter((item) => item.fileUrl).length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {attachments.filter((item) => item.fileUrl).map((item) => (
+                      <div key={item.key} className="flex items-center justify-between rounded-lg border px-3 py-2 bg-muted/10">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <span className="truncate text-sm">{item.recordName || item.fileUrl}</span>
+                        </div>
+                        <a href={item.fileUrl} target="_blank" rel="noopener" className="text-xs text-primary hover:underline">
+                          查看
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {uploadFiles.length > 0 && (
                   <div className="mt-4 space-y-2">
                     {uploadFiles.map((item) => (
@@ -1364,7 +1771,7 @@ export default function IQCPage() {
                             <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
                           )}
                           <span className="truncate text-sm">{item.file.name}</span>
-                          <span className="text-xs text-muted-foreground shrink-0">{(item.file.size / 1024).toFixed(0)} KB</span>
+                          <span className="text-xs text-muted-foreground shrink-0">{formatDisplayNumber(item.file.size / 1024)} KB</span>
                         </div>
                         <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => removeUploadFile(item.id)}>
                           <X className="w-3 h-3" />
@@ -1373,10 +1780,10 @@ export default function IQCPage() {
                     ))}
                   </div>
                 )}
-              </TabsContent>
+                  </TabsContent>
 
               {/* 电子签名 Tab */}
-              <TabsContent value="signatures" className="mt-4">
+                  <TabsContent value="signatures" className="mt-5">
                 {!editId ? (
                   <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
                     <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-muted-foreground/50" />
@@ -1392,10 +1799,10 @@ export default function IQCPage() {
                     onSignComplete={handleSignComplete}
                   />
                 )}
-              </TabsContent>
+                  </TabsContent>
 
               {/* 备注 Tab */}
-              <TabsContent value="notes" className="mt-4">
+                  <TabsContent value="notes" className="mt-5">
                 <Textarea
                   value={formData.remark}
                   onChange={(e) => setFormData((p) => ({ ...p, remark: e.target.value }))}
@@ -1403,24 +1810,26 @@ export default function IQCPage() {
                   rows={6}
                   className="resize-none"
                 />
-              </TabsContent>
-            </Tabs>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>
 
       {/* ==================== 到货单选择弹窗 ==================== */}
       <DraggableDialog open={showReceiptPicker} onOpenChange={setShowReceiptPicker}>
-        <DraggableDialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <div className="space-y-4 p-1">
+        <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto p-0">
+          <div className="space-y-4 p-6">
             <h2 className="text-lg font-semibold">选择到货单明细</h2>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input placeholder="搜索到货单号、供应商..." value={receiptSearch} onChange={(e) => setReceiptSearch(e.target.value)} className="pl-9" />
             </div>
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               {(receiptList as any[]).length === 0 ? (
-                <p className="text-center text-muted-foreground py-6">暂无到货单</p>
+                <p className="col-span-full text-center text-muted-foreground py-6">暂无到货单</p>
               ) : (receiptList as any[]).map((receipt: any) => (
                 <div key={receipt.id} className="border rounded-lg p-3">
                   <div className="flex items-center justify-between mb-2">
@@ -1428,7 +1837,15 @@ export default function IQCPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-muted-foreground">{receipt.supplierName}</span>
                       <Badge variant={receipt.status === "passed" ? "default" : receipt.status === "failed" ? "destructive" : "secondary"} className="text-xs">
-                        {receipt.status === "pending_inspection" ? "待检验" : receipt.status === "passed" ? "已合格" : receipt.status === "failed" ? "不合格" : receipt.status}
+                        {receipt.status === "pending_inspection"
+                          ? "待检验"
+                          : receipt.status === "inspecting"
+                            ? "检验中"
+                            : receipt.status === "passed"
+                              ? "已合格"
+                              : receipt.status === "failed"
+                                ? "不合格"
+                                : receipt.status}
                       </Badge>
                     </div>
                   </div>
@@ -1469,6 +1886,30 @@ export default function IQCPage() {
           </div>
         </DraggableDialogContent>
       </DraggableDialog>
+
+      <DraggableDialog open={showQrUploadDialog} onOpenChange={setShowQrUploadDialog}>
+        <DraggableDialogContent className="max-w-md">
+          <div className="space-y-4 p-1">
+            <h2 className="text-lg font-semibold">二维码上传</h2>
+            <div className="rounded-lg border bg-muted/10 p-3 text-sm">
+              <div><span className="text-muted-foreground">检验单号：</span>{formData.inspectionNo || "-"}</div>
+              <div className="mt-1 break-words"><span className="text-muted-foreground">产品名称：</span>{formData.productName || "-"}</div>
+            </div>
+            <div className="flex justify-center">
+              {qrUploadDataUrl ? (
+                <img src={qrUploadDataUrl} alt="IQC upload QR" className="h-56 w-56 rounded border bg-white p-2" />
+              ) : (
+                <div className="flex h-56 w-56 items-center justify-center rounded border bg-muted/10 text-sm text-muted-foreground">
+                  正在生成二维码...
+                </div>
+              )}
+            </div>
+            <div className="text-center text-xs text-muted-foreground">
+              微信扫码后可直接拍照或选择文件上传，文件名会自动按“产品名称 + 检验单号 + 序号”生成。
+            </div>
+          </div>
+        </DraggableDialogContent>
+      </DraggableDialog>
     </ERPLayout>
   );
 }
@@ -1477,21 +1918,21 @@ export default function IQCPage() {
 function FieldRow({ label, value, link }: { label: string; value?: string | number | null; link?: boolean }) {
   const display = value != null && value !== "" ? String(value) : "-";
   return (
-    <div className="flex items-baseline gap-4 py-1.5 border-b border-muted/50">
-      <span className="text-sm text-muted-foreground w-24 shrink-0">{label}</span>
-      <span className={`text-sm font-medium ${link ? "text-primary" : ""}`}>{display}</span>
+    <div className="rounded-lg border bg-muted/10 px-3 py-3">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className={`mt-1 text-sm font-medium break-words ${link ? "text-primary" : ""}`}>{display}</div>
     </div>
   );
 }
 
 function EditFieldRow({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-4">
-      <span className="text-sm text-muted-foreground w-24 shrink-0">
+    <div className="space-y-1.5">
+      <div className="text-sm text-muted-foreground">
         {label}
         {required && <span className="text-destructive ml-0.5">*</span>}
-      </span>
-      <div className="flex-1">{children}</div>
+      </div>
+      <div>{children}</div>
     </div>
   );
 }

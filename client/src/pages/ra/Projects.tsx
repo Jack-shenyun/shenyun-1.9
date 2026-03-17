@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import ERPLayout from "@/components/ERPLayout";
+import RaLayout from "@/components/RaLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -181,7 +181,7 @@ export default function RaProjectsPage() {
   };
 
   return (
-    <ERPLayout>
+    <RaLayout>
       <div className="space-y-6">
         {/* 页面标题 */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -557,6 +557,6 @@ export default function RaProjectsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ERPLayout>
+    </RaLayout>
   );
 }

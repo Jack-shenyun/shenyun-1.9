@@ -9,6 +9,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerFileManagerRoutes } from "../fileManagerRouter";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { normalizeTrpcRequestInputs } from "./inputNormalization";
 import { serveStatic, setupVite } from "./vite";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -40,17 +41,24 @@ async function startServer() {
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API
+  app.use("/api/trpc", normalizeTrpcRequestInputs);
   app.use(
     "/api/trpc",
     createExpressMiddleware({
       router: appRouter,
       createContext,
+      allowMethodOverride: true,
     })
   );
   // 文件管理 REST 接口
   registerFileManagerRoutes(app as any);
 
   // uploaded files library
+  app.use("/uploads", (req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  });
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {

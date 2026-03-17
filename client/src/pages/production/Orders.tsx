@@ -1,22 +1,17 @@
-import { useState } from "react";
-import { formatDate, formatDateTime } from "@/lib/formatters";
+import { useEffect, useMemo, useState } from "react";
+import { formatDate, formatDisplayNumber, roundToDigits } from "@/lib/formatters";
 
 /** 兼容 superjson 的日期格式化：Date 对象或字符串均可正确转为 YYYY-MM-DD */
 const fmtDate = (v: any): string => {
-  if (!v) return "-";
-  if (v instanceof Date) return v.toISOString().split("T")[0];
-  const s = String(v);
-  // ISO 字符串直接截取
-  if (s.includes("T")) return s.split("T")[0];
-  // 已经是 YYYY-MM-DD
-  return s.slice(0, 10);
+  return formatDate(v);
 };
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
-import { Cog, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, Play, CheckCircle } from "lucide-react";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
+import { Cog, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, CheckCircle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -50,6 +45,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 
 type OrderType = "finished" | "semi_finished" | "rework";
 
@@ -142,10 +138,76 @@ function calcExpiryDate(productionDate: string, shelfLifeMonths: number): string
   return d.toISOString().split("T")[0];
 }
 
+function formatPlanQty(value: unknown): string {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value ?? "-");
+  return formatDisplayNumber(num);
+}
+
+function normalizePlanQtyInput(value: unknown): string {
+  if (value == null || value === "") return "";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  return String(roundToDigits(num, 2));
+}
+
+function normalizeDateInputValue(value: string, finalize = false): string {
+  const cleaned = String(value || "")
+    .replace(/\//g, "-")
+    .replace(/[^\d-]/g, "");
+  if (!cleaned) return "";
+  const rawParts = cleaned
+    .split("-")
+    .slice(0, 3)
+    .map((part, index) => part.slice(0, index === 0 ? 4 : 2));
+  if (!finalize) return rawParts.join("-");
+  if (rawParts.length === 3 && rawParts[0].length === 4) {
+    const [year, month, day] = rawParts;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+  return rawParts.join("-");
+}
+
+function DateTextInput({
+  value,
+  onChange,
+  placeholder = "YYYY-MM-DD",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <Input
+      type="text"
+      inputMode="numeric"
+      value={value}
+      placeholder={placeholder}
+      className="font-mono"
+      onChange={(e) => onChange(normalizeDateInputValue(e.target.value))}
+      onBlur={(e) => onChange(normalizeDateInputValue(e.target.value, true))}
+    />
+  );
+}
+
+function calcSemiFinishedQty(planQty: unknown, bomQty: unknown, baseProductQty: unknown): string {
+  const planQtyNum = Number(planQty || 0);
+  const bomQtyNum = Number(bomQty || 0);
+  const baseQtyNum = Number(baseProductQty || 1);
+  if (!Number.isFinite(planQtyNum) || !Number.isFinite(bomQtyNum) || !Number.isFinite(baseQtyNum) || baseQtyNum <= 0) {
+    return "";
+  }
+  const result = (planQtyNum * bomQtyNum) / baseQtyNum;
+  if (!Number.isFinite(result) || result <= 0) return "";
+  return String(roundToDigits(result, 2));
+}
+
 export default function ProductionOrdersPage() {
+  const PAGE_SIZE = 10;
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<ProductionOrderRow | null>(null);
@@ -157,6 +219,7 @@ export default function ProductionOrdersPage() {
   const [productPickerOpen, setProductPickerOpen] = useState(false);
   // 草稿库弹窗
   const [draftLibOpen, setDraftLibOpen] = useState(false);
+  const [hasHandledCreateFromPlan, setHasHandledCreateFromPlan] = useState(false);
 
   const { data: ordersRaw = [], isLoading, refetch } = trpc.productionOrders.list.useQuery(
     { search: searchTerm || undefined, status: statusFilter !== "all" ? statusFilter : undefined }
@@ -181,6 +244,47 @@ export default function ProductionOrdersPage() {
         productSpec: product?.specification || "",
       };
     });
+  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  const pagedData = data.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const productionOrderPrintData = useMemo(
+    () =>
+      selectedRecord
+        ? {
+            orderNo: selectedRecord.orderNo || "",
+            orderType: orderTypeMap[selectedRecord.orderType]?.label || selectedRecord.orderType || "",
+            status: statusMap[selectedRecord.status]?.label || selectedRecord.status || "",
+            productName: selectedRecord.productName || "",
+            productCode: selectedRecord.productCode || "",
+            productSpec: selectedRecord.productSpec || "",
+            batchNo: selectedRecord.batchNo || "",
+            planNo: (selectedRecord as any).planNo || selectedRecord.planId || "",
+            plannedQty: Number(selectedRecord.plannedQty || 0),
+            completedQty: Number(selectedRecord.completedQty || 0),
+            unit: selectedRecord.unit || "",
+            progress: Number(selectedRecord.plannedQty || 0) > 0
+              ? (Number(selectedRecord.completedQty || 0) / Number(selectedRecord.plannedQty || 0)) * 100
+              : 0,
+            plannedStartDate: selectedRecord.plannedStartDate || "",
+            plannedEndDate: selectedRecord.plannedEndDate || "",
+            productionDate: selectedRecord.productionDate || "",
+            actualStartDate: selectedRecord.actualStartDate || "",
+            actualEndDate: selectedRecord.actualEndDate || "",
+            expiryDate: selectedRecord.expiryDate || "",
+            productDescription: (productsData as any[]).find((p: any) => p.id === selectedRecord.productId)?.description || "",
+            remark: selectedRecord.remark || "",
+            bomItems: [],
+          }
+        : null,
+    [productsData, selectedRecord],
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, typeFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   // 已被生产指令关联的计划 ID 集合（排除草稿和取消状态的指令）
   const usedPlanIds = new Set(
@@ -190,6 +294,7 @@ export default function ProductionOrdersPage() {
   );
   const availablePlans = (productionPlansData as any[]).filter(
     (p: any) =>
+      String(p.planNo || "").startsWith("PP-") &&
       p.status !== "completed" &&
       p.status !== "cancelled" &&
       (p as any).productSourceType !== "purchase" &&
@@ -200,6 +305,7 @@ export default function ProductionOrdersPage() {
     orderType: "finished" as OrderType,
     planId: 0,
     planNo: "",
+    salesOrderId: 0,
     productId: 0,
     productName: "",
     productCode: "",
@@ -213,36 +319,84 @@ export default function ProductionOrdersPage() {
     deliveryDate: "",
     productionDate: new Date().toISOString().split("T")[0],
     expiryDate: "",
-    status: "planned" as ProductionOrderRow["status"],
+    status: "in_progress" as ProductionOrderRow["status"],
     remark: "",
   });
 
+  const selectedPlan = useMemo(
+    () => (productionPlansData as any[]).find((plan: any) => Number(plan.id) === Number(formData.planId)),
+    [productionPlansData, formData.planId],
+  );
+  const selectedPlanProductId = Number(selectedPlan?.productId || 0);
+  const {
+    data: selectedPlanBomItems = [],
+    isLoading: selectedPlanBomLoading,
+  } = trpc.bom.list.useQuery(
+    { productId: selectedPlanProductId },
+    { enabled: formData.orderType === "semi_finished" && selectedPlanProductId > 0 },
+  );
+  const eligibleSemiFinishedProducts = useMemo(() => {
+    if (formData.orderType !== "semi_finished" || !selectedPlanProductId) return [];
+    const level2Items = (selectedPlanBomItems as any[]).filter((item: any) => !item.parentId || Number(item.level) === 2);
+    const semiFinishedParentIds = new Set(
+      (selectedPlanBomItems as any[])
+        .filter((item: any) => item.parentId)
+        .map((item: any) => Number(item.parentId))
+        .filter((id: number) => Number.isFinite(id)),
+    );
+    return level2Items
+      .filter((item: any) => semiFinishedParentIds.has(Number(item.id)))
+      .map((item: any) => {
+        const product = (productsData as any[]).find(
+          (candidate: any) =>
+            candidate.status === "active" &&
+            candidate.sourceType === "production" &&
+            String(candidate.code || "").trim() === String(item.materialCode || "").trim(),
+        );
+        if (!product) return null;
+        return {
+          ...product,
+          bomQuantity: item.quantity,
+          bomUnit: item.unit,
+          baseProductQty: item.baseProductQty,
+          baseProductUnit: item.baseProductUnit,
+        };
+      })
+      .filter(Boolean);
+  }, [formData.orderType, productsData, selectedPlanBomItems, selectedPlanProductId]);
+  const eligibleSemiFinishedProductIds = useMemo(
+    () => new Set(eligibleSemiFinishedProducts.map((product: any) => Number(product.id))),
+    [eligibleSemiFinishedProducts],
+  );
+
   const today = new Date().toISOString().split("T")[0];
+
+  const buildDefaultFormData = (orderType: OrderType = "finished") => ({
+    orderType,
+    planId: 0,
+    planNo: "",
+    salesOrderId: 0,
+    productId: 0,
+    productName: "",
+    productCode: "",
+    productSpec: "",
+    productDescription: "",
+    batchNo: generateBatchNo(orderType, ordersRaw as any[]),
+    plannedQty: "",
+    unit: "",
+    plannedStartDate: today,
+    plannedEndDate: "",
+    deliveryDate: "",
+    productionDate: today,
+    expiryDate: "",
+    status: "in_progress" as ProductionOrderRow["status"],
+    remark: "",
+  });
 
   const handleAdd = () => {
     setIsEditing(false);
     setSelectedRecord(null);
-    const batchNo = generateBatchNo("finished", ordersRaw as any[]);
-    setFormData({
-      orderType: "finished",
-      planId: 0,
-      planNo: "",
-      productId: 0,
-      productName: "",
-      productCode: "",
-      productSpec: "",
-      productDescription: "",
-      batchNo,
-      plannedQty: "",
-      unit: "",
-      plannedStartDate: today,
-      plannedEndDate: "",
-      deliveryDate: "",
-      productionDate: today,
-      expiryDate: "",
-      status: "planned",
-      remark: "",
-    });
+    setFormData(buildDefaultFormData("finished"));
     setFormDialogOpen(true);
   };
 
@@ -254,13 +408,14 @@ export default function ProductionOrdersPage() {
       orderType: record.orderType || "finished",
       planId: record.planId || 0,
       planNo: "",
+      salesOrderId: record.salesOrderId || 0,
       productId: record.productId,
       productName: product?.name || "",
       productCode: product?.code || "",
       productSpec: product?.specification || "",
       productDescription: product?.description || "",
       batchNo: record.batchNo || "",
-      plannedQty: record.plannedQty,
+      plannedQty: normalizePlanQtyInput(record.plannedQty),
       unit: record.unit || "",
       plannedStartDate: record.plannedStartDate ? fmtDate(record.plannedStartDate) : "",
       plannedEndDate: record.plannedEndDate ? fmtDate(record.plannedEndDate) : "",
@@ -292,7 +447,7 @@ export default function ProductionOrdersPage() {
     const logoHtml = company?.logoUrl
       ? `<img src="${company.logoUrl}" alt="logo" style="height:60px;object-fit:contain;" />`
       : `<div style="width:60px;height:60px;background:#e5e7eb;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#9ca3af;">LOGO</div>`;
-    const progress = record.plannedQty ? ((Number(record.completedQty || 0) / Number(record.plannedQty)) * 100).toFixed(1) : '0.0';
+    const progress = record.plannedQty ? String(Math.round((Number(record.completedQty || 0) / Number(record.plannedQty)) * 100)) : "0";
     const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -357,8 +512,8 @@ export default function ProductionOrdersPage() {
         <td class="label">关联计划</td><td>${(record as any).planNo || record.planId || '-'}</td>
       </tr>
       <tr>
-        <td class="label">计划数量</td><td>${record.plannedQty} ${record.unit || ''}</td>
-        <td class="label">完成数量</td><td>${record.completedQty || '0'} ${record.unit || ''}</td>
+        <td class="label">计划数量</td><td>${formatPlanQty(record.plannedQty)} ${record.unit || ''}</td>
+        <td class="label">完成数量</td><td>${formatPlanQty(record.completedQty || '0')} ${record.unit || ''}</td>
         <td class="label">完成进度</td><td>${progress}%</td>
       </tr>
     </table>
@@ -400,7 +555,7 @@ export default function ProductionOrdersPage() {
     <div class="section-title">生产进度</div>
     <div style="padding:6px 0;">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-        <span>已完成：${record.completedQty || '0'} ${record.unit || ''} / 计划：${record.plannedQty} ${record.unit || ''}</span>
+        <span>已完成：${formatPlanQty(record.completedQty || '0')} ${record.unit || ''} / 计划：${formatPlanQty(record.plannedQty)} ${record.unit || ''}</span>
         <span style="font-weight:bold;">${progress}%</span>
       </div>
       <div class="progress-bar-wrap"><div class="progress-bar"></div></div>
@@ -441,49 +596,158 @@ export default function ProductionOrdersPage() {
   // 切换指令类型时自动重新生成批号
   const handleOrderTypeChange = (type: OrderType) => {
     const batchNo = generateBatchNo(type, ordersRaw as any[]);
-    setFormData((f) => ({ ...f, orderType: type, batchNo, planId: 0, planNo: "", productId: 0, productName: "", productCode: "" }));
+    setFormData((f) => ({ ...f, orderType: type, batchNo, planId: 0, planNo: "", salesOrderId: 0, productId: 0, productName: "", productCode: "" }));
   };
 
   // 选择生产计划后自动带入产品信息
   const handlePlanSelect = (plan: any) => {
     const product = (productsData as any[]).find((p: any) => p.id === plan.productId);
-    const newProductionDate = formData.productionDate || today;
-    const expiryDate = product?.shelfLife ? calcExpiryDate(newProductionDate, Number(product.shelfLife)) : "";
-    setFormData({
-      ...formData,
-      planId: plan.id,
-      planNo: plan.planNo,
-      productId: plan.productId,
-      productName: product?.name || plan.productName || "",
-      productCode: product?.code || "",
-      productSpec: product?.specification || "",
-      productDescription: product?.description || "",
-      plannedQty: plan.plannedQty || "",
-      unit: plan.unit || product?.unit || "",
-      plannedEndDate: plan.plannedEndDate ? fmtDate(plan.plannedEndDate) : "",
-      deliveryDate: plan.plannedEndDate ? fmtDate(plan.plannedEndDate) : "",
-      expiryDate,
-      remark: plan.salesOrderNo ? `关联销售订单: ${plan.salesOrderNo}` : formData.remark,
+    setFormData((prev) => {
+      if (prev.orderType === "semi_finished") {
+        return {
+          ...prev,
+          planId: plan.id,
+          planNo: plan.planNo,
+          salesOrderId: Number(plan.salesOrderId) || 0,
+          productId: 0,
+          productName: "",
+          productCode: "",
+          productSpec: "",
+          productDescription: "",
+          plannedQty: "",
+          unit: "",
+          plannedStartDate: plan.plannedStartDate ? fmtDate(plan.plannedStartDate) : prev.plannedStartDate,
+          plannedEndDate: plan.plannedEndDate ? fmtDate(plan.plannedEndDate) : "",
+          deliveryDate: plan.plannedEndDate ? fmtDate(plan.plannedEndDate) : "",
+          expiryDate: "",
+          status: "in_progress",
+          remark: plan.salesOrderNo ? `来源生产计划：${plan.planNo}（关联销售订单：${plan.salesOrderNo}）` : `来源生产计划：${plan.planNo}`,
+        };
+      }
+      const nextProductionDate = prev.productionDate || today;
+      const expiryDate = product?.shelfLife ? calcExpiryDate(nextProductionDate, Number(product.shelfLife)) : "";
+      return {
+        ...prev,
+        planId: plan.id,
+        planNo: plan.planNo,
+        salesOrderId: Number(plan.salesOrderId) || 0,
+        productId: plan.productId,
+        productName: product?.name || plan.productName || "",
+        productCode: product?.code || "",
+        productSpec: product?.specification || "",
+        productDescription: product?.description || "",
+        plannedQty: normalizePlanQtyInput(plan.plannedQty),
+        unit: plan.unit || product?.unit || "",
+        plannedEndDate: plan.plannedEndDate ? fmtDate(plan.plannedEndDate) : "",
+        deliveryDate: plan.plannedEndDate ? fmtDate(plan.plannedEndDate) : "",
+        expiryDate,
+        status: "in_progress",
+        remark: plan.salesOrderNo ? `关联销售订单: ${plan.salesOrderNo}` : prev.remark,
+      };
     });
     setPlanPickerOpen(false);
   };
 
+  useEffect(() => {
+    if (hasHandledCreateFromPlan) return;
+    const params = new URLSearchParams(window.location.search);
+    const rawPlanId = Number(params.get("createFromPlanId") || "");
+    if (!Number.isInteger(rawPlanId) || rawPlanId <= 0) {
+      setHasHandledCreateFromPlan(true);
+      return;
+    }
+    if (!(productionPlansData as any[]).length) return;
+    const targetPlan = (productionPlansData as any[]).find((plan: any) => Number(plan.id) === rawPlanId);
+    setHasHandledCreateFromPlan(true);
+    if (!targetPlan) {
+      toast.error("生产计划不存在或已不可用");
+      window.history.replaceState({}, "", "/production/orders");
+      return;
+    }
+    setIsEditing(false);
+    setSelectedRecord(null);
+    setFormData(buildDefaultFormData("finished"));
+    setFormDialogOpen(true);
+    handlePlanSelect(targetPlan);
+    window.history.replaceState({}, "", "/production/orders");
+  }, [productionPlansData, hasHandledCreateFromPlan]);
+
   // 选择产品后自动带入信息
   const handleProductSelect = (product: any) => {
+    if (formData.orderType === "semi_finished") {
+      if (!formData.planId) {
+        toast.error("请先选择来源生产计划");
+        return;
+      }
+      if (!eligibleSemiFinishedProductIds.has(Number(product.id))) {
+        toast.error("该半成品不在当前生产计划范围内");
+        return;
+      }
+    }
     const newProductionDate = formData.productionDate || today;
     const expiryDate = product?.shelfLife ? calcExpiryDate(newProductionDate, Number(product.shelfLife)) : "";
+    const semiFinishedBomItem = formData.orderType === "semi_finished"
+      ? eligibleSemiFinishedProducts.find((item: any) => Number(item.id) === Number(product.id))
+      : null;
     setFormData({
       ...formData,
       productId: product.id,
       productName: product.name || "",
-      productCode: product.code || "",
-      productSpec: product.specification || "",
-      productDescription: product.description || "",
-      unit: product.unit || formData.unit,
-      expiryDate,
-    });
+        productCode: product.code || "",
+        productSpec: product.specification || "",
+        productDescription: product.description || "",
+        plannedQty: semiFinishedBomItem
+          ? calcSemiFinishedQty(selectedPlan?.plannedQty, semiFinishedBomItem.bomQuantity, semiFinishedBomItem.baseProductQty)
+          : normalizePlanQtyInput(formData.plannedQty),
+        unit: semiFinishedBomItem?.bomUnit || product.unit || formData.unit,
+        expiryDate,
+      });
     setProductPickerOpen(false);
   };
+
+  useEffect(() => {
+    if (formData.orderType !== "semi_finished" || !formData.productId) return;
+    if (eligibleSemiFinishedProductIds.size === 0) return;
+    if (eligibleSemiFinishedProductIds.has(Number(formData.productId))) return;
+    setFormData((prev) => ({
+      ...prev,
+      productId: 0,
+      productName: "",
+      productCode: "",
+      productSpec: "",
+      productDescription: "",
+      plannedQty: "",
+      unit: "",
+      expiryDate: "",
+    }));
+  }, [eligibleSemiFinishedProductIds, formData.orderType, formData.productId]);
+
+  useEffect(() => {
+    if (formData.orderType !== "semi_finished" || !formData.planId || formData.productId) return;
+    if (eligibleSemiFinishedProducts.length === 0) return;
+    const onlySemiFinishedProduct = eligibleSemiFinishedProducts[0] as any;
+    const nextPlannedQty = calcSemiFinishedQty(
+      selectedPlan?.plannedQty,
+      onlySemiFinishedProduct.bomQuantity,
+      onlySemiFinishedProduct.baseProductQty,
+    );
+    setFormData((prev) => {
+      if (prev.orderType !== "semi_finished" || !prev.planId || prev.productId) return prev;
+      return {
+        ...prev,
+        productId: onlySemiFinishedProduct.id,
+        productName: onlySemiFinishedProduct.name || "",
+        productCode: onlySemiFinishedProduct.code || "",
+        productSpec: onlySemiFinishedProduct.specification || "",
+        productDescription: onlySemiFinishedProduct.description || "",
+        plannedQty: nextPlannedQty,
+        unit: onlySemiFinishedProduct.bomUnit || onlySemiFinishedProduct.unit || "",
+        expiryDate: onlySemiFinishedProduct?.shelfLife
+          ? calcExpiryDate(prev.productionDate || today, Number(onlySemiFinishedProduct.shelfLife))
+          : "",
+      };
+    });
+  }, [eligibleSemiFinishedProducts, formData.orderType, formData.planId, formData.productId, selectedPlan, today]);
 
   // 生产日期变化时重新计算有效期至
   const handleProductionDateChange = (date: string) => {
@@ -497,38 +761,47 @@ export default function ProductionOrdersPage() {
       toast.error("请选择产品并填写计划数量");
       return;
     }
+    if (formData.orderType === "semi_finished" && !formData.planId) {
+      toast.error("半成品指令必须关联来源生产计划");
+      return;
+    }
+    const normalizedPlannedQty = normalizePlanQtyInput(formData.plannedQty);
+    const normalizedPlannedStartDate = normalizeDateInputValue(formData.plannedStartDate, true);
+    const normalizedPlannedEndDate = normalizeDateInputValue(formData.plannedEndDate, true);
+    const normalizedProductionDate = normalizeDateInputValue(formData.productionDate, true);
+    const normalizedExpiryDate = normalizeDateInputValue(formData.expiryDate, true);
     if (isEditing && selectedRecord) {
       updateMutation.mutate({
         id: selectedRecord.id,
         data: {
           orderType: formData.orderType,
           productId: formData.productId,
-          plannedQty: formData.plannedQty,
+          plannedQty: normalizedPlannedQty,
           unit: formData.unit || undefined,
           batchNo: formData.batchNo || undefined,
-          plannedStartDate: formData.plannedStartDate || undefined,
-          plannedEndDate: formData.plannedEndDate || undefined,
-          productionDate: formData.productionDate || undefined,
-          expiryDate: formData.expiryDate || undefined,
+          plannedStartDate: normalizedPlannedStartDate || undefined,
+          plannedEndDate: normalizedPlannedEndDate || undefined,
+          productionDate: normalizedProductionDate || undefined,
+          expiryDate: normalizedExpiryDate || undefined,
           planId: formData.planId || undefined,
           status: formData.status,
           remark: formData.remark || undefined,
         },
       });
     } else {
-      const orderNo = `MO-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
       createMutation.mutate({
-        orderNo,
+        orderNo: undefined,
         orderType: formData.orderType,
         productId: formData.productId,
-        plannedQty: formData.plannedQty,
+        plannedQty: normalizedPlannedQty,
         unit: formData.unit || undefined,
         batchNo: formData.batchNo || undefined,
-        plannedStartDate: formData.plannedStartDate || undefined,
-        plannedEndDate: formData.plannedEndDate || undefined,
-        productionDate: formData.productionDate || undefined,
-        expiryDate: formData.expiryDate || undefined,
+        plannedStartDate: normalizedPlannedStartDate || undefined,
+        plannedEndDate: normalizedPlannedEndDate || undefined,
+        productionDate: normalizedProductionDate || undefined,
+        expiryDate: normalizedExpiryDate || undefined,
         planId: formData.planId || undefined,
+        salesOrderId: formData.salesOrderId || undefined,
         status: formData.status,
         remark: formData.remark || undefined,
       });
@@ -537,19 +810,20 @@ export default function ProductionOrdersPage() {
 
   // 保存草稿（不校验必填项，status=draft）
   const handleSaveDraft = () => {
-    const orderNo = `MO-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+    const normalizedPlannedQty = normalizePlanQtyInput(formData.plannedQty) || "0";
     saveDraftMutation.mutate({
-      orderNo,
+      orderNo: undefined,
       orderType: formData.orderType,
       productId: formData.productId || 0,
-      plannedQty: formData.plannedQty || "0",
+      plannedQty: normalizedPlannedQty,
       unit: formData.unit || undefined,
       batchNo: formData.batchNo || undefined,
-      plannedStartDate: formData.plannedStartDate || undefined,
-      plannedEndDate: formData.plannedEndDate || undefined,
-      productionDate: formData.productionDate || undefined,
-      expiryDate: formData.expiryDate || undefined,
+      plannedStartDate: normalizeDateInputValue(formData.plannedStartDate, true) || undefined,
+      plannedEndDate: normalizeDateInputValue(formData.plannedEndDate, true) || undefined,
+      productionDate: normalizeDateInputValue(formData.productionDate, true) || undefined,
+      expiryDate: normalizeDateInputValue(formData.expiryDate, true) || undefined,
       planId: formData.planId || undefined,
+      salesOrderId: formData.salesOrderId || undefined,
       status: "draft",
       remark: formData.remark || undefined,
     });
@@ -557,7 +831,7 @@ export default function ProductionOrdersPage() {
 
   // 从草稿库发布为已计划
   const handlePublishDraft = (record: ProductionOrderRow) => {
-    updateMutation.mutate({ id: record.id, data: { status: "planned" } });
+    updateMutation.mutate({ id: record.id, data: { status: "in_progress" } });
     setDraftLibOpen(false);
   };
 
@@ -570,7 +844,7 @@ export default function ProductionOrdersPage() {
   const handleStatusChange = (record: ProductionOrderRow, newStatus: ProductionOrderRow["status"]) => {
     const updates: any = { status: newStatus };
     if (newStatus === "in_progress" && !record.actualStartDate) updates.actualStartDate = new Date().toISOString().split("T")[0];
-    if (newStatus === "completed") { updates.actualEndDate = new Date().toISOString().split("T")[0]; updates.completedQty = record.plannedQty; }
+    if (newStatus === "completed") { updates.actualEndDate = new Date().toISOString().split("T")[0]; updates.completedQty = normalizePlanQtyInput(record.plannedQty); }
     updateMutation.mutate({ id: record.id, data: updates });
   };
 
@@ -606,17 +880,26 @@ export default function ProductionOrdersPage() {
     );
   };
 
-  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => {
+    const renderValue = (value: React.ReactNode): React.ReactNode => {
+      if (value == null || value === "") return "-";
+      if (value instanceof Date) return value.toISOString().slice(0, 10);
+      if (Array.isArray(value)) {
+        const items = value
+          .map((item) => item instanceof Date ? item.toISOString().slice(0, 10) : item)
+          .filter((item) => item != null && item !== "");
+        return items.length > 0 ? items.join(" ") : "-";
+      }
+      return value;
+    };
 
-    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
-
-      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
-
-      <span className="flex-1 text-sm text-right break-all">{children}</span>
-
-    </div>
-
-  );
+    return (
+      <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+        <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+        <span className="flex-1 text-sm text-right break-all">{renderValue(children)}</span>
+      </div>
+    );
+  };
 
 
   return (
@@ -700,7 +983,7 @@ export default function ProductionOrdersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.map((record: any) => {
+              {pagedData.map((record: any) => {
                 const planned = Number(record.plannedQty || 0);
                 const completed = Number(record.completedQty || 0);
                 const progress = planned > 0 ? (completed / planned) * 100 : 0;
@@ -750,9 +1033,6 @@ export default function ProductionOrdersPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleView(record)}><Eye className="h-4 w-4 mr-2" />查看详情</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleEdit(record)}><Edit className="h-4 w-4 mr-2" />编辑</DropdownMenuItem>
-                          {record.status === "planned" && (
-                            <DropdownMenuItem onClick={() => handleStatusChange(record, "in_progress")}><Play className="h-4 w-4 mr-2" />开始生产</DropdownMenuItem>
-                          )}
                           {record.status === "in_progress" && (
                             <DropdownMenuItem onClick={() => handleStatusChange(record, "completed")}><CheckCircle className="h-4 w-4 mr-2" />完成生产</DropdownMenuItem>
                           )}
@@ -770,11 +1050,17 @@ export default function ProductionOrdersPage() {
               )}
             </TableBody>
           </Table>
+          <TablePaginationFooter
+            total={data.length}
+            page={currentPage}
+            pageSize={PAGE_SIZE}
+            onPageChange={setCurrentPage}
+          />
         </Card>
 
         {/* 新建/编辑表单对话框 */}
         <DraggableDialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
-          <DraggableDialogContent className="max-w-3xl">
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{isEditing ? "编辑生产指令" : "新建生产指令"}</DialogTitle>
             </DialogHeader>
@@ -815,10 +1101,10 @@ export default function ProductionOrdersPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {/* 关联生产计划（仅成品类型且新建时显示） */}
-                {!isEditing && formData.orderType === "finished" ? (
+                {/* 关联生产计划（成品/半成品新建时显示） */}
+                {!isEditing && formData.orderType !== "rework" ? (
                   <div className="space-y-2">
-                    <Label>关联生产计划</Label>
+                    <Label>{formData.orderType === "semi_finished" ? "来源生产计划 *" : "关联生产计划"}</Label>
                     <Button
                       type="button"
                       variant="outline"
@@ -831,14 +1117,17 @@ export default function ProductionOrdersPage() {
                           <span className="font-mono text-xs">{formData.planNo}</span>
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">点击选择计划...</span>
+                        <span className="text-muted-foreground">{formData.orderType === "semi_finished" ? "点击选择来源生产计划..." : "点击选择计划..."}</span>
                       )}
                     </Button>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     <Label>计划开始日期</Label>
-                    <Input type="date" value={formData.plannedStartDate} onChange={(e) => setFormData({ ...formData, plannedStartDate: e.target.value })} />
+                    <DateTextInput
+                      value={formData.plannedStartDate}
+                      onChange={(value) => setFormData({ ...formData, plannedStartDate: value })}
+                    />
                   </div>
                 )}
               </div>
@@ -850,7 +1139,22 @@ export default function ProductionOrdersPage() {
                   type="button"
                   variant="outline"
                   className="w-full justify-start font-normal"
-                  onClick={() => setProductPickerOpen(true)}
+                  onClick={() => {
+                    if (formData.orderType === "semi_finished" && !formData.planId) {
+                      toast.error("请先选择来源生产计划");
+                      return;
+                    }
+                    if (
+                      formData.orderType === "semi_finished" &&
+                      formData.planId &&
+                      !selectedPlanBomLoading &&
+                      eligibleSemiFinishedProducts.length === 0
+                    ) {
+                      toast.error("当前生产计划未包含可下达的半成品");
+                      return;
+                    }
+                    setProductPickerOpen(true);
+                  }}
                 >
                   {formData.productId ? (
                     <span className="flex items-center gap-2">
@@ -863,6 +1167,12 @@ export default function ProductionOrdersPage() {
                     <span className="text-muted-foreground">点击选择产品...</span>
                   )}
                 </Button>
+                {formData.orderType === "semi_finished" && !formData.planId && (
+                  <p className="text-xs text-muted-foreground">半成品指令先选择来源生产计划，再从该计划包含的半成品中选择产品</p>
+                )}
+                {formData.orderType === "semi_finished" && formData.planId && !selectedPlanBomLoading && eligibleSemiFinishedProducts.length === 0 && (
+                  <p className="text-xs text-amber-600">当前生产计划未配置半成品 BOM 子项，暂时无法创建半成品指令</p>
+                )}
               </div>
 
               {/* 产品信息展示（只读） */}
@@ -881,7 +1191,14 @@ export default function ProductionOrdersPage() {
               <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>计划数量 *</Label>
-                  <Input type="number" value={formData.plannedQty} onChange={(e) => setFormData({ ...formData, plannedQty: e.target.value })} placeholder="数量" />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.plannedQty}
+                    onChange={(e) => setFormData({ ...formData, plannedQty: e.target.value })}
+                    onBlur={(e) => setFormData({ ...formData, plannedQty: normalizePlanQtyInput(e.target.value) })}
+                    placeholder="数量"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>单位</Label>
@@ -889,15 +1206,16 @@ export default function ProductionOrdersPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>计划开始日期</Label>
-                  <Input type="date" value={formData.plannedStartDate} onChange={(e) => setFormData({ ...formData, plannedStartDate: e.target.value })} />
+                  <DateTextInput
+                    value={formData.plannedStartDate}
+                    onChange={(value) => setFormData({ ...formData, plannedStartDate: value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>计划完成日期</Label>
-                  <Input
-                    type="date"
+                  <DateTextInput
                     value={formData.plannedEndDate}
-                    max={formData.deliveryDate || undefined}
-                    onChange={(e) => setFormData({ ...formData, plannedEndDate: e.target.value })}
+                    onChange={(value) => setFormData({ ...formData, plannedEndDate: value })}
                   />
                   {formData.deliveryDate && (
                     <p className="text-xs text-amber-600">交期 {formData.deliveryDate} 前</p>
@@ -912,18 +1230,16 @@ export default function ProductionOrdersPage() {
               <div className="grid grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>生产日期</Label>
-                  <Input
-                    type="date"
+                  <DateTextInput
                     value={formData.productionDate}
-                    onChange={(e) => handleProductionDateChange(e.target.value)}
+                    onChange={(value) => handleProductionDateChange(value)}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>有效期至</Label>
-                  <Input
-                    type="date"
+                  <DateTextInput
                     value={formData.expiryDate}
-                    onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                    onChange={(value) => setFormData({ ...formData, expiryDate: value })}
                     placeholder="根据保质期自动计算"
                   />
                   {formData.productId > 0 && (() => {
@@ -979,7 +1295,7 @@ export default function ProductionOrdersPage() {
                 <TooltipContent><p className="max-w-xs">{p.productSpecification}</p></TooltipContent>
               </Tooltip>
             ) : <span className="text-muted-foreground">-</span> },
-            { key: "plannedQty", title: "计划数量", className: "w-[90px] whitespace-nowrap", render: (p) => <span>{p.plannedQty} {p.unit}</span> },
+            { key: "plannedQty", title: "计划数量", className: "w-[120px] whitespace-nowrap", render: (p) => <span>{formatPlanQty(p.plannedQty)} {p.unit}</span> },
             { key: "plannedEndDate", title: "交期", className: "w-[90px] whitespace-nowrap", render: (p) => <span className="font-medium text-amber-600">{fmtDate(p.plannedEndDate)}</span> },
             { key: "salesOrderNo", title: "销售订单", className: "w-[120px] whitespace-nowrap", render: (p) => <span className="text-muted-foreground font-mono">{p.salesOrderNo || "内部计划"}</span> },
           ]}
@@ -998,8 +1314,8 @@ export default function ProductionOrdersPage() {
         <EntityPickerDialog
           open={productPickerOpen}
           onOpenChange={setProductPickerOpen}
-          title="选择产品"
-          searchPlaceholder="搜索产品编码、名称、规格..."
+          title={formData.orderType === "semi_finished" ? "选择半成品" : "选择产品"}
+          searchPlaceholder={formData.orderType === "semi_finished" ? "搜索半成品编码、名称、规格..." : "搜索产品编码、名称、规格..."}
           columns={[
             { key: "code", title: "产品编码", render: (p) => <span className="font-mono font-medium">{p.code}</span> },
             { key: "name", title: "产品名称", render: (p) => <span className="font-medium">{p.name}</span> },
@@ -1007,7 +1323,9 @@ export default function ProductionOrdersPage() {
             { key: "unit", title: "单位" },
             { key: "shelfLife", title: "保质期", render: (p) => <span>{p.shelfLife ? `${p.shelfLife}个月` : "-"}</span> },
           ]}
-          rows={(productsData as any[]).filter((p: any) => p.status === "active" && p.sourceType === "production")}
+          rows={formData.orderType === "semi_finished"
+            ? eligibleSemiFinishedProducts
+            : (productsData as any[]).filter((p: any) => p.status === "active" && p.sourceType === "production")}
           selectedId={formData.productId ? String(formData.productId) : ""}
           filterFn={(p, q) => {
             const lower = q.toLowerCase();
@@ -1021,7 +1339,7 @@ export default function ProductionOrdersPage() {
         {/* 查看详情 */}
 {selectedRecord && (
   <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-    <DraggableDialogContent>
+    <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
       <div className="border-b pb-3">
         <h2 className="text-lg font-semibold">生产指令详情</h2>
         <p className="text-sm text-muted-foreground">
@@ -1070,10 +1388,10 @@ export default function ProductionOrdersPage() {
             <Progress value={(Number(selectedRecord.completedQty || 0) / Number(selectedRecord.plannedQty)) * 100} className="h-2" />
             <div className="flex justify-between text-sm">
               <span className="font-medium">
-                {Number(selectedRecord.completedQty || 0).toLocaleString()} / <span className="text-muted-foreground">{Number(selectedRecord.plannedQty).toLocaleString()} {selectedRecord.unit}</span>
+                {formatPlanQty(selectedRecord.completedQty || 0)} / <span className="text-muted-foreground">{formatPlanQty(selectedRecord.plannedQty)} {selectedRecord.unit}</span>
               </span>
               <span className="font-bold text-lg">
-                {((Number(selectedRecord.completedQty || 0) / Number(selectedRecord.plannedQty)) * 100).toFixed(1)}%
+                {Math.round((Number(selectedRecord.completedQty || 0) / Number(selectedRecord.plannedQty)) * 100)}%
               </span>
             </div>
           </div>
@@ -1105,15 +1423,19 @@ export default function ProductionOrdersPage() {
 
       <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
         <div className="flex gap-2 flex-wrap">
-          {selectedRecord.status === "planned" && (
-            <Button size="sm" onClick={() => handleStatusChange(selectedRecord, "in_progress")}><Play className="h-4 w-4 mr-2" />开始生产</Button>
-          )}
           {selectedRecord.status === "in_progress" && (
             <Button size="sm" onClick={() => handleStatusChange(selectedRecord, "completed")}><CheckCircle className="h-4 w-4 mr-2" />完成生产</Button>
           )}
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+          {productionOrderPrintData ? (
+            <TemplatePrintPreviewButton
+              templateKey="production_order"
+              data={productionOrderPrintData}
+              title={`生产指令打印预览 - ${selectedRecord.orderNo}`}
+            />
+          ) : null}
           <Button variant="outline" size="sm" onClick={() => handlePrint(selectedRecord)}>🖨️ 打印</Button>
           <Button variant="outline" size="sm" onClick={() => handleEdit(selectedRecord)}>编辑</Button>
           {canDelete && (
@@ -1126,7 +1448,7 @@ export default function ProductionOrdersPage() {
 )}
       {/* 草稿库弹窗 */}
       <DraggableDialog open={draftLibOpen} onOpenChange={setDraftLibOpen} defaultWidth={860} defaultHeight={520}>
-        <DraggableDialogContent>
+        <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>📂 草稿库</DialogTitle>
           </DialogHeader>
@@ -1177,7 +1499,7 @@ export default function ProductionOrdersPage() {
                                 </Tooltip>
                               </TableCell>
                               <TableCell className="py-1.5 text-muted-foreground">{product?.specification || "-"}</TableCell>
-                              <TableCell className="py-1.5">{r.plannedQty} {r.unit || ""}</TableCell>
+                              <TableCell className="py-1.5">{formatPlanQty(r.plannedQty)} {r.unit || ""}</TableCell>
                               <TableCell className="py-1.5 text-amber-600 font-medium">{fmtDate(r.plannedEndDate)}</TableCell>
                               <TableCell className="py-1.5 text-muted-foreground">{fmtDate(r.createdAt)}</TableCell>
                               <TableCell className="py-1.5 text-right">

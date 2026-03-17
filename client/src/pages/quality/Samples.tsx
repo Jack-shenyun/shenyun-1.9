@@ -1,6 +1,6 @@
-import { formatDateValue } from "@/lib/formatters";
+import { formatDateValue, formatDisplayNumber } from "@/lib/formatters";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -41,10 +41,21 @@ import {
   Trash2,
   Eye,
   AlertTriangle,
+  RefreshCw,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface SampleRecord {
   id: number;
@@ -75,6 +86,13 @@ const statusMap: Record<string, any> = {
 
 const locationOptions = ["留样室A-01", "留样室A-02", "留样室A-03", "留样室B-01", "留样室B-02", "留样室C-01"];
 
+function formatQtyDisplay(value: unknown, digits = 4) {
+  if (value == null || value === "") return "-";
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  return formatDisplayNumber(num, { maximumFractionDigits: Math.min(digits, 2) });
+}
+
 export default function SamplesPage() {
   const { data: _dbData = [], isLoading, refetch } = trpc.samples.list.useQuery();
   const createMutation = trpc.samples.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
@@ -87,6 +105,9 @@ export default function SamplesPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editingSample, setEditingSample] = useState<SampleRecord | null>(null);
   const [viewingSample, setViewingSample] = useState<SampleRecord | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [sampleToDelete, setSampleToDelete] = useState<SampleRecord | null>(null);
   const { canDelete } = usePermission();
 
   const [formData, setFormData] = useState({
@@ -114,14 +135,23 @@ export default function SamplesPage() {
     const matchesStatus = statusFilter === "all" || s.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredSamples.length / pageSize));
+  const paginatedSamples = filteredSamples.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, samples.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleAdd = () => {
     setEditingSample(null);
     const today = new Date();
-    const dateStr = today.toISOString().split("T")[0].replace(/-/g, "").substring(0, 8);
-    const nextNo = samples.length + 1;
     setFormData({
-      sampleNo: `SP-${dateStr.substring(0, 4)}-${String(nextNo).padStart(4, "0")}`,
+      sampleNo: "",
       productName: "",
       productCode: "",
       batchNo: "",
@@ -170,8 +200,8 @@ export default function SamplesPage() {
       toast.error("您没有删除权限", { description: "只有管理员可以删除留样记录" });
       return;
     }
-    deleteMutation.mutate({ id: sample.id });
-    toast.success("留样记录已删除");
+    setSampleToDelete(sample);
+    setDeleteDialogOpen(true);
   };
 
   const handleDestroy = (sample: SampleRecord) => {
@@ -179,20 +209,47 @@ export default function SamplesPage() {
   };
 
   const handleSubmit = () => {
-    if (!formData.sampleNo || !formData.productName || !formData.batchNo) {
-      toast.error("请填写必填项", { description: "留样编号、产品名称、批次号为必填" });
+    if (!formData.productName || !formData.batchNo) {
+      toast.error("请填写必填项", { description: "产品名称、批次号为必填" });
       return;
     }
 
     if (editingSample) {
-      toast.success("留样记录已更新");
+      updateMutation.mutate({
+        id: editingSample.id,
+        data: {
+          productName: formData.productName,
+          productCode: formData.productCode || undefined,
+          batchNo: formData.batchNo,
+          quantity: formData.quantity || undefined,
+          unit: formData.unit || undefined,
+          location: formData.location || undefined,
+          retainDate: formData.retainDate || undefined,
+          expiryDate: formData.expiryDate || undefined,
+          retainPeriod: formData.retainPeriod,
+          retainBy: formData.retainBy || undefined,
+          status: formData.status as any,
+          observationRecords: formData.observationRecords || undefined,
+          remarks: formData.remarks || undefined,
+        },
+      });
     } else {
-      const newSample: SampleRecord = {
-        id: Math.max(...samples.map((s: any) => s.id)) + 1,
-        ...formData,
-        status: formData.status as SampleRecord["status"],
-      };
-      toast.success("留样记录创建成功");
+      createMutation.mutate({
+        sampleNo: formData.sampleNo || undefined,
+        productName: formData.productName,
+        productCode: formData.productCode || undefined,
+        batchNo: formData.batchNo,
+        quantity: formData.quantity || undefined,
+        unit: formData.unit || undefined,
+        location: formData.location || undefined,
+        retainDate: formData.retainDate || undefined,
+        expiryDate: formData.expiryDate || undefined,
+        retainPeriod: formData.retainPeriod,
+        retainBy: formData.retainBy || undefined,
+        status: formData.status as any,
+        observationRecords: formData.observationRecords || undefined,
+        remarks: formData.remarks || undefined,
+      });
     }
     setDialogOpen(false);
   };
@@ -235,10 +292,16 @@ export default function SamplesPage() {
               <p className="text-sm text-muted-foreground">建立完整的产品留样台账，支持留样登记、查询和销毁管理</p>
             </div>
           </div>
-          <Button onClick={handleAdd}>
-            <Plus className="h-4 w-4 mr-1" />
-            新建留样
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4 mr-1" />
+              刷新
+            </Button>
+            <Button onClick={handleAdd}>
+              <Plus className="h-4 w-4 mr-1" />
+              新建留样
+            </Button>
+          </div>
         </div>
 
         {/* 统计卡片 */}
@@ -315,7 +378,7 @@ export default function SamplesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredSamples.map((sample: any) => {
+                {paginatedSamples.map((sample: any) => {
                   const expiry = new Date(sample.expiryDate);
                   const today = new Date();
                   const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -326,7 +389,7 @@ export default function SamplesPage() {
                       <TableCell className="text-center font-medium">{sample.sampleNo}</TableCell>
                       <TableCell className="text-center">{sample.productName}</TableCell>
                       <TableCell className="text-center">{sample.batchNo}</TableCell>
-                      <TableCell className="text-center">{sample.quantity} {sample.unit}</TableCell>
+                      <TableCell className="text-center">{formatQtyDisplay(sample.quantity)} {sample.unit}</TableCell>
                       <TableCell className="text-center">{sample.location}</TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center gap-1">
@@ -376,14 +439,38 @@ export default function SamplesPage() {
                     </TableRow>
                   );
                 })}
+                {paginatedSamples.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      {isLoading ? "加载中..." : "暂无数据"}
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
 
+        {filteredSamples.length > 0 && (
+          <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3">
+            <div className="text-sm text-muted-foreground">
+              显示 {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredSamples.length)} 条，
+              共 {filteredSamples.length} 条，第 {currentPage} / {totalPages} 页
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={currentPage === 1}>
+                上一页
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={currentPage === totalPages}>
+                下一页
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* 新建/编辑对话框 */}
         <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DraggableDialogContent>
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingSample ? "编辑留样记录" : "新建留样记录"}</DialogTitle>
               <DialogDescription>
@@ -397,7 +484,8 @@ export default function SamplesPage() {
                   <Input
                     value={formData.sampleNo}
                     onChange={(e) => setFormData({ ...formData, sampleNo: e.target.value })}
-                    placeholder="留样编号"
+                    placeholder="保存后系统生成"
+                    readOnly
                   />
                 </div>
                 <div className="space-y-2">
@@ -578,7 +666,7 @@ export default function SamplesPage() {
 
         {/* 查看详情对话框 */}
 <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-  <DraggableDialogContent>
+  <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
     {viewingSample && (
       <>
         <div className="border-b pb-3">
@@ -600,7 +688,7 @@ export default function SamplesPage() {
               <div>
                 <FieldRow label="产品名称">{viewingSample.productName}</FieldRow>
                 <FieldRow label="批次号">{viewingSample.batchNo}</FieldRow>
-                <FieldRow label="留样数量">{viewingSample.quantity} {viewingSample.unit}</FieldRow>
+                <FieldRow label="留样数量">{formatQtyDisplay(viewingSample.quantity)} {viewingSample.unit}</FieldRow>
                 <FieldRow label="留样人">{viewingSample.retainBy || "-"}</FieldRow>
               </div>
               <div>
@@ -654,6 +742,33 @@ export default function SamplesPage() {
     )}
   </DraggableDialogContent>
 </DraggableDialog>
+
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认删除</AlertDialogTitle>
+              <AlertDialogDescription>
+                确认删除留样记录 {sampleToDelete?.sampleNo || ""} 吗？此操作无法撤销。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setSampleToDelete(null)}>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (sampleToDelete) {
+                    deleteMutation.mutate({ id: sampleToDelete.id });
+                    toast.success("留样记录已删除");
+                  }
+                  setDeleteDialogOpen(false);
+                  setSampleToDelete(null);
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                确认删除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </ERPLayout>
   );

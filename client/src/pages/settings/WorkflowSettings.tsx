@@ -70,6 +70,7 @@ type WorkflowRecord = {
   name: string;
   module: string;
   formType: string;
+  flowMode: "approval" | "notice";
   initiators: string | null;
   approvalSteps: string | null;
   handlers: string | null;
@@ -88,6 +89,16 @@ type UserOption = {
   searchValue: string;
 };
 
+const WORKFLOW_INITIATOR_TOKEN = "__WORKFLOW_INITIATOR__";
+
+const WORKFLOW_INITIATOR_OPTION: UserOption = {
+  id: WORKFLOW_INITIATOR_TOKEN,
+  name: "流程发起人",
+  department: "系统变量",
+  label: "流程发起人",
+  searchValue: "流程发起人 系统变量 发起人",
+};
+
 type FormCatalogRecord = {
   id: number;
   module: string;
@@ -96,6 +107,7 @@ type FormCatalogRecord = {
   path: string | null;
   sortOrder: number;
   status: "active" | "inactive";
+  approvalEnabled?: boolean;
   createdAt?: string | Date;
   updatedAt?: string | Date;
 };
@@ -105,6 +117,7 @@ type WorkflowFormState = {
   module: string;
   formType: string;
   name: string;
+  flowMode: "approval" | "notice";
   initiators: string[];
   approvalSteps: string[];
   handlers: string[];
@@ -113,6 +126,10 @@ type WorkflowFormState = {
 };
 
 const WORKFLOW_RULE_NOTE = "基本原则：如果发起人与当前审批步骤的审批人为同一人，创建后自动审核，系统直接流转到下一步，不需要再次确认。";
+const FLOW_MODE_LABEL: Record<"approval" | "notice", string> = {
+  approval: "审批流程",
+  notice: "通知流程",
+};
 
 function parseJsonList(raw: unknown) {
   if (!raw) return [] as string[];
@@ -140,6 +157,7 @@ function normalizeUserToken(value: string) {
 
 function parseStoredUserIds(raw: unknown, userIdMap: Map<string, UserOption>, userNameMap: Map<string, UserOption>) {
   return uniqueStrings(parseJsonList(raw)).flatMap((item) => {
+    if (item === WORKFLOW_INITIATOR_TOKEN) return [item];
     if (userIdMap.has(item)) return [item];
     const normalized = normalizeUserToken(item);
     const matched = userNameMap.get(item) || userNameMap.get(normalized);
@@ -148,6 +166,7 @@ function parseStoredUserIds(raw: unknown, userIdMap: Map<string, UserOption>, us
 }
 
 function resolveUserLabel(raw: string, userIdMap: Map<string, UserOption>, userNameMap: Map<string, UserOption>) {
+  if (raw === WORKFLOW_INITIATOR_TOKEN) return WORKFLOW_INITIATOR_OPTION.label;
   if (userIdMap.has(raw)) return userIdMap.get(raw)?.label || raw;
   const normalized = normalizeUserToken(raw);
   return userNameMap.get(raw)?.label || userNameMap.get(normalized)?.label || raw;
@@ -175,6 +194,7 @@ function UserMultiSelect({
   label,
   value,
   options,
+  extraOptions,
   onChange,
   helperText,
   ordered = false,
@@ -182,11 +202,16 @@ function UserMultiSelect({
   label: string;
   value: string[];
   options: UserOption[];
+  extraOptions?: UserOption[];
   onChange: (next: string[]) => void;
   helperText?: string;
   ordered?: boolean;
 }) {
-  const optionsById = useMemo(() => new Map(options.map((item) => [item.id, item])), [options]);
+  const mergedOptions = useMemo(
+    () => [...(extraOptions || []), ...options],
+    [extraOptions, options],
+  );
+  const optionsById = useMemo(() => new Map(mergedOptions.map((item) => [item.id, item])), [mergedOptions]);
   const selectedItems = value.map((id) => optionsById.get(id)).filter(Boolean) as UserOption[];
 
   const toggleValue = (id: string) => {
@@ -220,7 +245,7 @@ function UserMultiSelect({
             <CommandList className="max-h-[280px]">
               <CommandEmpty>未找到人员</CommandEmpty>
               <CommandGroup>
-                {options.map((option) => {
+                {mergedOptions.map((option) => {
                   const checked = value.includes(option.id);
                   return (
                     <CommandItem
@@ -282,7 +307,7 @@ function UserMultiSelect({
 export default function WorkflowSettingsPage() {
   const { user } = useAuth();
   const isAdmin = String((user as any)?.role ?? "") === "admin";
-  const { data: formCatalogData = [] } = trpc.workflowSettings.formCatalog.useQuery({ status: "active", approvalEnabled: true });
+  const { data: formCatalogData = [] } = trpc.workflowSettings.formCatalog.useQuery({ status: "active" });
   const { data: workflowData = [], isLoading, refetch } = trpc.workflowSettings.list.useQuery();
   const { data: users = [] } = trpc.users.list.useQuery();
   const createMutation = trpc.workflowSettings.create.useMutation();
@@ -331,6 +356,7 @@ export default function WorkflowSettingsPage() {
     module: moduleOptions[0] || "通用",
     formType: "",
     name: "",
+    flowMode: "approval",
     initiators: [],
     approvalSteps: [],
     handlers: [],
@@ -381,6 +407,7 @@ export default function WorkflowSettingsPage() {
       module: defaultModule,
       formType: defaultType,
       name: defaultForms[0] || "",
+      flowMode: "approval",
       initiators: [],
       approvalSteps: [],
       handlers: [],
@@ -395,7 +422,7 @@ export default function WorkflowSettingsPage() {
       return;
     }
     if (formCatalog.length === 0) {
-      toast.error("暂无可配置表单", { description: "请先在具体表单页面开启“开始审批流程”" });
+      toast.error("暂无可配置表单", { description: "请先补齐流程目录表单" });
       return;
     }
     resetForm();
@@ -413,6 +440,7 @@ export default function WorkflowSettingsPage() {
       module: record.module,
       formType: record.formType,
       name: record.name,
+      flowMode: record.flowMode || "approval",
       initiators: parseStoredUserIds(record.initiators, userIdMap, userNameMap),
       approvalSteps: parseStoredUserIds(record.approvalSteps, userIdMap, userNameMap),
       handlers: parseStoredUserIds(record.handlers, userIdMap, userNameMap),
@@ -460,8 +488,12 @@ export default function WorkflowSettingsPage() {
       toast.error("请选择发起人");
       return;
     }
-    if (formData.approvalSteps.length === 0) {
+    if (formData.flowMode === "approval" && formData.approvalSteps.length === 0) {
       toast.error("请选择审核步骤");
+      return;
+    }
+    if (formData.handlers.length === 0) {
+      toast.error(formData.flowMode === "notice" ? "请选择通知对象" : "请选择审核后处理对象");
       return;
     }
 
@@ -470,8 +502,9 @@ export default function WorkflowSettingsPage() {
       name: formData.name,
       module: formData.module,
       formType: formData.formType,
+      flowMode: formData.flowMode,
       initiators: JSON.stringify(formData.initiators),
-      approvalSteps: JSON.stringify(formData.approvalSteps),
+      approvalSteps: formData.flowMode === "approval" ? JSON.stringify(formData.approvalSteps) : undefined,
       handlers: formData.handlers.length > 0 ? JSON.stringify(formData.handlers) : undefined,
       ccRecipients: formData.ccRecipients.length > 0 ? JSON.stringify(formData.ccRecipients) : undefined,
       description: WORKFLOW_RULE_NOTE,
@@ -480,10 +513,10 @@ export default function WorkflowSettingsPage() {
 
     if (editingRecord) {
       await updateMutation.mutateAsync({ id: editingRecord.id, data: payload });
-      toast.success("审批流程已更新");
+      toast.success("流程已更新");
     } else {
       await createMutation.mutateAsync(payload);
-      toast.success("审批流程已创建");
+      toast.success("流程已创建");
     }
     setDialogOpen(false);
     await refetch();
@@ -499,7 +532,7 @@ export default function WorkflowSettingsPage() {
             </div>
             <div>
               <h2 className="text-xl font-bold tracking-tight">审批流程设置</h2>
-              <p className="text-sm text-muted-foreground">统一定义发起、审批、后续处理和流程结束抄送标准</p>
+              <p className="text-sm text-muted-foreground">统一定义发起、审批或通知、后续处理和流程结束抄送标准</p>
             </div>
           </div>
           <Button onClick={handleAdd} disabled={!isAdmin}>
@@ -550,8 +583,8 @@ export default function WorkflowSettingsPage() {
             </CardHeader>
               <CardContent className="space-y-1.5 pt-0 text-sm text-slate-600">
               <p>1. 表单类型和表单从数据库表单库中选择，不手填。</p>
-              <p>2. 发起、审核、处理、抄送对象从用户设置中选择，可多选。</p>
-              <p>3. 审核步骤按选择顺序执行，前一步完成后才进入下一步。</p>
+              <p>2. 发起、审核、通知对象都从用户设置中选择，可直接选到具体某个人。</p>
+              <p>3. 审批流程按审核步骤顺序执行；通知流程跳过审批，直接给通知对象生成待办。</p>
             </CardContent>
           </Card>
         </div>
@@ -606,6 +639,7 @@ export default function WorkflowSettingsPage() {
                     <TableHead className="text-center font-bold whitespace-nowrap">模块</TableHead>
                     <TableHead className="text-center font-bold whitespace-nowrap">表单类型</TableHead>
                     <TableHead className="text-center font-bold whitespace-nowrap">表单</TableHead>
+                  <TableHead className="text-center font-bold whitespace-nowrap">流程模式</TableHead>
                   <TableHead className="text-center font-bold">发起人</TableHead>
                     <TableHead className="text-center font-bold">审核步骤</TableHead>
                     <TableHead className="text-center font-bold">审核后处理</TableHead>
@@ -617,11 +651,11 @@ export default function WorkflowSettingsPage() {
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">加载中...</TableCell>
+                      <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">加载中...</TableCell>
                     </TableRow>
                   ) : filteredRecords.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">暂无审批流程模板</TableCell>
+                      <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">暂无流程模板</TableCell>
                     </TableRow>
                   ) : filteredRecords.map((record) => (
                     <TableRow key={record.id}>
@@ -629,8 +663,13 @@ export default function WorkflowSettingsPage() {
                       <TableCell className="text-center">{record.module}</TableCell>
                       <TableCell className="text-center">{record.formType}</TableCell>
                       <TableCell className="text-center font-medium">{record.name}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="outline">{FLOW_MODE_LABEL[record.flowMode || "approval"]}</Badge>
+                      </TableCell>
                       <TableCell className="text-center">{renderSelectionPreview(readDisplayList(record.initiators))}</TableCell>
-                      <TableCell className="text-center">{renderSelectionPreview(readDisplayList(record.approvalSteps))}</TableCell>
+                      <TableCell className="text-center">
+                        {record.flowMode === "notice" ? <span className="text-muted-foreground">-</span> : renderSelectionPreview(readDisplayList(record.approvalSteps))}
+                      </TableCell>
                       <TableCell className="text-center">{renderSelectionPreview(readDisplayList(record.handlers))}</TableCell>
                       <TableCell className="text-center">{renderSelectionPreview(readDisplayList(record.ccRecipients))}</TableCell>
                       <TableCell className="text-center">
@@ -677,13 +716,13 @@ export default function WorkflowSettingsPage() {
           <DraggableDialogContent>
             <div className="space-y-6 p-1">
               <DialogHeader>
-                <DialogTitle>{editingRecord ? "编辑审批流程" : "新增审批流程"}</DialogTitle>
+                <DialogTitle>{editingRecord ? "编辑流程" : "新增流程"}</DialogTitle>
                 <p className="text-sm text-muted-foreground">
                   使用数据库表单库和用户库配置流程，不再手工输入审批人文本。
                 </p>
               </DialogHeader>
 
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <div className="space-y-2">
                   <Label>流程编码</Label>
                   <Input value={formData.code} readOnly className="bg-slate-50" />
@@ -721,6 +760,23 @@ export default function WorkflowSettingsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2">
+                  <Label>流程模式 *</Label>
+                  <Select
+                    value={formData.flowMode}
+                    onValueChange={(value: "approval" | "notice") => setFormData((prev) => ({
+                      ...prev,
+                      flowMode: value,
+                      approvalSteps: value === "notice" ? [] : prev.approvalSteps,
+                    }))}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="approval">审批流程</SelectItem>
+                      <SelectItem value="notice">通知流程</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="grid gap-4 xl:grid-cols-2">
@@ -731,27 +787,39 @@ export default function WorkflowSettingsPage() {
                   onChange={(next) => setFormData((prev) => ({ ...prev, initiators: next }))}
                   helperText="从用户设置中选择可发起该流程的人员，可多选。"
                 />
+                {formData.flowMode === "approval" ? (
+                  <UserMultiSelect
+                    label="审核步骤 *"
+                    value={formData.approvalSteps}
+                    options={userOptions}
+                    onChange={(next) => setFormData((prev) => ({ ...prev, approvalSteps: next }))}
+                    helperText="按选择顺序执行；如果发起人与当前审批人是同一人，则自动跳过该审批步骤。"
+                    ordered
+                  />
+                ) : (
+                  <Card className="border-dashed border-primary/30 bg-primary/5">
+                    <CardContent className="pt-6 text-sm text-slate-600">
+                      <div className="flex items-start gap-2">
+                        <Info className="mt-0.5 h-4 w-4 text-primary" />
+                        <p>通知流程不走审批，提交后会直接给下方“通知对象”生成待办。</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
                 <UserMultiSelect
-                  label="审核步骤 *"
-                  value={formData.approvalSteps}
-                  options={userOptions}
-                  onChange={(next) => setFormData((prev) => ({ ...prev, approvalSteps: next }))}
-                  helperText="按选择顺序执行；如果发起人与当前审批人是同一人，则自动跳过该审批步骤。"
-                  ordered
-                />
-                <UserMultiSelect
-                  label="审核后处理对象"
+                  label={formData.flowMode === "notice" ? "通知对象 *" : "审核后处理对象 *"}
                   value={formData.handlers}
                   options={userOptions}
                   onChange={(next) => setFormData((prev) => ({ ...prev, handlers: next }))}
-                  helperText="审批完成后需要继续处理该表单的人员。"
+                  helperText={formData.flowMode === "notice" ? "可直接选择到具体某个人，提交后该人员会收到待办。" : "审批完成后需要继续处理该表单的人员。"}
                 />
                 <UserMultiSelect
                   label="流程结束抄送"
                   value={formData.ccRecipients}
                   options={userOptions}
+                  extraOptions={[WORKFLOW_INITIATOR_OPTION]}
                   onChange={(next) => setFormData((prev) => ({ ...prev, ccRecipients: next }))}
-                  helperText="流程结束后自动接收通知的人员。"
+                  helperText="流程结束后自动接收通知的人员；也可选择“流程发起人”。"
                 />
               </div>
 
@@ -821,6 +889,9 @@ export default function WorkflowSettingsPage() {
             <div>
               <FieldRow label="表单类型">{viewingRecord.formType}</FieldRow>
             </div>
+            <div>
+              <FieldRow label="流程模式">{FLOW_MODE_LABEL[viewingRecord.flowMode || "approval"]}</FieldRow>
+            </div>
           </div>
         </div>
 
@@ -857,16 +928,20 @@ export default function WorkflowSettingsPage() {
               </FieldRow>
             </div>
             <div>
-              <FieldRow label="审核步骤">
-                <div className="space-y-2 text-right">
-                  {readDisplayList(viewingRecord.approvalSteps).map((item, index) => (
-                    <div key={`${item}-${index}`} className="flex items-center justify-end gap-2 text-sm">
-                      <span>{index + 1}. {item}</span>
-                      <GitBranch className="h-4 w-4 text-primary shrink-0" />
-                    </div>
-                  ))}
-                </div>
-              </FieldRow>
+              {viewingRecord.flowMode === "approval" ? (
+                <FieldRow label="审核步骤">
+                  <div className="space-y-2 text-right">
+                    {readDisplayList(viewingRecord.approvalSteps).map((item, index) => (
+                      <div key={`${item}-${index}`} className="flex items-center justify-end gap-2 text-sm">
+                        <span>{index + 1}. {item}</span>
+                        <GitBranch className="h-4 w-4 text-primary shrink-0" />
+                      </div>
+                    ))}
+                  </div>
+                </FieldRow>
+              ) : (
+                <FieldRow label="审核步骤">-</FieldRow>
+              )}
             </div>
           </div>
         </div>

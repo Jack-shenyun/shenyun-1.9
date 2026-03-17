@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { trpc } from "@/lib/trpc";
 import { usePermission } from "@/hooks/usePermission";
+import { useCompanyBranding } from "@/hooks/useCompanyBranding";
 import { toast } from "sonner";
 import { Building2, Image as ImageIcon, Loader2, RefreshCw, Save, Upload } from "lucide-react";
 
@@ -50,6 +51,7 @@ function toBase64(file: File): Promise<string> {
 
 export default function CompanyInfoPage() {
   const { isAdmin } = usePermission();
+  const { companyShortName } = useCompanyBranding();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [formData, setFormData] = useState<CompanyFormData>(EMPTY_FORM);
   const [logoFileName, setLogoFileName] = useState("");
@@ -147,7 +149,7 @@ export default function CompanyInfoPage() {
             </div>
             <div>
               <h2 className="text-xl font-bold tracking-tight">公司信息</h2>
-              <p className="text-sm text-muted-foreground">用于打印模板和系统抬头统一显示（中英文）</p>
+              <p className="text-sm text-muted-foreground">{companyShortName} 的系统抬头、打印和品牌显示配置</p>
             </div>
           </div>
           <div className="flex items-center gap-2">

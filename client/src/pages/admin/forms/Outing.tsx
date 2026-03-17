@@ -75,7 +75,7 @@ export default function OutingPage() {
           { name: "remark", label: "备注", type: "textarea", span: 2 },
         ]}
         initialData={editingRecord || {
-          requestNo: `OUT-${new Date().getFullYear()}-${String(data.length + 1).padStart(4, "0")}`,
+          requestNo: "",
         }}
         onSubmit={handleSubmit}
       />

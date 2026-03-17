@@ -1,6 +1,6 @@
 import { formatDateValue } from "@/lib/formatters";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -42,9 +42,20 @@ import {
   Eye,
   CheckCircle,
   FileText,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface IncidentRecord {
   id: number;
@@ -97,6 +108,9 @@ export default function IncidentsPage() {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editingIncident, setEditingIncident] = useState<IncidentRecord | null>(null);
   const [viewingIncident, setViewingIncident] = useState<IncidentRecord | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [incidentToDelete, setIncidentToDelete] = useState<IncidentRecord | null>(null);
   const { canDelete } = usePermission();
 
   const [formData, setFormData] = useState({
@@ -128,14 +142,23 @@ export default function IncidentsPage() {
     const matchesStatus = statusFilter === "all" || i.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredIncidents.length / pageSize));
+  const paginatedIncidents = filteredIncidents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, incidents.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleAdd = () => {
     setEditingIncident(null);
     const today = new Date();
-    const year = today.getFullYear();
-    const nextNo = incidents.filter((i: any) => i.incidentNo.includes(String(year))).length + 1;
     setFormData({
-      incidentNo: `AE-${year}-${String(nextNo).padStart(3, "0")}`,
+      incidentNo: "",
       productName: "",
       productCode: "",
       batchNo: "",
@@ -192,8 +215,8 @@ export default function IncidentsPage() {
       toast.error("您没有删除权限", { description: "只有管理员可以删除不良事件记录" });
       return;
     }
-    deleteMutation.mutate({ id: incident.id });
-    toast.success("不良事件记录已删除");
+    setIncidentToDelete(incident);
+    setDeleteDialogOpen(true);
   };
 
   const handleStartInvestigation = (incident: IncidentRecord) => {
@@ -205,21 +228,55 @@ export default function IncidentsPage() {
   };
 
   const handleSubmit = () => {
-    if (!formData.incidentNo || !formData.productName || !formData.description) {
-      toast.error("请填写必填项", { description: "事件编号、产品名称、事件描述为必填" });
+    if (!formData.productName || !formData.description) {
+      toast.error("请填写必填项", { description: "产品名称、事件描述为必填" });
       return;
     }
 
     if (editingIncident) {
-      toast.success("不良事件记录已更新");
+      updateMutation.mutate({
+        id: editingIncident.id,
+        data: {
+          productName: formData.productName,
+          productCode: formData.productCode || undefined,
+          batchNo: formData.batchNo || undefined,
+          incidentType: formData.incidentType || undefined,
+          severity: formData.severity as any,
+          reportDate: formData.reportDate || undefined,
+          reportedBy: formData.reportedBy || undefined,
+          description: formData.description,
+          affectedQuantity: formData.affectedQuantity || undefined,
+          location: formData.location || undefined,
+          investigator: formData.investigator || undefined,
+          rootCause: formData.rootCause || undefined,
+          correctiveAction: formData.correctiveAction || undefined,
+          preventiveAction: formData.preventiveAction || undefined,
+          resolveDate: formData.resolveDate || undefined,
+          status: formData.status as any,
+          remarks: formData.remarks || undefined,
+        },
+      });
     } else {
-      const newIncident: IncidentRecord = {
-        id: Math.max(...incidents.map((i: any) => i.id)) + 1,
-        ...formData,
-        severity: formData.severity as IncidentRecord["severity"],
-        status: formData.status as IncidentRecord["status"],
-      };
-      toast.success("不良事件已上报");
+      createMutation.mutate({
+        incidentNo: formData.incidentNo || undefined,
+        productName: formData.productName,
+        productCode: formData.productCode || undefined,
+        batchNo: formData.batchNo || undefined,
+        incidentType: formData.incidentType || undefined,
+        severity: formData.severity as any,
+        reportDate: formData.reportDate || undefined,
+        reportedBy: formData.reportedBy || undefined,
+        description: formData.description,
+        affectedQuantity: formData.affectedQuantity || undefined,
+        location: formData.location || undefined,
+        investigator: formData.investigator || undefined,
+        rootCause: formData.rootCause || undefined,
+        correctiveAction: formData.correctiveAction || undefined,
+        preventiveAction: formData.preventiveAction || undefined,
+        resolveDate: formData.resolveDate || undefined,
+        status: formData.status as any,
+        remarks: formData.remarks || undefined,
+      });
     }
     setDialogOpen(false);
   };
@@ -255,10 +312,16 @@ export default function IncidentsPage() {
               <p className="text-sm text-muted-foreground">建立产品不良事件的上报、调查和处理流程</p>
             </div>
           </div>
-          <Button onClick={handleAdd}>
-            <Plus className="h-4 w-4 mr-1" />
-            上报事件
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4 mr-1" />
+              刷新
+            </Button>
+            <Button onClick={handleAdd}>
+              <Plus className="h-4 w-4 mr-1" />
+              上报事件
+            </Button>
+          </div>
         </div>
 
         {/* 统计卡片 */}
@@ -335,7 +398,7 @@ export default function IncidentsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredIncidents.map((incident: any) => (
+                {paginatedIncidents.map((incident: any) => (
                   <TableRow key={incident.id}>
                     <TableCell className="text-center font-medium">{incident.incidentNo}</TableCell>
                     <TableCell className="text-center">{incident.productName}</TableCell>
@@ -394,14 +457,38 @@ export default function IncidentsPage() {
                     </TableCell>
                   </TableRow>
                 ))}
+                {paginatedIncidents.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      {isLoading ? "加载中..." : "暂无数据"}
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
 
+        {filteredIncidents.length > 0 && (
+          <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3">
+            <div className="text-sm text-muted-foreground">
+              显示 {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredIncidents.length)} 条，
+              共 {filteredIncidents.length} 条，第 {currentPage} / {totalPages} 页
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={currentPage === 1}>
+                上一页
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={currentPage === totalPages}>
+                下一页
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* 新建/编辑对话框 */}
         <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DraggableDialogContent>
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingIncident ? "编辑不良事件" : "上报不良事件"}</DialogTitle>
               <DialogDescription>
@@ -415,7 +502,8 @@ export default function IncidentsPage() {
                   <Input
                     value={formData.incidentNo}
                     onChange={(e) => setFormData({ ...formData, incidentNo: e.target.value })}
-                    placeholder="事件编号"
+                    placeholder="保存后系统生成"
+                    readOnly
                   />
                 </div>
                 <div className="space-y-2">
@@ -625,7 +713,7 @@ export default function IncidentsPage() {
         {/* 查看详情对话框 */}
 {viewingIncident && (
 <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-  <DraggableDialogContent>
+  <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
     <div className="border-b pb-3">
       <h2 className="text-lg font-semibold">不良事件详情</h2>
       <p className="text-sm text-muted-foreground">
@@ -719,6 +807,32 @@ export default function IncidentsPage() {
   </DraggableDialogContent>
 </DraggableDialog>
 )}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认删除</AlertDialogTitle>
+              <AlertDialogDescription>
+                确认删除不良事件 {incidentToDelete?.incidentNo || ""} 吗？此操作无法撤销。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setIncidentToDelete(null)}>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (incidentToDelete) {
+                    deleteMutation.mutate({ id: incidentToDelete.id });
+                    toast.success("不良事件记录已删除");
+                  }
+                  setDeleteDialogOpen(false);
+                  setIncidentToDelete(null);
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                确认删除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </ERPLayout>
   );

@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
+import PrintPreviewButton from "@/components/PrintPreviewButton";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { SignatureStatusCard, SignatureRecord } from "@/components/ElectronicSignature";
-import { ClipboardList, FileCheck, Plus, Search, Edit, Trash2, Eye, MoreHorizontal } from "lucide-react";
+import { ClipboardList, FileCheck, Plus, Search, Edit, Trash2, Eye, MoreHorizontal, RefreshCw, ArrowLeft, Save } from "lucide-react";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -37,6 +39,16 @@ import {
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
 import { formatDateValue } from "@/lib/formatters";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface InspectionItem {
   name: string;
@@ -46,7 +58,7 @@ interface InspectionItem {
 }
 
 interface IPQCRecord {
-  id: number;
+  id: number | string;
   inspectionNo: string;
   productCode: string;
   productName: string;
@@ -60,6 +72,7 @@ interface IPQCRecord {
   remarks: string;
   inspectionItems: InspectionItem[];
   signatures?: SignatureRecord[];
+  sourceType?: "quality" | "production";
 }
 
 const statusMap: Record<string, any> = {
@@ -104,10 +117,13 @@ function dbToDisplay(record: any): IPQCRecord {
     remarks: extra.remarks || "",
     inspectionItems: extra.inspectionItems || [],
     signatures: extra.signatures || [],
+    sourceType: extra.sourceType === "production_record" ? "production" : "quality",
   };
 }
 
 export default function IPQCPage() {
+  const formPrintRef = useRef<HTMLDivElement>(null);
+  const detailPrintRef = useRef<HTMLDivElement>(null);
   const { data: _dbData = [], isLoading, refetch } = trpc.qualityInspections.list.useQuery({ type: "IPQC" });
   const createMutation = trpc.qualityInspections.create.useMutation({
     onSuccess: () => { refetch(); toast.success("检验记录已创建"); setFormDialogOpen(false); },
@@ -122,13 +138,20 @@ export default function IPQCPage() {
     onError: (e) => toast.error("删除失败", { description: e.message }),
   });
 
-  const data: IPQCRecord[] = (_dbData as any[]).map(dbToDisplay);
+  const data: IPQCRecord[] = useMemo(
+    () => (_dbData as any[]).map(dbToDisplay),
+    [_dbData]
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<IPQCRecord | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<IPQCRecord | null>(null);
+  const [activeTab, setActiveTab] = useState("items");
   const { canDelete } = usePermission();
 
   const [formData, setFormData] = useState({
@@ -153,10 +176,22 @@ export default function IPQCPage() {
     const matchesStatus = statusFilter === "all" || record.result === statusFilter;
     return matchesSearch && matchesStatus;
   });
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+  const paginatedData = filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, data.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleAdd = () => {
     setIsEditing(false);
     setSelectedRecord(null);
+    setActiveTab("items");
     setFormData({
       productCode: "",
       productName: "",
@@ -174,8 +209,13 @@ export default function IPQCPage() {
   };
 
   const handleEdit = (record: IPQCRecord) => {
+    if (record.sourceType === "production") {
+      toast.error("生产记录带入的首检记录不支持在此编辑");
+      return;
+    }
     setIsEditing(true);
     setSelectedRecord(record);
+    setActiveTab("items");
     setFormData({
       productCode: record.productCode,
       productName: record.productName,
@@ -198,11 +238,24 @@ export default function IPQCPage() {
   };
 
   const handleDelete = (record: IPQCRecord) => {
+    if (record.sourceType === "production") {
+      toast.error("生产记录带入的首检记录不支持删除");
+      return;
+    }
     if (!canDelete) {
       toast.error("您没有删除权限");
       return;
     }
-    deleteMutation.mutate({ id: record.id });
+    setRecordToDelete(record);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (recordToDelete) {
+      deleteMutation.mutate({ id: recordToDelete.id });
+    }
+    setDeleteDialogOpen(false);
+    setRecordToDelete(null);
   };
 
   const handleSubmit = () => {
@@ -303,6 +356,444 @@ export default function IPQCPage() {
       <span className="flex-1 text-sm text-right break-all">{children}</span>
     </div>
   );
+  const goBack = () => {
+    setFormDialogOpen(false);
+    setViewDialogOpen(false);
+  };
+
+  if (viewDialogOpen && selectedRecord) {
+    const signCount = selectedRecord.signatures?.filter((s: any) => s.status === "valid").length || 0;
+    return (
+      <ERPLayout>
+        <div className="flex flex-col h-full">
+          <div className="border-b bg-background px-6 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" onClick={goBack} className="gap-1 text-muted-foreground">
+                  <ArrowLeft className="w-4 h-4" />过程检验
+                </Button>
+                <span className="text-muted-foreground">/</span>
+                <span className="font-semibold">{selectedRecord.inspectionNo}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <PrintPreviewButton title={`过程检验详情 - ${selectedRecord.inspectionNo}`} targetRef={detailPrintRef} />
+                {selectedRecord.sourceType !== "production" ? (
+                  <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(selectedRecord); }}>
+                    <Edit className="h-3.5 w-3.5 mr-1.5" />编辑
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto">
+            <div ref={detailPrintRef} className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+              <Card>
+                <CardContent className="p-5 md:p-6">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h2 className="text-2xl font-bold">{selectedRecord.inspectionNo}</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">过程检验详情与结果汇总</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{inspectionTypeMap[selectedRecord.inspectionType] || selectedRecord.inspectionType}</Badge>
+                      <Badge
+                        variant={statusMap[selectedRecord.result]?.variant || "outline"}
+                        className={statusMap[selectedRecord.result]?.color || ""}
+                      >
+                        {statusMap[selectedRecord.result]?.label || selectedRecord.result}
+                      </Badge>
+                      {selectedRecord.sourceType === "production" ? (
+                        <Badge variant="outline" className="text-muted-foreground">生产带入</Badge>
+                      ) : signCount >= 2 ? (
+                        <Badge className="bg-green-100 text-green-800">
+                          <FileCheck className="h-3 w-3 mr-1" />
+                          已完成
+                        </Badge>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
+                    <div className="mb-3 text-sm font-medium">基础信息</div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      <FieldRow label="产品名称">{selectedRecord.productName}</FieldRow>
+                      <FieldRow label="产品编码">{selectedRecord.productCode || "-"}</FieldRow>
+                      <FieldRow label="批次号">{selectedRecord.batchNo}</FieldRow>
+                      <FieldRow label="工序">{selectedRecord.process}</FieldRow>
+                      <FieldRow label="检验类型">{inspectionTypeMap[selectedRecord.inspectionType] || selectedRecord.inspectionType}</FieldRow>
+                      <FieldRow label="检验日期">{formatDateValue(selectedRecord.inspectionDate)}</FieldRow>
+                      <FieldRow label="检验员">{selectedRecord.inspector || "-"}</FieldRow>
+                      <FieldRow label="工位">{selectedRecord.workstation || "-"}</FieldRow>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-5 md:p-6">
+                  <Tabs defaultValue="items" className="w-full">
+                    <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
+                      <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                        检验项目
+                      </TabsTrigger>
+                      <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                        电子签名
+                      </TabsTrigger>
+                      <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                        备注
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="items" className="mt-5">
+                      {selectedRecord.inspectionItems.length > 0 ? (
+                        <div className="overflow-hidden rounded-lg border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-12">#</TableHead>
+                                <TableHead>检验项目</TableHead>
+                                <TableHead>检验标准</TableHead>
+                                <TableHead>检验结果</TableHead>
+                                <TableHead className="w-[140px]">结论</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {selectedRecord.inspectionItems.map((item, index) => (
+                                <TableRow key={index}>
+                                  <TableCell className="text-muted-foreground">{index + 1}</TableCell>
+                                  <TableCell className="font-medium">{item.name}</TableCell>
+                                  <TableCell className="text-sm text-muted-foreground">{item.standard || "-"}</TableCell>
+                                  <TableCell>{item.result || "-"}</TableCell>
+                                  <TableCell>
+                                    <Badge
+                                      variant="outline"
+                                      className={item.conclusion === "qualified" ? "text-green-600" : item.conclusion === "unqualified" ? "text-red-600" : "text-gray-600"}
+                                    >
+                                      {item.conclusion === "qualified" ? "合格" : item.conclusion === "unqualified" ? "不合格" : "待定"}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-dashed bg-muted/10 p-8 text-center text-sm text-muted-foreground">
+                          暂无检验项目
+                        </div>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="signatures" className="mt-5">
+                      {selectedRecord.sourceType === "production" ? (
+                        <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+                          <div className="text-sm">生产带入记录不在此维护电子签名</div>
+                        </div>
+                      ) : (
+                        <SignatureStatusCard
+                          documentType="IPQC"
+                          documentNo={selectedRecord.inspectionNo}
+                          documentId={selectedRecord.id as number}
+                          signatures={selectedRecord.signatures || []}
+                          onSignComplete={handleSignComplete}
+                        />
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="notes" className="mt-5">
+                      <div className="rounded-lg border bg-muted/10 p-4 text-sm whitespace-pre-wrap">
+                        {selectedRecord.remarks || "暂无备注"}
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </ERPLayout>
+    );
+  }
+
+  if (formDialogOpen) {
+    return (
+      <ERPLayout>
+        <div className="flex flex-col h-full">
+          <div className="border-b bg-background px-6 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" onClick={goBack} className="gap-1 text-muted-foreground">
+                  <ArrowLeft className="w-4 h-4" />过程检验
+                </Button>
+                <span className="text-muted-foreground">/</span>
+                <span className="font-semibold">{isEditing && selectedRecord ? selectedRecord.inspectionNo : "新建"}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <PrintPreviewButton
+                  title={isEditing && selectedRecord ? `过程检验表单 - ${selectedRecord.inspectionNo}` : "新建过程检验"}
+                  targetRef={formPrintRef}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSubmit}
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  <Save className="w-3.5 h-3.5 mr-1.5" />
+                  {createMutation.isPending || updateMutation.isPending ? "保存中..." : "保存"}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto">
+            <div ref={formPrintRef} className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+              <Card>
+                <CardContent className="p-5 md:p-6">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h2 className="text-2xl font-bold">{isEditing && selectedRecord ? selectedRecord.inspectionNo : "新建过程检验"}</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">统一录入过程检验基础信息、检验项目与检验结论</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{inspectionTypeMap[formData.inspectionType] || formData.inspectionType}</Badge>
+                      <Badge variant={statusMap[formData.result]?.variant || "outline"} className={statusMap[formData.result]?.color || ""}>
+                        {statusMap[formData.result]?.label || formData.result}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
+                    <div className="mb-3 text-sm font-medium">基础信息</div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label>产品编码</Label>
+                        <Input
+                          value={formData.productCode}
+                          onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
+                          placeholder="如: MD-001"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>产品名称 *</Label>
+                        <Input
+                          value={formData.productName}
+                          onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
+                          placeholder="输入产品名称"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>批次号 *</Label>
+                        <Input
+                          value={formData.batchNo}
+                          onChange={(e) => setFormData({ ...formData, batchNo: e.target.value })}
+                          placeholder="输入批次号"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>工序 *</Label>
+                        <Input
+                          value={formData.process}
+                          onChange={(e) => setFormData({ ...formData, process: e.target.value })}
+                          placeholder="如: 注塑成型、组装、包装"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>检验类型</Label>
+                        <Select
+                          value={formData.inspectionType}
+                          onValueChange={(v) => setFormData({ ...formData, inspectionType: v as IPQCRecord["inspectionType"] })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="first">首检</SelectItem>
+                            <SelectItem value="patrol">巡检</SelectItem>
+                            <SelectItem value="final">末检</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>工位</Label>
+                        <Input
+                          value={formData.workstation}
+                          onChange={(e) => setFormData({ ...formData, workstation: e.target.value })}
+                          placeholder="如: 注塑车间-1号机"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>检验日期</Label>
+                        <Input
+                          type="date"
+                          value={formData.inspectionDate}
+                          onChange={(e) => setFormData({ ...formData, inspectionDate: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>检验员</Label>
+                        <Input
+                          value={formData.inspector}
+                          onChange={(e) => setFormData({ ...formData, inspector: e.target.value })}
+                          placeholder="输入检验员姓名"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>检验结果</Label>
+                        <Select
+                          value={formData.result}
+                          onValueChange={(v) => setFormData({ ...formData, result: v as IPQCRecord["result"] })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">待检验</SelectItem>
+                            <SelectItem value="inspecting">检验中</SelectItem>
+                            <SelectItem value="qualified">合格</SelectItem>
+                            <SelectItem value="unqualified">不合格</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-5 md:p-6">
+                  <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
+                      <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                        检验项目 {formData.inspectionItems.length > 0 && `(${formData.inspectionItems.length})`}
+                      </TabsTrigger>
+                      <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                        电子签名
+                      </TabsTrigger>
+                      <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                        备注
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="items" className="mt-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm text-muted-foreground">统一录入过程检验项目、标准、结果与结论</div>
+                        <Button variant="outline" size="sm" onClick={addInspectionItem}>
+                          <Plus className="h-4 w-4 mr-1" />
+                          添加项目
+                        </Button>
+                      </div>
+
+                      {formData.inspectionItems.length === 0 ? (
+                        <div className="rounded-lg border border-dashed bg-muted/10 p-8 text-center text-sm text-muted-foreground">
+                          暂无检验项目，点击“添加项目”开始录入
+                        </div>
+                      ) : (
+                        <div className="overflow-hidden rounded-lg border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-12">#</TableHead>
+                                <TableHead>检验项目</TableHead>
+                                <TableHead>检验标准</TableHead>
+                                <TableHead>检验结果</TableHead>
+                                <TableHead className="w-[140px]">结论</TableHead>
+                                <TableHead className="w-12" />
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {formData.inspectionItems.map((item, index) => (
+                                <TableRow key={index}>
+                                  <TableCell className="text-muted-foreground">{index + 1}</TableCell>
+                                  <TableCell>
+                                    <Input
+                                      value={item.name}
+                                      onChange={(e) => updateInspectionItem(index, "name", e.target.value)}
+                                      placeholder="项目名称"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input
+                                      value={item.standard}
+                                      onChange={(e) => updateInspectionItem(index, "standard", e.target.value)}
+                                      placeholder="标准要求"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Input
+                                      value={item.result}
+                                      onChange={(e) => updateInspectionItem(index, "result", e.target.value)}
+                                      placeholder="实测值"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Select
+                                      value={item.conclusion}
+                                      onValueChange={(v) => updateInspectionItem(index, "conclusion", v)}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="pending">待定</SelectItem>
+                                        <SelectItem value="qualified">合格</SelectItem>
+                                        <SelectItem value="unqualified">不合格</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-destructive"
+                                      onClick={() => removeInspectionItem(index)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="signatures" className="mt-5">
+                      {!isEditing || !selectedRecord ? (
+                        <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+                          <div className="text-sm">请先保存检验单，保存后可进行电子签名</div>
+                        </div>
+                      ) : (
+                        <SignatureStatusCard
+                          documentType="IPQC"
+                          documentNo={selectedRecord.inspectionNo}
+                          documentId={selectedRecord.id}
+                          signatures={selectedRecord.signatures || []}
+                          onSignComplete={handleSignComplete}
+                        />
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="notes" className="mt-5">
+                      <Textarea
+                        value={formData.remarks}
+                        onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+                        placeholder="输入备注信息"
+                        rows={6}
+                        className="resize-none"
+                      />
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </ERPLayout>
+    );
+  }
 
   return (
     <ERPLayout>
@@ -320,10 +811,16 @@ export default function IPQCPage() {
               </p>
             </div>
           </div>
-          <Button onClick={handleAdd}>
-            <Plus className="h-4 w-4 mr-2" />
-            新建检验
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4 mr-1" />
+              刷新
+            </Button>
+            <Button onClick={handleAdd}>
+              <Plus className="h-4 w-4 mr-2" />
+              新建检验
+            </Button>
+          </div>
         </div>
 
         {/* 统计卡片 */}
@@ -396,7 +893,7 @@ export default function IPQCPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.map((record) => {
+              {paginatedData.map((record) => {
                 const signCount = record.signatures?.filter((s: any) => s.status === "valid").length || 0;
                 return (
                   <TableRow key={record.id}>
@@ -416,14 +913,16 @@ export default function IPQCPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-center">
-                      {signCount === 3 ? (
+                      {record.sourceType === "production" ? (
+                        <Badge variant="outline" className="text-muted-foreground">生产带入</Badge>
+                      ) : signCount >= 2 ? (
                         <Badge className="bg-green-100 text-green-800">
                           <FileCheck className="h-3 w-3 mr-1" />
                           已完成
                         </Badge>
                       ) : signCount > 0 ? (
                         <Badge variant="outline" className="text-amber-600">
-                          {signCount}/3
+                          {signCount}/2
                         </Badge>
                       ) : (
                         <Badge variant="outline" className="text-muted-foreground">
@@ -444,11 +943,13 @@ export default function IPQCPage() {
                             <Eye className="h-4 w-4 mr-2" />
                             查看详情
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleEdit(record)}>
-                            <Edit className="h-4 w-4 mr-2" />
-                            编辑
-                          </DropdownMenuItem>
-                          {canDelete && (
+                          {record.sourceType !== "production" && (
+                            <DropdownMenuItem onClick={() => handleEdit(record)}>
+                              <Edit className="h-4 w-4 mr-2" />
+                              编辑
+                            </DropdownMenuItem>
+                          )}
+                          {canDelete && record.sourceType !== "production" && (
                             <DropdownMenuItem
                               className="text-destructive"
                               onClick={() => handleDelete(record)}
@@ -463,7 +964,7 @@ export default function IPQCPage() {
                   </TableRow>
                 );
               })}
-              {filteredData.length === 0 && (
+              {paginatedData.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     {isLoading ? "加载中..." : "暂无数据"}
@@ -474,209 +975,288 @@ export default function IPQCPage() {
           </Table>
         </Card>
 
+        {filteredData.length > 0 && (
+          <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3">
+            <div className="text-sm text-muted-foreground">
+              显示 {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredData.length)} 条，
+              共 {filteredData.length} 条，第 {currentPage} / {totalPages} 页
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={currentPage === 1}>
+                上一页
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={currentPage === totalPages}>
+                下一页
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* 新建/编辑表单对话框 */}
         <DraggableDialog open={formDialogOpen} onOpenChange={setFormDialogOpen}>
-          <DraggableDialogContent>
-            <DialogHeader>
-              <DialogTitle>{isEditing ? "编辑检验记录" : "新建过程检验"}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-6 py-4">
-              {/* 基本信息 */}
-              <div>
-                <h3 className="text-sm font-medium mb-3">基本信息</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>产品编码</Label>
-                    <Input
-                      value={formData.productCode}
-                      onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
-                      placeholder="如: MD-001"
-                    />
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto p-0">
+            <div className="space-y-6">
+              <div className="border-b bg-background px-6 py-5">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold">{isEditing && selectedRecord ? selectedRecord.inspectionNo : "新建过程检验"}</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">统一录入过程检验基础信息、检验项目与检验结论</p>
                   </div>
-                  <div className="space-y-2">
-                    <Label>产品名称 *</Label>
-                    <Input
-                      value={formData.productName}
-                      onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
-                      placeholder="输入产品名称"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>批次号 *</Label>
-                    <Input
-                      value={formData.batchNo}
-                      onChange={(e) => setFormData({ ...formData, batchNo: e.target.value })}
-                      placeholder="输入批次号"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>工序 *</Label>
-                    <Input
-                      value={formData.process}
-                      onChange={(e) => setFormData({ ...formData, process: e.target.value })}
-                      placeholder="如: 注塑成型、组装、包装"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>检验类型</Label>
-                    <Select
-                      value={formData.inspectionType}
-                      onValueChange={(v) => setFormData({ ...formData, inspectionType: v as IPQCRecord["inspectionType"] })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="first">首检</SelectItem>
-                        <SelectItem value="patrol">巡检</SelectItem>
-                        <SelectItem value="final">末检</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>工位</Label>
-                    <Input
-                      value={formData.workstation}
-                      onChange={(e) => setFormData({ ...formData, workstation: e.target.value })}
-                      placeholder="如: 注塑车间-1号机"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>检验日期</Label>
-                    <Input
-                      type="date"
-                      value={formData.inspectionDate}
-                      onChange={(e) => setFormData({ ...formData, inspectionDate: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>检验员</Label>
-                    <Input
-                      value={formData.inspector}
-                      onChange={(e) => setFormData({ ...formData, inspector: e.target.value })}
-                      placeholder="输入检验员姓名"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>检验结果</Label>
-                    <Select
-                      value={formData.result}
-                      onValueChange={(v) => setFormData({ ...formData, result: v as IPQCRecord["result"] })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pending">待检验</SelectItem>
-                        <SelectItem value="inspecting">检验中</SelectItem>
-                        <SelectItem value="qualified">合格</SelectItem>
-                        <SelectItem value="unqualified">不合格</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{inspectionTypeMap[formData.inspectionType] || formData.inspectionType}</Badge>
+                    <Badge variant={statusMap[formData.result]?.variant || "outline"} className={statusMap[formData.result]?.color || ""}>
+                      {statusMap[formData.result]?.label || formData.result}
+                    </Badge>
                   </div>
                 </div>
               </div>
 
-              <Separator />
-
-              {/* 检验项目 */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-medium">检验项目</h3>
-                  <Button variant="outline" size="sm" onClick={addInspectionItem}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    添加项目
-                  </Button>
-                </div>
-                <div className="space-y-3">
-                  {formData.inspectionItems.map((item, index) => (
-                    <div key={index} className="grid grid-cols-12 gap-2 items-end">
-                      <div className="col-span-3">
-                        <Label className="text-xs">检验项目</Label>
+              <div className="px-6 pb-6 space-y-6">
+                <Card>
+                  <CardContent className="p-5 md:p-6">
+                    <div className="mb-3 text-sm font-medium">基础信息</div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label>产品编码</Label>
                         <Input
-                          value={item.name}
-                          onChange={(e) => updateInspectionItem(index, "name", e.target.value)}
-                          placeholder="项目名称"
+                          value={formData.productCode}
+                          onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
+                          placeholder="如: MD-001"
                         />
                       </div>
-                      <div className="col-span-3">
-                        <Label className="text-xs">检验标准</Label>
+                      <div className="space-y-2">
+                        <Label>产品名称 *</Label>
                         <Input
-                          value={item.standard}
-                          onChange={(e) => updateInspectionItem(index, "standard", e.target.value)}
-                          placeholder="标准要求"
+                          value={formData.productName}
+                          onChange={(e) => setFormData({ ...formData, productName: e.target.value })}
+                          placeholder="输入产品名称"
                         />
                       </div>
-                      <div className="col-span-3">
-                        <Label className="text-xs">检验结果</Label>
+                      <div className="space-y-2">
+                        <Label>批次号 *</Label>
                         <Input
-                          value={item.result}
-                          onChange={(e) => updateInspectionItem(index, "result", e.target.value)}
-                          placeholder="实测值"
+                          value={formData.batchNo}
+                          onChange={(e) => setFormData({ ...formData, batchNo: e.target.value })}
+                          placeholder="输入批次号"
                         />
                       </div>
-                      <div className="col-span-2">
-                        <Label className="text-xs">结论</Label>
+                      <div className="space-y-2">
+                        <Label>工序 *</Label>
+                        <Input
+                          value={formData.process}
+                          onChange={(e) => setFormData({ ...formData, process: e.target.value })}
+                          placeholder="如: 注塑成型、组装、包装"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>检验类型</Label>
                         <Select
-                          value={item.conclusion}
-                          onValueChange={(v) => updateInspectionItem(index, "conclusion", v)}
+                          value={formData.inspectionType}
+                          onValueChange={(v) => setFormData({ ...formData, inspectionType: v as IPQCRecord["inspectionType"] })}
                         >
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="pending">待定</SelectItem>
+                            <SelectItem value="first">首检</SelectItem>
+                            <SelectItem value="patrol">巡检</SelectItem>
+                            <SelectItem value="final">末检</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>工位</Label>
+                        <Input
+                          value={formData.workstation}
+                          onChange={(e) => setFormData({ ...formData, workstation: e.target.value })}
+                          placeholder="如: 注塑车间-1号机"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>检验日期</Label>
+                        <Input
+                          type="date"
+                          value={formData.inspectionDate}
+                          onChange={(e) => setFormData({ ...formData, inspectionDate: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>检验员</Label>
+                        <Input
+                          value={formData.inspector}
+                          onChange={(e) => setFormData({ ...formData, inspector: e.target.value })}
+                          placeholder="输入检验员姓名"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>检验结果</Label>
+                        <Select
+                          value={formData.result}
+                          onValueChange={(v) => setFormData({ ...formData, result: v as IPQCRecord["result"] })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">待检验</SelectItem>
+                            <SelectItem value="inspecting">检验中</SelectItem>
                             <SelectItem value="qualified">合格</SelectItem>
                             <SelectItem value="unqualified">不合格</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="col-span-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive"
-                          onClick={() => removeInspectionItem(index)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </CardContent>
+                </Card>
 
-              <Separator />
+                <Card>
+                  <CardContent className="p-5 md:p-6">
+                    <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                      <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto">
+                        <TabsTrigger value="items" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                          检验项目 {formData.inspectionItems.length > 0 && `(${formData.inspectionItems.length})`}
+                        </TabsTrigger>
+                        <TabsTrigger value="signatures" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                          电子签名
+                        </TabsTrigger>
+                        <TabsTrigger value="notes" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-2 text-sm">
+                          备注
+                        </TabsTrigger>
+                      </TabsList>
 
-              {/* 备注 */}
-              <div className="space-y-2">
-                <Label>备注</Label>
-                <Textarea
-                  value={formData.remarks}
-                  onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                  placeholder="输入备注信息"
-                  rows={3}
-                />
+                      <TabsContent value="items" className="mt-5 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm text-muted-foreground">统一录入过程检验项目、标准、结果与结论</div>
+                          <Button variant="outline" size="sm" onClick={addInspectionItem}>
+                            <Plus className="h-4 w-4 mr-1" />
+                            添加项目
+                          </Button>
+                        </div>
+
+                        {formData.inspectionItems.length === 0 ? (
+                          <div className="rounded-lg border border-dashed bg-muted/10 p-8 text-center text-sm text-muted-foreground">
+                            暂无检验项目，点击“添加项目”开始录入
+                          </div>
+                        ) : (
+                          <div className="overflow-hidden rounded-lg border">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-12">#</TableHead>
+                                  <TableHead>检验项目</TableHead>
+                                  <TableHead>检验标准</TableHead>
+                                  <TableHead>检验结果</TableHead>
+                                  <TableHead className="w-[140px]">结论</TableHead>
+                                  <TableHead className="w-12" />
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {formData.inspectionItems.map((item, index) => (
+                                  <TableRow key={index}>
+                                    <TableCell className="text-muted-foreground">{index + 1}</TableCell>
+                                    <TableCell>
+                                      <Input
+                                        value={item.name}
+                                        onChange={(e) => updateInspectionItem(index, "name", e.target.value)}
+                                        placeholder="项目名称"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input
+                                        value={item.standard}
+                                        onChange={(e) => updateInspectionItem(index, "standard", e.target.value)}
+                                        placeholder="标准要求"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input
+                                        value={item.result}
+                                        onChange={(e) => updateInspectionItem(index, "result", e.target.value)}
+                                        placeholder="实测值"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Select
+                                        value={item.conclusion}
+                                        onValueChange={(v) => updateInspectionItem(index, "conclusion", v)}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="pending">待定</SelectItem>
+                                          <SelectItem value="qualified">合格</SelectItem>
+                                          <SelectItem value="unqualified">不合格</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="text-destructive"
+                                        onClick={() => removeInspectionItem(index)}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+                      </TabsContent>
+
+                      <TabsContent value="signatures" className="mt-5">
+                        {!isEditing || !selectedRecord ? (
+                          <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+                            <div className="text-sm">请先保存检验单，保存后可进行电子签名</div>
+                          </div>
+                        ) : (
+                          <SignatureStatusCard
+                            documentType="IPQC"
+                            documentNo={selectedRecord.inspectionNo}
+                            documentId={selectedRecord.id}
+                            signatures={selectedRecord.signatures || []}
+                            onSignComplete={handleSignComplete}
+                          />
+                        )}
+                      </TabsContent>
+
+                      <TabsContent value="notes" className="mt-5">
+                        <Textarea
+                          value={formData.remarks}
+                          onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+                          placeholder="输入备注信息"
+                          rows={6}
+                          className="resize-none"
+                        />
+                      </TabsContent>
+                    </Tabs>
+                  </CardContent>
+                </Card>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setFormDialogOpen(false)}>
+                    取消
+                  </Button>
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={createMutation.isPending || updateMutation.isPending}
+                  >
+                    {isEditing ? "保存" : "创建"}
+                  </Button>
+                </DialogFooter>
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setFormDialogOpen(false)}>
-                取消
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={createMutation.isPending || updateMutation.isPending}
-              >
-                {isEditing ? "保存" : "创建"}
-              </Button>
-            </DialogFooter>
           </DraggableDialogContent>
         </DraggableDialog>
 
         {/* 查看详情与电子签名对话框 */}
 {selectedRecord && (
 <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-  <DraggableDialogContent>
+  <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
     <div className="border-b pb-3">
       <h2 className="text-lg font-semibold">过程检验详情</h2>
       <p className="text-sm text-muted-foreground">
@@ -743,28 +1323,51 @@ export default function IPQCPage() {
         </div>
       )}
 
-      <div>
-        <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">电子签名</h3>
-        <SignatureStatusCard
-          documentType="IPQC"
-          documentNo={selectedRecord.inspectionNo}
-          documentId={selectedRecord.id}
-          signatures={selectedRecord.signatures || []}
-          onSignComplete={handleSignComplete}
-        />
-      </div>
+      {selectedRecord.sourceType !== "production" && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">电子签名</h3>
+          <SignatureStatusCard
+            documentType="IPQC"
+            documentNo={selectedRecord.inspectionNo}
+            documentId={selectedRecord.id as number}
+            signatures={selectedRecord.signatures || []}
+            onSignComplete={handleSignComplete}
+          />
+        </div>
+      )}
     </div>
 
     <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
       <div className="flex gap-2 flex-wrap"></div>
       <div className="flex gap-2 flex-wrap justify-end">
         <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-        <Button variant="outline" size="sm" onClick={() => handleEdit(selectedRecord)}>编辑</Button>
+        {selectedRecord.sourceType !== "production" && (
+          <Button variant="outline" size="sm" onClick={() => handleEdit(selectedRecord)}>编辑</Button>
+        )}
       </div>
     </div>
   </DraggableDialogContent>
 </DraggableDialog>
 )}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认删除</AlertDialogTitle>
+              <AlertDialogDescription>
+                确认删除检验单 {recordToDelete?.inspectionNo || ""} 吗？此操作无法撤销。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setRecordToDelete(null)}>取消</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteConfirm}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                确认删除
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </ERPLayout>
   );

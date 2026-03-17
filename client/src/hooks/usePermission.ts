@@ -76,6 +76,7 @@ interface UsePermissionReturn {
  */
 export function usePermission(): UsePermissionReturn {
   const { user, isAuthenticated } = useAuth();
+  const isCompanyAdmin = Boolean((user as any)?.isCompanyAdmin);
 
   const departments = useMemo(() => {
     return parseDepartments((user as any)?.department);
@@ -85,8 +86,9 @@ export function usePermission(): UsePermissionReturn {
     if (!isAuthenticated || !user) {
       return "user"; // 默认为普通用户
     }
+    if (isCompanyAdmin) return "admin";
     return (user.role as UserRole) || "user";
-  }, [user, isAuthenticated]);
+  }, [isCompanyAdmin, user, isAuthenticated]);
 
   const permissions = useMemo(() => {
     return ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.user;

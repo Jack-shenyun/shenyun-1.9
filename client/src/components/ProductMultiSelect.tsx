@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { Plus, Minus, Search, Package, X, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { trpc } from "@/lib/trpc";
+import { formatDisplayNumber } from "@/lib/formatters";
 
 export interface Product {
   id: number;
@@ -54,6 +55,7 @@ interface ProductMultiSelectProps {
   currencySymbol?: string;       // 金额符号
   extraAmount?: number;          // 额外金额（如运费）
   extraAmountLabel?: string;     // 额外金额标签
+  renderSelectedMeta?: (product: SelectedProduct) => ReactNode;
 }
 
 // 示例产品数据（保留向后兼容）
@@ -116,6 +118,7 @@ export default function ProductMultiSelect({
   currencySymbol = "¥",
   extraAmount = 0,
   extraAmountLabel = "附加费用",
+  renderSelectedMeta,
 }: ProductMultiSelectProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -131,6 +134,25 @@ export default function ProductMultiSelect({
       gcTime: 0,             // 不缓存
     }
   );
+  const { data: inventoryRows = [] } = trpc.inventory.list.useQuery(
+    { status: "qualified", limit: 5000 },
+    {
+      enabled: showStock && useDbProducts && !propProducts,
+      staleTime: 0,
+      gcTime: 0,
+    }
+  );
+
+  const stockMap = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const row of inventoryRows as any[]) {
+      const productId = Number(row?.productId);
+      if (!Number.isFinite(productId) || productId <= 0) continue;
+      const quantity = Number(row?.quantity ?? 0);
+      map.set(productId, (map.get(productId) || 0) + (Number.isFinite(quantity) ? quantity : 0));
+    }
+    return map;
+  }, [inventoryRows]);
 
   // 合并产品列表：优先使用 prop 传入的，其次数据库
   // 注意：当有权限过滤时，即使数据库返回0条也不回退到示例数据
@@ -138,12 +160,20 @@ export default function ProductMultiSelect({
     if (propProducts) return propProducts;
     if (useDbProducts) {
       // 有权限过滤时：加载完成后直接返回数据库结果（即使为空）
-      if (!dbLoading) return dbProductsRaw.map(dbProductToProduct);
+      if (!dbLoading) {
+        return dbProductsRaw.map((row: any) => {
+          const product = dbProductToProduct(row);
+          return {
+            ...product,
+            stock: stockMap.get(Number(product.id)) ?? 0,
+          };
+        });
+      }
       // 加载中返回空数组
       return [];
     }
     return sampleProducts;
-  }, [propProducts, useDbProducts, dbProductsRaw, dbLoading]);
+  }, [propProducts, useDbProducts, dbProductsRaw, dbLoading, stockMap]);
 
   const isLoading = useDbProducts && !propProducts && dbLoading;
 
@@ -262,7 +292,16 @@ export default function ProductMultiSelect({
               {selectedProducts.map((product) => (
                 <TableRow key={product.id}>
                   <TableCell className="font-mono text-sm">{product.code}</TableCell>
-                  <TableCell className="font-medium">{product.name}</TableCell>
+                  <TableCell>
+                    <div className="space-y-1">
+                      <div className="font-medium">{product.name}</div>
+                      {renderSelectedMeta ? (
+                        <div className="text-xs text-muted-foreground">
+                          {renderSelectedMeta(product)}
+                        </div>
+                      ) : null}
+                    </div>
+                  </TableCell>
                   <TableCell>{product.spec}</TableCell>
                   <TableCell>{product.unit}</TableCell>
                   {showPrice && (
@@ -291,7 +330,7 @@ export default function ProductMultiSelect({
                           placeholder="输入单价"
                         />
                       ) : (
-                        <span>{currencySymbol}{product.price.toFixed(2)}</span>
+                        <span>{currencySymbol}{formatDisplayNumber(product.price)}</span>
                       )}
                     </TableCell>
                   )}
@@ -352,7 +391,7 @@ export default function ProductMultiSelect({
                   )}
                   {showPrice && (
                     <TableCell className="text-right font-medium">
-                      {currencySymbol}{(product.quantity * product.price * (1 - (product.discount || 0) / 100)).toFixed(2)}
+                      {currencySymbol}{formatDisplayNumber(product.quantity * product.price * (1 - (product.discount || 0) / 100))}
                     </TableCell>
                   )}
                   <TableCell>
@@ -375,7 +414,7 @@ export default function ProductMultiSelect({
                       {extraAmountLabel}：
                     </TableCell>
                     <TableCell className="text-right font-medium">
-                      {currencySymbol}{normalizedExtraAmount.toFixed(2)}
+                      {currencySymbol}{formatDisplayNumber(normalizedExtraAmount)}
                     </TableCell>
                     <TableCell></TableCell>
                   </TableRow>
@@ -385,7 +424,7 @@ export default function ProductMultiSelect({
                     合计{normalizedExtraAmount > 0 ? "（含运费）" : ""}：
                   </TableCell>
                   <TableCell className="text-right font-bold text-primary">
-                    {currencySymbol}{finalTotalAmount.toFixed(2)}
+                    {currencySymbol}{formatDisplayNumber(finalTotalAmount)}
                   </TableCell>
                   <TableCell></TableCell>
                 </TableRow>
@@ -486,12 +525,12 @@ export default function ProductMultiSelect({
                         <TableCell>{product.unit}</TableCell>
                         {showPrice && (
                           <TableCell className="text-right">
-                            {product.price > 0 ? `${currencySymbol}${product.price.toFixed(2)}` : "-"}
+                            {product.price > 0 ? `${currencySymbol}${formatDisplayNumber(product.price)}` : "-"}
                           </TableCell>
                         )}
                         {showStock && (
                           <TableCell className="text-right">
-                            {product.stock?.toLocaleString() || "-"}
+                            {typeof product.stock === "number" ? formatDisplayNumber(product.stock) : "-"}
                           </TableCell>
                         )}
                         <TableCell onClick={(e) => e.stopPropagation()}>

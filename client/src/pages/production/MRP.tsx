@@ -1,9 +1,10 @@
-import { formatDate, formatDateTime } from "@/lib/formatters";
-import { useState } from "react";
+import { formatDate, formatDateTime, formatDisplayNumber } from "@/lib/formatters";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import ERPLayout from "@/components/ERPLayout";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,7 @@ import { usePermission } from "@/hooks/usePermission";
 const planStatusMap: Record<string, { label: string; variant: "outline" | "default" | "secondary" | "destructive" }> = {
   pending:     { label: "待排产", variant: "outline" },
   scheduled:   { label: "已排产", variant: "default" },
+  purchase_submitted: { label: "采购中", variant: "secondary" },
   in_progress: { label: "生产中", variant: "default" },
   completed:   { label: "已完成", variant: "secondary" },
   cancelled:   { label: "已取消", variant: "destructive" },
@@ -80,17 +82,21 @@ type MrpItem = {
   onOrderQty: number;
   netRequirement: number;
   urgency: "high" | "medium" | "low";
+  hasShortage: boolean;
   needPurchase: boolean;
+  procurePermission: "purchasable" | "production_only" | "";
 };
 
 // ────────────────────────────────────────────────────────────
 // 主页面
 // ────────────────────────────────────────────────────────────
 export default function MRPPage() {
+  const PAGE_SIZE = 10;
   const [, setLocation] = useLocation();
   const { canDelete } = usePermission();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
   // 计算结果缓存（planId → MrpResult）
   const [resultsMap, setResultsMap] = useState<Record<number, MrpResult>>({});
   // 计算中的 planId 集合
@@ -121,10 +127,14 @@ export default function MRPPage() {
     calculateMutation.mutate({ productionPlanId: planId });
   };
 
-  const handleViewDetail = (planId: number) => {
-    const result = resultsMap[planId];
+  const handleViewDetail = (plan: any) => {
+    const result = resultsMap[plan.id];
     if (!result) {
-      toast.info("请先点击「运算」按钮执行 MRP 计算");
+      if (plan.status === "purchase_submitted") {
+        toast.info("该计划已进入采购中");
+      } else {
+        toast.info("请先点击「运算」按钮执行 MRP 计算");
+      }
       return;
     }
     setDetailPlan(result);
@@ -138,7 +148,17 @@ export default function MRPPage() {
   // 统计
   const calculatedCount = Object.keys(resultsMap).length;
   const shortfallCount = Object.values(resultsMap).filter((r) => r.shortfallCount > 0).length;
-  const pendingCount = plans.filter((p: any) => !resultsMap[p.id]).length;
+  const pendingCount = plans.filter((p: any) => !resultsMap[p.id] && p.status !== "purchase_submitted").length;
+  const totalPages = Math.max(1, Math.ceil((plans as any[]).length / PAGE_SIZE));
+  const pagedPlans = (plans as any[]).slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   return (
     <ERPLayout>
@@ -227,6 +247,7 @@ export default function MRPPage() {
               <SelectItem value="all">全部状态</SelectItem>
               <SelectItem value="pending">待排产</SelectItem>
               <SelectItem value="scheduled">已排产</SelectItem>
+              <SelectItem value="purchase_submitted">采购中</SelectItem>
               <SelectItem value="in_progress">生产中</SelectItem>
               <SelectItem value="completed">已完成</SelectItem>
             </SelectContent>
@@ -262,9 +283,10 @@ export default function MRPPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                (plans as any[]).map((plan: any) => {
+                pagedPlans.map((plan: any) => {
                   const result = resultsMap[plan.id];
                   const isCalc = calculatingIds.has(plan.id);
+                  const isPurchaseSubmitted = plan.status === "purchase_submitted";
                   const statusInfo = planStatusMap[plan.status] ?? { label: plan.status, variant: "outline" as const };
                   const priorityInfo = priorityMap[plan.priority] ?? priorityMap.normal;
 
@@ -273,7 +295,7 @@ export default function MRPPage() {
                       <TableCell className="font-mono text-sm">{plan.planNo || "-"}</TableCell>
                       <TableCell className="font-medium">{plan.productName || "-"}</TableCell>
                       <TableCell className="text-right">
-                        {plan.plannedQty ? `${Number(plan.plannedQty).toLocaleString()} ${plan.unit || ""}` : "-"}
+                        {plan.plannedQty ? `${formatDisplayNumber(plan.plannedQty)} ${plan.unit || ""}` : "-"}
                       </TableCell>
                       <TableCell>{formatDate(plan.plannedEndDate)}</TableCell>
                       <TableCell>
@@ -302,6 +324,11 @@ export default function MRPPage() {
                               物料充足
                             </span>
                           )
+                        ) : isPurchaseSubmitted ? (
+                          <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            采购中
+                          </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">未运算</span>
                         )}
@@ -311,22 +338,24 @@ export default function MRPPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={isCalc}
+                            disabled={isCalc || isPurchaseSubmitted}
                             onClick={() => handleCalculate(plan.id)}
                             className="h-7 px-2 text-xs"
                           >
                             {isCalc ? (
                               <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" />
+                            ) : isPurchaseSubmitted ? (
+                              <Play className="w-3.5 h-3.5 mr-1" />
                             ) : (
                               <Play className="w-3.5 h-3.5 mr-1" />
                             )}
-                            {isCalc ? "运算中" : "运算"}
+                            {isCalc ? "运算中" : isPurchaseSubmitted ? "采购中" : "运算"}
                           </Button>
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={!result}
-                            onClick={() => handleViewDetail(plan.id)}
+                            disabled={!result && !isPurchaseSubmitted}
+                            onClick={() => handleViewDetail(plan)}
                             className="h-7 px-2 text-xs"
                           >
                             <Eye className="w-3.5 h-3.5 mr-1" />
@@ -350,6 +379,12 @@ export default function MRPPage() {
               )}
             </TableBody>
           </Table>
+          <TablePaginationFooter
+            total={(plans as any[]).length}
+            page={currentPage}
+            pageSize={PAGE_SIZE}
+            onPageChange={setCurrentPage}
+          />
         </div>
       </div>
 
@@ -380,9 +415,55 @@ function MrpDetailDialog({
   const [filter, setFilter] = useState<"all" | "shortage">("all");
   const [urgency, setUrgency] = useState<"normal" | "urgent" | "critical">("normal");
   const [generating, setGenerating] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
+  const generateMutation = trpc.mrp.generatePurchaseRequest.useMutation();
+  const updatePlanMutation = trpc.productionPlans.update.useMutation();
 
-  const generateMutation = trpc.mrp.generatePurchaseRequest.useMutation({
-    onSuccess: (data) => {
+  const shortageItems = result.items.filter((i) => i.hasShortage);
+  const purchasableShortageItems = shortageItems.filter((i) => i.needPurchase);
+  const productionShortageCount = shortageItems.length - purchasableShortageItems.length;
+  const displayItems = filter === "shortage" ? shortageItems : result.items;
+  const linkedUrgency: "normal" | "urgent" | "critical" =
+    purchasableShortageItems.some((item) => item.urgency === "high")
+      ? "urgent"
+      : purchasableShortageItems.some((item) => item.urgency === "medium")
+        ? "normal"
+        : "normal";
+
+  useEffect(() => {
+    setUrgency(linkedUrgency);
+  }, [result.planId, linkedUrgency]);
+
+  const handleGeneratePurchaseRequest = async () => {
+    if (shortageItems.length === 0) {
+      toast.info("物料充足，无需生成采购计划");
+      return;
+    }
+    if (purchasableShortageItems.length === 0) {
+      toast.info("当前缺料物料获取权限不是采购，不能直接生成采购计划");
+      return;
+    }
+    setGenerating(true);
+    try {
+      const data = await generateMutation.mutateAsync({
+        productionPlanId: result.planId,
+        planNo: result.planNo,
+        productName: result.productName,
+        urgency,
+        items: purchasableShortageItems.map((item) => ({
+          materialCode: item.materialCode,
+          materialName: item.materialName,
+          specification: item.specification !== "-" ? item.specification : undefined,
+          unit: item.unit !== "-" ? item.unit : undefined,
+          netRequirement: item.netRequirement,
+        })),
+      });
+
+      await updatePlanMutation.mutateAsync({
+        id: result.planId,
+        data: { status: "purchase_submitted" },
+      });
+
       setGenerating(false);
       toast.success(`采购计划已生成：${data.count} 条`, {
         description: "已进入采购计划看板，可继续采购处理",
@@ -390,40 +471,25 @@ function MrpDetailDialog({
       });
       onClose();
       onGotoPurchasePlan();
-    },
-    onError: (err) => {
+    } catch (err: any) {
       setGenerating(false);
-      toast.error(`生成失败：${err.message}`);
-    },
-  });
-
-  const shortageItems = result.items.filter((i) => i.needPurchase);
-  const displayItems = filter === "shortage" ? shortageItems : result.items;
-
-  const handleGeneratePurchaseRequest = () => {
-    if (shortageItems.length === 0) {
-      toast.info("物料充足，无需生成采购计划");
-      return;
+      toast.error(`生成失败：${err?.message || "请稍后重试"}`);
     }
-    setGenerating(true);
-    generateMutation.mutate({
-      productionPlanId: result.planId,
-      planNo: result.planNo,
-      productName: result.productName,
-      urgency,
-      items: shortageItems.map((item) => ({
-        materialCode: item.materialCode,
-        materialName: item.materialName,
-        specification: item.specification !== "-" ? item.specification : undefined,
-        unit: item.unit !== "-" ? item.unit : undefined,
-        netRequirement: item.netRequirement,
-      })),
-    });
   };
 
   return (
-    <DraggableDialog open onOpenChange={(o) => !o && onClose()}>
-      <DraggableDialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
+    <DraggableDialog
+      open
+      onOpenChange={(o) => !o && onClose()}
+      defaultWidth={1280}
+      defaultHeight={820}
+      isMaximized={isMaximized}
+      onMaximizedChange={setIsMaximized}
+    >
+      <DraggableDialogContent
+        isMaximized={isMaximized}
+        className={`flex h-full flex-col ${isMaximized ? "w-full max-w-none" : "max-w-6xl"}`}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="w-5 h-5" />
@@ -436,7 +502,7 @@ function MrpDetailDialog({
 
         <div className="flex-1 overflow-y-auto space-y-5 pr-1">
           {/* 基本信息 */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-sm border rounded-lg p-4 bg-muted/30">
+          <div className={`grid gap-x-6 gap-y-3 text-sm border rounded-lg p-4 bg-muted/30 ${isMaximized ? "grid-cols-2 xl:grid-cols-4" : "grid-cols-2 md:grid-cols-4"}`}>
             <div>
               <p className="text-muted-foreground text-xs">计划编号</p>
               <p className="font-mono font-medium">{result.planNo}</p>
@@ -447,12 +513,12 @@ function MrpDetailDialog({
             </div>
             <div>
               <p className="text-muted-foreground text-xs">计划数量</p>
-              <p className="font-medium">{result.plannedQty.toLocaleString()} {result.unit}</p>
+              <p className="font-medium">{formatDisplayNumber(result.plannedQty)} {result.unit}</p>
             </div>
             <div>
               <p className="text-muted-foreground text-xs">计划交期</p>
               <p className="font-medium">
-                {result.plannedEndDate || "-"}
+                {formatDate(result.plannedEndDate)}
                 {result.daysToDeadline !== undefined && result.daysToDeadline < 999 && (
                   <span className={`ml-1 text-xs ${result.daysToDeadline <= 7 ? "text-red-600" : result.daysToDeadline <= 14 ? "text-amber-600" : "text-muted-foreground"}`}>
                     （剩余 {result.daysToDeadline} 天）
@@ -468,6 +534,12 @@ function MrpDetailDialog({
               <p className="text-muted-foreground text-xs">缺料种数</p>
               <p className={`font-medium ${result.shortfallCount > 0 ? "text-red-600" : "text-green-600"}`}>
                 {result.shortfallCount > 0 ? `${result.shortfallCount} 种缺料` : "物料充足"}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground text-xs">可采购缺料</p>
+              <p className={`font-medium ${purchasableShortageItems.length > 0 ? "text-orange-600" : "text-muted-foreground"}`}>
+                {purchasableShortageItems.length > 0 ? `${purchasableShortageItems.length} 种` : "无"}
               </p>
             </div>
             <div>
@@ -518,6 +590,7 @@ function MrpDetailDialog({
                       <TableHead className="text-xs">物料编码</TableHead>
                       <TableHead className="text-xs">物料名称</TableHead>
                       <TableHead className="text-xs">规格型号</TableHead>
+                      <TableHead className="text-xs">获取权限</TableHead>
                       <TableHead className="text-xs text-right">单位用量</TableHead>
                       <TableHead className="text-xs text-right">需求总量</TableHead>
                       <TableHead className="text-xs text-right">合格库存</TableHead>
@@ -529,27 +602,40 @@ function MrpDetailDialog({
                   <TableBody>
                     {displayItems.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-6 text-muted-foreground text-sm">
+                        <TableCell colSpan={10} className="text-center py-6 text-muted-foreground text-sm">
                           {filter === "shortage" ? "无缺料物料，库存充足" : "暂无物料数据"}
                         </TableCell>
                       </TableRow>
                     ) : (
                       displayItems.map((item) => (
-                        <TableRow key={item.bomId} className={item.needPurchase ? "bg-red-50/40" : ""}>
+                        <TableRow key={item.bomId} className={item.hasShortage ? "bg-red-50/40" : ""}>
                           <TableCell className="font-mono text-xs">{item.materialCode}</TableCell>
                           <TableCell className="text-sm font-medium">{item.materialName}</TableCell>
                           <TableCell className="text-xs text-muted-foreground">{item.specification}</TableCell>
+                          <TableCell>
+                            {item.procurePermission === "purchasable" ? (
+                              <Badge variant="secondary" className="bg-blue-50 text-blue-700 hover:bg-blue-50">
+                                采购
+                              </Badge>
+                            ) : item.procurePermission === "production_only" ? (
+                              <Badge variant="outline" className="border-amber-300 text-amber-700">
+                                生产
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">未设置</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right text-sm">{item.bomQty} {item.unit}</TableCell>
-                          <TableCell className="text-right text-sm">{item.requiredQty.toLocaleString()} {item.unit}</TableCell>
-                          <TableCell className="text-right text-sm">{item.onHandQty.toLocaleString()}</TableCell>
-                          <TableCell className="text-right text-sm text-blue-600">{item.onOrderQty.toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-sm">{formatDisplayNumber(item.requiredQty)} {item.unit}</TableCell>
+                          <TableCell className="text-right text-sm">{formatDisplayNumber(item.onHandQty)}</TableCell>
+                          <TableCell className="text-right text-sm text-blue-600">{formatDisplayNumber(item.onOrderQty)}</TableCell>
                           <TableCell className="text-right text-sm font-bold">
                             <span className={item.netRequirement > 0 ? "text-red-600" : "text-green-600"}>
-                              {item.netRequirement > 0 ? `▲ ${item.netRequirement.toLocaleString()}` : "✓ 充足"}
+                              {item.netRequirement > 0 ? `▲ ${formatDisplayNumber(item.netRequirement)}` : "✓ 充足"}
                             </span>
                           </TableCell>
                           <TableCell>
-                            {item.needPurchase ? (
+                            {item.hasShortage ? (
                               <span className={`text-xs px-2 py-0.5 rounded border font-medium ${urgencyConfig[item.urgency].cls}`}>
                                 {urgencyConfig[item.urgency].label}
                               </span>
@@ -572,9 +658,14 @@ function MrpDetailDialog({
                     <div className="flex-1">
                       <h4 className="font-semibold text-sm text-orange-800 mb-1">一键生成采购计划</h4>
                       <p className="text-xs text-orange-700 mb-3">
-                        将 {result.shortfallCount} 种缺料（净需求 &gt; 0）自动生成采购计划，
+                        将 {purchasableShortageItems.length} 种“获取权限=采购”的缺料自动生成采购计划，
                         生成后直接进入「采购计划看板」处理。
                       </p>
+                      {productionShortageCount > 0 && (
+                        <p className="text-xs text-amber-700 mb-3">
+                          另有 {productionShortageCount} 种缺料获取权限为“生产”，不会进入采购计划，需要走生产补料流程。
+                        </p>
+                      )}
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-2">
                           <Label className="text-xs text-orange-700 whitespace-nowrap">紧急程度</Label>
@@ -589,10 +680,13 @@ function MrpDetailDialog({
                             </SelectContent>
                           </Select>
                         </div>
+                        <span className="text-xs text-orange-700">
+                          已按上方缺料紧急程度联动带入
+                        </span>
                         <Button
                           size="sm"
                           className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
-                          disabled={generating}
+                          disabled={generating || purchasableShortageItems.length === 0}
                           onClick={handleGeneratePurchaseRequest}
                         >
                           {generating ? (
@@ -600,7 +694,7 @@ function MrpDetailDialog({
                           ) : (
                             <ShoppingCart className="w-3.5 h-3.5 mr-1" />
                           )}
-                          {generating ? "生成中..." : `进入采购计划（${result.shortfallCount} 种）`}
+                          {generating ? "生成中..." : `进入采购计划（${purchasableShortageItems.length} 种）`}
                         </Button>
                       </div>
                     </div>

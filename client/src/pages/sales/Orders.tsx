@@ -1,12 +1,12 @@
-import { formatDate, formatDateTime } from "@/lib/formatters";
-import { useState, useEffect, useMemo } from "react";
+import { formatDate, formatDateTime, formatDisplayNumber } from "@/lib/formatters";
+import { useState, useEffect, useMemo, useRef, type ChangeEvent } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import ProductMultiSelect, { SelectedProduct } from "@/components/ProductMultiSelect";
 import CustomerSelect, { Customer } from "@/components/CustomerSelect";
 import {
   Receipt, Plus, Search, Edit, Trash2, Eye, MoreHorizontal,
   Package, Printer, FileText, Truck, CheckCircle, XCircle,
-  ClipboardList, Send, Archive, GitBranch,
+  ClipboardList, Send, Archive, GitBranch, Download, Upload,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -63,6 +63,8 @@ type DbOrder = {
   customerId: number | null;
   customerName: string | null;
   customerCode: string | null;
+  customerType?: string | null;
+  country?: string | null;
   contactPerson: string | null;
   phone: string | null;
   orderDate: Date | string | null;
@@ -78,10 +80,14 @@ type DbOrder = {
   isExport: boolean | null;
   needsShipping: boolean | null;
   shippingFee: string | null;
+  tradeTerm?: string | null;
+  receiptAccountId?: number | null;
+  receiptAccountName?: string | null;
   customsStatus: string | null;
   remark: string | null;
   salesPersonId: number | null;
   salesPersonName?: string | null;
+  salesPersonEnglishName?: string | null;
   createdBy: number | null;
   createdAt: Date | string | null;
   updatedAt: Date | string | null;
@@ -99,6 +105,7 @@ const statusMap: Record<string, { label: string; variant: "outline" | "secondary
   processing:     { label: "处理中", variant: "default"     },
   pending_review: { label: "待审批", variant: "secondary"   },
   approved:       { label: "已审批", variant: "default"     },
+  pending_payment:{ label: "待收款", variant: "secondary"   },
   in_production:  { label: "生产中", variant: "default"     },
   ready_to_ship:    { label: "待发货",   variant: "secondary"   },
   partial_shipped:  { label: "部分发货", variant: "secondary"   },
@@ -107,6 +114,7 @@ const statusMap: Record<string, { label: string; variant: "outline" | "secondary
   cancelled:      { label: "已取消", variant: "destructive" },
 };
 const PREPAY_RATIO_MARKER = "[PREPAY_RATIO]";
+const TRADE_TERM_OPTIONS = ["EXW", "FCA", "FOB", "CFR", "CIF", "DAP", "DDP"] as const;
 const ORDER_STATUS_OPTIONS = [
   { value: "draft", label: "草稿" },
   { value: "pending_review", label: "待审批" },
@@ -144,7 +152,7 @@ function getCurrencySymbol(currency: string | null | undefined): string {
 function formatAmount(amount: string | number | null | undefined, currency?: string | null): string {
   const n = typeof amount === "number" ? amount : parseFloat(amount ?? "0");
   const sym = getCurrencySymbol(currency);
-  return `${sym}${n.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+  return `${sym}${formatDisplayNumber(n)}`;
 }
 
 function mapOrderItemsToSelectedProducts(items: any[]): SelectedProduct[] {
@@ -189,12 +197,55 @@ function buildRemarkWithPrepayRatio(plainRemark: string, paymentTerms: string, p
 
 function normalizeOrderStatus(status: unknown): string {
   const normalized = String(status ?? "").trim();
-  const validStatuses = new Set(ORDER_STATUS_OPTIONS.map((item) => item.value));
+  const validStatuses = new Set<string>(ORDER_STATUS_OPTIONS.map((item) => item.value));
   return validStatuses.has(normalized) ? normalized : "draft";
 }
 
 function normalizeBooleanField(value: unknown, fallback = false): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function parseImportBoolean(value: unknown, fallback = false): boolean {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (["是", "需要", "true", "1", "yes", "y"].includes(normalized)) return true;
+  if (["否", "不需要", "false", "0", "no", "n"].includes(normalized)) return false;
+  return fallback;
+}
+
+function escapeCsvCell(value: unknown): string {
+  const text = String(value ?? "").replaceAll('"', '""');
+  return `"${text}"`;
+}
+
+function parseCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === "," && !inQuotes) {
+      values.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  values.push(current.trim());
+  return values;
+}
+
+function canPrintApprovedOrder(status: unknown): boolean {
+  return String(status ?? "").trim() === "approved";
 }
 
 // ==================== 主组件 ====================
@@ -226,6 +277,7 @@ export default function SalesOrdersPage() {
   const [printDeliveryOpen, setPrintDeliveryOpen] = useState(false);
   const [printReceiptOpen, setPrintReceiptOpen]   = useState(false);
   const [printRecord, setPrintRecord]             = useState<SalesOrder | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const [formData, setFormData] = useState({
     customerId:      0,
@@ -247,6 +299,8 @@ export default function SalesOrdersPage() {
     needsShipping:   null as boolean | null,
     shippingFee:     "",
     isExport:        null as boolean | null,
+    tradeTerm:       "",
+    receiptAccountId: "",
   });
 
   // ==================== tRPC 查询 ====================
@@ -282,11 +336,31 @@ export default function SalesOrdersPage() {
     { limit: 500 },
     { refetchOnWindowFocus: false }
   );
+  const { data: bankAccounts = [] } = trpc.bankAccounts.list.useQuery(
+    { status: "active" },
+    { refetchOnWindowFocus: false }
+  );
+  const { data: customersForImport = [] } = trpc.customers.list.useQuery(
+    { limit: 5000 },
+    { refetchOnWindowFocus: false }
+  );
+  const { data: productsForImport = [] } = trpc.products.list.useQuery(
+    { salePermission: "saleable", limit: 5000 },
+    { refetchOnWindowFocus: false }
+  );
   const { data: orderFormCatalog } = trpc.workflowSettings.getFormCatalogItem.useQuery({
     module: "销售部",
     formType: "业务单据",
     formName: "订单管理",
   });
+  const orders = ordersData ?? [];
+  const { data: salesOrderItemsRows = [] } = trpc.salesOrders.getItemsByOrderIds.useQuery(
+    { orderIds: orders.map((order: any) => Number(order?.id)).filter((id) => Number.isFinite(id) && id > 0) },
+    {
+      enabled: orders.length > 0,
+      refetchOnWindowFocus: false,
+    }
+  );
 
   // ==================== Mutations ====================
 
@@ -302,6 +376,7 @@ export default function SalesOrdersPage() {
             customerId: variables.customerId,
             currency: variables.currency ?? "USD",
             amount: variables.totalAmount,
+            destination: variables.country || variables.shippingAddress || "",
             remark: "系统自动生成（销售订单报关待办）",
           });
           toast.success("订单已提交审核，报关待办已自动生成");
@@ -313,10 +388,15 @@ export default function SalesOrdersPage() {
         toast.success("订单已提交审核");
       }
       setFormDialogOpen(false);
-      refetch();
+      await Promise.all([
+        refetch(),
+        trpcUtils.workflowCenter.list.invalidate(),
+        trpcUtils.workflowCenter.stats.invalidate(),
+      ]);
     },
     onError:   (e) => toast.error("创建失败：" + e.message),
   });
+  const importCreateMutation = trpc.salesOrders.create.useMutation();
 
   const createCustomsMutation = trpc.customs.create.useMutation({
     onError: (e) => toast.error("报关待办生成失败：" + e.message),
@@ -349,7 +429,15 @@ export default function SalesOrdersPage() {
   const setFormApprovalEnabledMutation = trpc.workflowSettings.setFormApprovalEnabled.useMutation();
 
   const submitForApprovalMutation = trpc.salesOrders.submitForApproval.useMutation({
-    onSuccess: () => { toast.success("已提交审批"); setViewDialogOpen(false); refetch(); },
+    onSuccess: async () => {
+      toast.success("已提交审批");
+      setViewDialogOpen(false);
+      await Promise.all([
+        refetch(),
+        trpcUtils.workflowCenter.list.invalidate(),
+        trpcUtils.workflowCenter.stats.invalidate(),
+      ]);
+    },
     onError:   (e) => toast.error("提交失败：" + e.message),
   });
 
@@ -448,7 +536,6 @@ export default function SalesOrdersPage() {
     amount:   parseFloat(item.amount    ?? "0"),
   }));
 
-  const orders = ordersData ?? [];
   const latestRateMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const row of exchangeRateRows as any[]) {
@@ -462,6 +549,18 @@ export default function SalesOrdersPage() {
     map.set("CNY", 1);
     return map;
   }, [exchangeRateRows]);
+
+  const orderItemMap = useMemo(() => {
+    const map = new Map<number, any[]>();
+    for (const row of salesOrderItemsRows as any[]) {
+      const orderId = Number(row?.orderId || 0);
+      if (!orderId) continue;
+      const current = map.get(orderId) || [];
+      current.push(row);
+      map.set(orderId, current);
+    }
+    return map;
+  }, [salesOrderItemsRows]);
 
   const getOrderAmountInCny = (r: any): number => {
     const amount = parseFloat(r?.totalAmount ?? "0");
@@ -568,6 +667,8 @@ export default function SalesOrdersPage() {
       needsShipping:   null,
       shippingFee:     "",
       isExport:        null,
+      tradeTerm:       "",
+      receiptAccountId: "",
     });
     setFormDialogOpen(true);
   };
@@ -636,6 +737,8 @@ export default function SalesOrdersPage() {
         needsShipping:   normalizeBooleanField(detailOrder.needsShipping, false),
         shippingFee:     detailOrder.shippingFee     ?? "",
         isExport:        normalizeBooleanField(detailOrder.isExport, false),
+        tradeTerm:       detailOrder.tradeTerm       ?? "",
+        receiptAccountId: detailOrder.receiptAccountId ? String(detailOrder.receiptAccountId) : "",
       });
       setFormDialogOpen(true);
     };
@@ -725,14 +828,16 @@ export default function SalesOrdersPage() {
           needsShipping:   formData.needsShipping ?? false,
           shippingFee:     formData.needsShipping && formData.shippingFee ? formData.shippingFee : undefined,
           isExport:        formData.isExport ?? false,
+          tradeTerm:       formData.tradeTerm || undefined,
+          receiptAccountId: formData.receiptAccountId ? Number(formData.receiptAccountId) : null,
           remark:          mergedRemark,
-          salesPersonId:   selectedRecord.salesPersonId ?? user?.id,
+          salesPersonId:   selectedCustomer?.salesPersonId ?? selectedRecord.salesPersonId ?? user?.id,
           items,
         },
       });
     } else {
       createMutation.mutate({
-        orderNo:         nextOrderNoData ?? `SO-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
+        orderNo:         nextOrderNoData ?? `S${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-01`,
         customerId:      formData.customerId,
         orderDate:       formData.orderDate,
         deliveryDate:    formData.deliveryDate || undefined,
@@ -748,8 +853,10 @@ export default function SalesOrdersPage() {
         needsShipping:   formData.needsShipping ?? false,
         shippingFee:     formData.needsShipping && formData.shippingFee ? formData.shippingFee : undefined,
         isExport:        formData.isExport ?? false,
+        tradeTerm:       formData.tradeTerm || undefined,
+        receiptAccountId: formData.receiptAccountId ? Number(formData.receiptAccountId) : null,
         remark:          mergedRemark,
-        salesPersonId:   user?.id,
+        salesPersonId:   selectedCustomer?.salesPersonId ?? user?.id,
         items,
       });
     }
@@ -785,14 +892,16 @@ export default function SalesOrdersPage() {
           needsShipping:   formData.needsShipping ?? false,
           shippingFee:     formData.needsShipping && formData.shippingFee ? formData.shippingFee : undefined,
           isExport:        formData.isExport ?? false,
+          tradeTerm:       formData.tradeTerm || undefined,
+          receiptAccountId: formData.receiptAccountId ? Number(formData.receiptAccountId) : null,
           remark:          mergedDraftRemark,
-          salesPersonId:   selectedRecord.salesPersonId ?? user?.id,
+          salesPersonId:   selectedCustomer?.salesPersonId ?? selectedRecord.salesPersonId ?? user?.id,
           items,
         },
       });
     } else {
       saveDraftMutation.mutate({
-        orderNo:         nextOrderNoData ?? `SO-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
+        orderNo:         nextOrderNoData ?? `S${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-01`,
         customerId:      formData.customerId,
         orderDate:       formData.orderDate,
         deliveryDate:    formData.deliveryDate || undefined,
@@ -808,8 +917,10 @@ export default function SalesOrdersPage() {
         needsShipping:   formData.needsShipping ?? false,
         shippingFee:     formData.needsShipping && formData.shippingFee ? formData.shippingFee : undefined,
         isExport:        formData.isExport ?? false,
+        tradeTerm:       formData.tradeTerm || undefined,
+        receiptAccountId: formData.receiptAccountId ? Number(formData.receiptAccountId) : null,
         remark:          mergedDraftRemark,
-        salesPersonId:   user?.id,
+        salesPersonId:   selectedCustomer?.salesPersonId ?? user?.id,
         items,
       });
     }
@@ -833,12 +944,337 @@ export default function SalesOrdersPage() {
     }
   };
 
+  const handleExportOrders = () => {
+    if (orders.length === 0) {
+      toast.warning("暂无可导出数据");
+      return;
+    }
+
+    const paymentStatusLabelMap: Record<string, string> = {
+      unpaid: "未收款",
+      partial: "部分收款",
+      paid: "已收款",
+    };
+    const accountNameMap = new Map(
+      (bankAccounts as any[]).map((account: any) => [
+        Number(account.id),
+        account.accountName || account.bankName || `账户${account.id}`,
+      ])
+    );
+    const rows = orders.flatMap((order: any) => {
+      const items = orderItemMap.get(Number(order.id)) || [];
+      const orderRows = items.length > 0 ? items : [{}];
+      return orderRows.map((item: any) => [
+        order.orderNo || "",
+        order.customerCode || "",
+        order.customerName || "",
+        formatDate(order.orderDate) === "-" ? "" : formatDate(order.orderDate),
+        formatDate(order.deliveryDate) === "-" ? "" : formatDate(order.deliveryDate),
+        normalizePaymentCondition(order.paymentMethod) || "",
+        normalizePaymentCondition(order.paymentMethod) === "预付款" ? parsePrepayRatioFromRemark(order.remark) : "",
+        order.currency || "CNY",
+        (order as any).exchangeRate || resolveFinanceExchangeRate(order.currency || "CNY") || "",
+        statusMap[String(order.status || "")]?.label || order.status || "",
+        paymentStatusLabelMap[String(order.paymentStatus || "")] || order.paymentStatus || "",
+        order.shippingAddress || "",
+        order.shippingContact || order.contactPerson || "",
+        order.shippingPhone || order.phone || "",
+        order.needsShipping ? "是" : "否",
+        order.needsShipping ? (order.shippingFee || "") : "",
+        order.isExport ? "是" : "否",
+        order.tradeTerm || "",
+        order.receiptAccountId ? (accountNameMap.get(Number(order.receiptAccountId)) || "") : "",
+        order.salesPersonName || "",
+        item.productCode || "",
+        item.productName || "",
+        item.specification || "",
+        item.unit || "",
+        item.quantity || "",
+        item.unitPrice || "",
+        item.amount || "",
+        item.remark || "",
+        stripPrepayRatioFromRemark(order.remark) || "",
+      ].map(escapeCsvCell).join(","));
+    });
+
+    const headers = [
+      "订单号",
+      "客户编码",
+      "客户名称",
+      "订单日期",
+      "交货日期",
+      "付款条件",
+      "预付款比例",
+      "币种",
+      "汇率",
+      "订单状态",
+      "收款状态",
+      "收货地址",
+      "收货联系人",
+      "收货电话",
+      "是否运费",
+      "运费",
+      "是否报关",
+      "贸易条款",
+      "收款账户",
+      "销售负责人",
+      "产品编码",
+      "产品名称",
+      "规格型号",
+      "单位",
+      "数量",
+      "单价",
+      "金额",
+      "行备注",
+      "整单备注",
+    ];
+
+    const csv = [headers.map(escapeCsvCell).join(","), ...rows].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}_${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+    a.href = url;
+    a.download = `销售订单_${timestamp}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("销售订单已导出");
+  };
+
+  const handleImportClick = () => {
+    importInputRef.current?.click();
+  };
+
+  const handleImportOrders = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      if (!file.name.toLowerCase().endsWith(".csv")) {
+        toast.error("仅支持 CSV 导入，请先导出模板后再导入");
+        return;
+      }
+
+      const text = (await file.text()).replace(/^\uFEFF/, "");
+      const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      if (lines.length <= 1) {
+        toast.warning("导入文件没有有效数据");
+        return;
+      }
+
+      const headers = parseCsvLine(lines[0]);
+      const colIndex = (name: string) => headers.findIndex((header) => header.trim() === name);
+      const readCol = (row: string[], name: string) => {
+        const index = colIndex(name);
+        if (index < 0) return "";
+        return String(row[index] ?? "").trim();
+      };
+
+      const customerByCode = new Map(
+        (customersForImport as any[])
+          .filter((customer: any) => customer?.code)
+          .map((customer: any) => [String(customer.code).trim(), customer])
+      );
+      const customerByName = new Map(
+        (customersForImport as any[])
+          .filter((customer: any) => customer?.name)
+          .map((customer: any) => [String(customer.name).trim(), customer])
+      );
+      const productByCode = new Map(
+        (productsForImport as any[])
+          .filter((product: any) => product?.code)
+          .map((product: any) => [String(product.code).trim(), product])
+      );
+      const productByName = new Map(
+        (productsForImport as any[])
+          .filter((product: any) => product?.name)
+          .map((product: any) => [String(product.name).trim(), product])
+      );
+      const accountByName = new Map<string, any>();
+      for (const account of bankAccounts as any[]) {
+        for (const key of [account.accountName, account.bankName, account.accountNo]) {
+          const normalized = String(key || "").trim();
+          if (normalized) {
+            accountByName.set(normalized, account);
+          }
+        }
+      }
+
+      const statusReverseMap: Record<string, string> = {
+        草稿: "draft",
+        待审批: "pending_review",
+        已审批: "approved",
+        待收款: "pending_payment",
+        已确认: "confirmed",
+        处理中: "confirmed",
+        生产中: "in_production",
+        待发货: "ready_to_ship",
+        部分发货: "partial_shipped",
+        已发货: "shipped",
+        已完成: "completed",
+        已取消: "cancelled",
+        draft: "draft",
+        pending_review: "pending_review",
+        approved: "approved",
+        pending_payment: "pending_payment",
+        confirmed: "confirmed",
+        processing: "confirmed",
+        in_production: "in_production",
+        ready_to_ship: "ready_to_ship",
+        partial_shipped: "partial_shipped",
+        shipped: "shipped",
+        completed: "completed",
+        cancelled: "cancelled",
+      };
+      const paymentStatusReverseMap: Record<string, "unpaid" | "partial" | "paid"> = {
+        未收款: "unpaid",
+        部分收款: "partial",
+        已收款: "paid",
+        unpaid: "unpaid",
+        partial: "partial",
+        paid: "paid",
+      };
+
+      const groupedOrders = new Map<string, any>();
+
+      for (let i = 1; i < lines.length; i += 1) {
+        const row = parseCsvLine(lines[i]);
+        const customerCode = readCol(row, "客户编码");
+        const customerName = readCol(row, "客户名称");
+        const customer = customerByCode.get(customerCode) || customerByName.get(customerName);
+        if (!customer) {
+          throw new Error(`第${i + 1}行: 未找到客户 ${customerCode || customerName || "-"}`);
+        }
+
+        const productCode = readCol(row, "产品编码");
+        const productName = readCol(row, "产品名称");
+        const product = productByCode.get(productCode) || productByName.get(productName);
+        if (!product) {
+          throw new Error(`第${i + 1}行: 未找到产品 ${productCode || productName || "-"}`);
+        }
+
+        const quantity = Number(readCol(row, "数量") || 0);
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          throw new Error(`第${i + 1}行: 数量必须大于 0`);
+        }
+
+        const unitPrice = Number(readCol(row, "单价") || 0);
+        const amount = Number(readCol(row, "金额") || quantity * unitPrice || 0);
+        const importOrderNo = readCol(row, "订单号");
+        const orderGroupKey = importOrderNo || `AUTO-SO-ROW-${i + 1}`;
+        const paymentTerms = normalizePaymentCondition(readCol(row, "付款条件") || String(customer.paymentTerms || "") || "先款后货");
+        const remark = buildRemarkWithPrepayRatio(
+          readCol(row, "整单备注"),
+          paymentTerms,
+          readCol(row, "预付款比例") || "30"
+        );
+        const receiptAccount = accountByName.get(readCol(row, "收款账户"));
+        const currency = readCol(row, "币种") || "CNY";
+        const exchangeRate = readCol(row, "汇率") || resolveFinanceExchangeRate(currency) || "1";
+
+        if (!groupedOrders.has(orderGroupKey)) {
+          groupedOrders.set(orderGroupKey, {
+            orderNo: importOrderNo || "",
+            customerId: Number(customer.id),
+            orderDate: readCol(row, "订单日期") || new Date().toISOString().split("T")[0],
+            deliveryDate: readCol(row, "交货日期") || undefined,
+            currency,
+            paymentMethod: paymentTerms,
+            exchangeRate,
+            status: (statusReverseMap[readCol(row, "订单状态")] || "draft") as any,
+            paymentStatus: paymentStatusReverseMap[readCol(row, "收款状态")] || undefined,
+            shippingAddress: readCol(row, "收货地址") || customer.address || undefined,
+            shippingContact: readCol(row, "收货联系人") || customer.contactPerson || undefined,
+            shippingPhone: readCol(row, "收货电话") || customer.phone || undefined,
+            needsShipping: parseImportBoolean(readCol(row, "是否运费"), false),
+            shippingFee: readCol(row, "运费") || undefined,
+            isExport: parseImportBoolean(readCol(row, "是否报关"), false),
+            tradeTerm: readCol(row, "贸易条款") || undefined,
+            receiptAccountId: receiptAccount ? Number(receiptAccount.id) : null,
+            remark,
+            salesPersonId: customer.salesPersonId || user?.id || undefined,
+            items: [],
+          });
+        }
+
+        groupedOrders.get(orderGroupKey).items.push({
+          productId: Number(product.id),
+          quantity: String(quantity),
+          unit: readCol(row, "单位") || product.unit || undefined,
+          unitPrice: String(unitPrice),
+          amount: String(amount),
+          remark: readCol(row, "行备注") || undefined,
+        });
+      }
+
+      let success = 0;
+      const errors: string[] = [];
+      for (const order of Array.from(groupedOrders.values())) {
+        try {
+          const productTotal = order.items.reduce(
+            (sum: number, item: any) => sum + Number(item.amount || 0),
+            0
+          );
+          const shippingAmount =
+            order.needsShipping && order.shippingFee ? Number(order.shippingFee || 0) : 0;
+          const totalAmount = productTotal + shippingAmount;
+          const totalAmountBase = String(totalAmount * Number(order.exchangeRate || 1));
+          const orderId = await importCreateMutation.mutateAsync({
+            ...order,
+            totalAmount: String(totalAmount),
+            totalAmountBase,
+          });
+
+          if (order.isExport && orderId) {
+            try {
+              const declarationNo = `CD-${new Date().getFullYear()}-${String(orderId).padStart(6, "0")}`;
+              await createCustomsMutation.mutateAsync({
+                declarationNo,
+                salesOrderId: orderId as number,
+                customerId: order.customerId,
+                currency: order.currency ?? "USD",
+                amount: String(totalAmount),
+                destination: order.shippingAddress || "",
+                remark: "系统自动生成（销售订单导入生成报关待办）",
+              });
+            } catch {
+              // 报关待办失败不阻塞主单导入
+            }
+          }
+          success += 1;
+        } catch (error: any) {
+          errors.push(`${order.orderNo}: ${error?.message || "导入失败"}`);
+        }
+      }
+
+      await Promise.all([
+        refetch(),
+        trpcUtils.workflowCenter.list.invalidate(),
+        trpcUtils.workflowCenter.stats.invalidate(),
+      ]);
+      if (success > 0) {
+        toast.success(`导入成功 ${success} 笔订单`);
+      }
+      if (errors.length > 0) {
+        toast.error(`导入失败 ${errors.length} 笔`, {
+          description: errors.slice(0, 2).join("；"),
+        });
+      }
+    } catch (error: any) {
+      toast.error(error?.message || "导入失败");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   const canApproveSelectedOrder = selectedRecord?.status === "pending_review" && Boolean((approvalState as any)?.canApprove);
-  const approvalStageLabel = (approvalState as any)?.stage === "manager"
+  const approvalStageLabel = (approvalState as any)?.stageLabel || ((approvalState as any)?.stage === "manager"
     ? "部门负责人审批"
     : (approvalState as any)?.stage === "general_manager"
       ? "总经理审批"
-      : "";
+      : (approvalState as any)?.stage === "system_admin"
+        ? "系统管理员审批"
+      : "");
 
   // ==================== 渲染 ====================
 
@@ -870,6 +1306,21 @@ export default function SalesOrdersPage() {
             </div>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" onClick={handleExportOrders}>
+              <Download className="h-4 w-4 mr-2" />
+              导出
+            </Button>
+            <Button variant="outline" onClick={handleImportClick}>
+              <Upload className="h-4 w-4 mr-2" />
+              导入
+            </Button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={handleImportOrders}
+            />
             <Button
               variant={statusFilter === "draft" ? "secondary" : "outline"}
               onClick={() => setStatusFilter(statusFilter === "draft" ? "all" : "draft")}
@@ -908,7 +1359,7 @@ export default function SalesOrdersPage() {
           <Card className="flex"><CardContent className="p-2.5 space-y-1.5 flex flex-col justify-center">
             <div className="text-xs text-muted-foreground">订单金额（多币种汇总）</div>
             <div className="text-2xl leading-none font-bold text-green-600">
-              ¥{(stats.totalAmount / 10000).toFixed(1)}万
+              ¥{formatDisplayNumber(stats.totalAmount / 10000, { maximumFractionDigits: 1 })}万
               <span className="text-[11px] font-medium text-muted-foreground ml-1 align-baseline">(本位币)</span>
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
@@ -917,7 +1368,7 @@ export default function SalesOrdersPage() {
               ) : (
                 currencySummary.map(([currency, amount], index) => (
                   <span key={`${currency}-${index}`} className="text-[11px] leading-tight font-medium text-muted-foreground">
-                    {currency} {getCurrencySymbol(currency)}{Number(amount).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {currency} {getCurrencySymbol(currency)}{formatDisplayNumber(amount)}
                   </span>
                 ))
               )}
@@ -1056,11 +1507,11 @@ export default function SalesOrdersPage() {
                 <p className="text-sm text-muted-foreground">订单号：{nextOrderNoData}</p>
               )}
             </DialogHeader>
-            <div className="space-y-6 py-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+            <div className="space-y-6 py-4">
               {/* 客户信息 */}
               <div>
                 <h3 className="text-sm font-medium mb-3">客户信息</h3>
-                <div className="grid grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
                   <div className="col-span-2 space-y-2">
                     <Label>选择客户 *</Label>
                     <CustomerSelect
@@ -1076,6 +1527,7 @@ export default function SalesOrdersPage() {
                           phone:           customer.phone         ?? "",
                           shippingAddress: customer.address       ?? "",
                           paymentTerms:    normalizePaymentCondition(customer.paymentTerms) || "账期支付",
+                          salesperson:     String(customer.salesPersonName ?? user?.name ?? ""),
                         }));
                       }}
                     />
@@ -1207,8 +1659,6 @@ export default function SalesOrdersPage() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <Label>提交结果</Label>
-                      <Input value="提交后自动进入待审批" disabled />
                     </div>
                   )}
                 </div>
@@ -1257,9 +1707,39 @@ export default function SalesOrdersPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label>贸易条款</Label>
+                    <Select
+                      value={formData.tradeTerm || undefined}
+                      onValueChange={(v) => setFormData({ ...formData, tradeTerm: v })}
+                    >
+                      <SelectTrigger><SelectValue placeholder="选择贸易条款" /></SelectTrigger>
+                      <SelectContent>
+                        {TRADE_TERM_OPTIONS.map((term) => (
+                          <SelectItem key={term} value={term}>{term}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>收款账户</Label>
+                    <Select
+                      value={formData.receiptAccountId || undefined}
+                      onValueChange={(v) => setFormData({ ...formData, receiptAccountId: v })}
+                    >
+                      <SelectTrigger><SelectValue placeholder="选择收款账户" /></SelectTrigger>
+                      <SelectContent>
+                        {bankAccounts.map((account: any) => (
+                          <SelectItem key={account.id} value={String(account.id)}>
+                            {account.accountName || account.bankName || `账户${account.id}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   {formData.isExport && (
-                    <div className="col-span-1 flex items-end pb-2">
-                      <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                    <div className="md:col-span-2 lg:col-span-5">
+                      <p className="inline-flex text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
                         提交后将自动生成报关待办
                       </p>
                     </div>
@@ -1308,7 +1788,7 @@ export default function SalesOrdersPage() {
                 保存草稿
               </Button>
               <Button
-                onClick={handleSubmit}
+                onClick={() => handleSubmit()}
                 disabled={createMutation.isPending || updateMutation.isPending}
               >
                 {isEditing ? "保存" : "提交审核"}
@@ -1346,7 +1826,7 @@ export default function SalesOrdersPage() {
                 if (!v) return "-";
                 const n = parseFloat(v);
                 if (isNaN(n)) return "-";
-                return `${getCurrencySymbol(cur)}${n.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`;
+                return `${getCurrencySymbol(cur)}${formatDisplayNumber(n)}`;
               };
               return (
                 <div className="space-y-5">
@@ -1360,6 +1840,7 @@ export default function SalesOrdersPage() {
                         <FieldRow label="交货日期">{formatDate(selectedRecord.deliveryDate)}</FieldRow>
                         <FieldRow label="付款条件">{normalizePaymentCondition(selectedRecord.paymentMethod) || "-"}</FieldRow>
                         <FieldRow label="货币">{selectedRecord.currency || "-"}</FieldRow>
+                        <FieldRow label="贸易条款">{selectedRecord.tradeTerm || "-"}</FieldRow>
                       </div>
                       <div>
                         <FieldRow label="客户编码">{selectedRecord.customerCode || "-"}</FieldRow>
@@ -1367,6 +1848,7 @@ export default function SalesOrdersPage() {
                         <FieldRow label="联系人">{selectedRecord.contactPerson || "-"}</FieldRow>
                         <FieldRow label="联系电话">{selectedRecord.phone || "-"}</FieldRow>
                         <FieldRow label="收货地址">{selectedRecord.shippingAddress || "-"}</FieldRow>
+                        <FieldRow label="收款账户">{selectedRecord.receiptAccountName || "-"}</FieldRow>
                         {selectedRecord.status === "pending_review" && (
                           <FieldRow label="当前审批人">
                             {(approvalState as any)?.currentApproverName
@@ -1452,6 +1934,10 @@ export default function SalesOrdersPage() {
                   <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
                     <div className="flex gap-2 flex-wrap">
                       <Button variant="outline" size="sm" onClick={() => {
+                        if (!canPrintApprovedOrder(selectedRecord.status)) {
+                          toast.error("订单未审核通过，暂不能打印");
+                          return;
+                        }
                         setPrintRecord({ ...selectedRecord, products: detailProducts });
                         setPrintOrderOpen(true);
                       }}>
@@ -1621,10 +2107,18 @@ export default function SalesOrdersPage() {
                 orderDate:      formatDate(printRecord.orderDate),
                 deliveryDate:   formatDate(printRecord.deliveryDate),
                 customerName:   printRecord.customerName  ?? "",
+                customerCode:   printRecord.customerCode  ?? "",
+                customerType:   printRecord.customerType  ?? "",
+                customerCountry: printRecord.country      ?? "",
+                currency:       printRecord.currency      ?? "CNY",
                 shippingAddress: printRecord.shippingAddress ?? "",
                 shippingContact: printRecord.contactPerson  ?? "",
                 shippingPhone:   printRecord.phone          ?? "",
                 paymentMethod:   printRecord.paymentMethod  ?? "",
+                tradeTerm:       printRecord.tradeTerm      ?? "",
+                shippingFee:     parseFloat(printRecord.shippingFee ?? "0"),
+                paymentAccount:  printRecord.receiptAccountName ?? "",
+                paymentAccountId: printRecord.receiptAccountId ?? null,
                 status:          printRecord.status         ?? "",
                 totalAmount:     parseFloat(printRecord.totalAmount ?? "0"),
                 items: printRecord.products.map(p => ({
@@ -1636,7 +2130,9 @@ export default function SalesOrdersPage() {
                   amount:        p.amount ?? 0,
                 })),
                 notes:          printRecord.remark ?? "",
-                salesPersonName: "",
+                salesPersonName: (printRecord.customerType === "overseas" || (printRecord.country && printRecord.country !== "中国"))
+                  ? (printRecord.salesPersonEnglishName || printRecord.salesPersonName || "")
+                  : (printRecord.salesPersonName || ""),
               }}
             />
             <DeliveryNotePrint
@@ -1646,6 +2142,8 @@ export default function SalesOrdersPage() {
                 orderNumber:    printRecord.orderNo,
                 deliveryDate:   formatDate(printRecord.deliveryDate),
                 customerName:   printRecord.customerName  ?? "",
+                customerType:   printRecord.customerType  ?? "",
+                customerCountry: printRecord.country      ?? "",
                 shippingAddress: printRecord.shippingAddress ?? "",
                 shippingContact: printRecord.contactPerson  ?? "",
                 shippingPhone:   printRecord.phone          ?? "",
@@ -1663,10 +2161,13 @@ export default function SalesOrdersPage() {
               open={printReceiptOpen}
               onClose={() => setPrintReceiptOpen(false)}
               receipt={{
-                receiptNumber: `RC-${printRecord.orderNo.replace("SO-", "")}`,
+                receiptNumber: `RC-${printRecord.orderNo}`,
                 receiptDate:   new Date().toISOString().split("T")[0],
                 orderNumber:   printRecord.orderNo,
                 customerName:  printRecord.customerName ?? "",
+                customerType:  printRecord.customerType ?? "",
+                customerCountry: printRecord.country ?? "",
+                currency:      printRecord.currency ?? "CNY",
                 paymentMethod: printRecord.paymentMethod ?? "",
                 totalAmount:   parseFloat(printRecord.totalAmount ?? "0"),
                 paidAmount:    parseFloat(printRecord.totalAmount ?? "0"),
@@ -1678,7 +2179,10 @@ export default function SalesOrdersPage() {
                   amount:      p.amount ?? 0,
                 })),
                 notes:   printRecord.remark ?? "",
-                cashier: "",
+                cashier: (printRecord.customerType === "overseas" || (printRecord.country && printRecord.country !== "中国"))
+                  ? (printRecord.salesPersonEnglishName || printRecord.salesPersonName || "")
+                  : (printRecord.salesPersonName || ""),
+                paymentAccount: printRecord.receiptAccountName ?? "",
               }}
             />
           </>

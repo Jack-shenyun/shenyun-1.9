@@ -1,5 +1,5 @@
 import { useState } from "react";
-import ERPLayout from "@/components/ERPLayout";
+import RaLayout from "@/components/RaLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -59,7 +59,7 @@ export default function RaTemplatesPage() {
   })).filter((m) => m.documents.length > 0);
 
   return (
-    <ERPLayout>
+    <RaLayout>
       <div className="space-y-6">
         {/* 标题 */}
         <div className="flex items-center gap-3">
@@ -218,6 +218,6 @@ export default function RaTemplatesPage() {
           ))}
         </div>
       </div>
-    </ERPLayout>
+    </RaLayout>
   );
 }

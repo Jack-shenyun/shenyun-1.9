@@ -3,7 +3,7 @@
  * 目录层级: /ERP/{部门}/{业务类型}/{年份}/{月份}/
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation } from "wouter";
 import FileManagerLayout from "@/components/FileManagerLayout";
 import { toast } from "sonner";
 import {
@@ -16,7 +16,6 @@ import {
   FileArchive,
   Upload,
   FolderPlus,
-  Download,
   Trash2,
   RefreshCw,
   ChevronRight,
@@ -31,6 +30,7 @@ import {
   List,
   X,
   Check,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,14 +58,16 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { usePermission } from "@/hooks/usePermission";
 import {
   listDirectory,
   createFolder,
   uploadFiles,
-  downloadFile,
   deleteEntry,
   renameEntry,
   initERPFolders,
+  requestPreviewUrl,
   formatFileSize,
   formatDateTime,
   type FileItem,
@@ -99,11 +101,94 @@ function getFileIcon(item: FileItem, size = 16): React.ReactNode {
   return <File className={`w-${size} h-${size} text-gray-500`} />;
 }
 
-/** 将虚拟路径解析为面包屑数组 */
+const ROOT_PATH = "/ERP/知识库";
+const ROOT_LABEL = "文件管理";
+const PREVIEWABLE_3D_FORMATS = new Set([
+  "3ds",
+  "3mf",
+  "fbx",
+  "glb",
+  "gltf",
+  "iges",
+  "igs",
+  "obj",
+  "ply",
+  "stl",
+  "step",
+  "stp",
+]);
+const PREVIEWABLE_CAD_FORMATS = new Set(["dwg", "dxf"]);
+const PREVIEWABLE_DOCUMENT_FORMATS = new Set(["pdf"]);
+const PREVIEWABLE_IMAGE_FORMATS = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"]);
+
+function parseDepartments(raw: unknown): string[] {
+  return String(raw ?? "")
+    .split(/[,\uFF0C;；/、|\s]+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+}
+
+function resolveKnowledgeHomePath(user: any): string {
+  const role = String(user?.role || "").trim();
+  if (role === "admin" || Boolean(user?.isCompanyAdmin)) {
+    return ROOT_PATH;
+  }
+  const departments = parseDepartments(user?.department);
+  return departments.length > 0 ? `${ROOT_PATH}/${departments[0]}` : ROOT_PATH;
+}
+
+function getFormatKey(item: FileItem): string {
+  return String(item.ext || item.name.split(".").pop() || "").replace(/^\./, "").toLowerCase();
+}
+
+function getPreviewEngine(item: FileItem): "cad" | "3d" | "pdf" | "image" | "" {
+  const format = getFormatKey(item);
+  if (PREVIEWABLE_CAD_FORMATS.has(format)) return "cad";
+  if (PREVIEWABLE_3D_FORMATS.has(format)) return "3d";
+  if (PREVIEWABLE_DOCUMENT_FORMATS.has(format)) return "pdf";
+  if (PREVIEWABLE_IMAGE_FORMATS.has(format)) return "image";
+  return "";
+}
+
+function isPreviewable(item: FileItem): boolean {
+  return item.type === "file" && Boolean(getPreviewEngine(item));
+}
+
+function getPreviewProviderLabel(item: FileItem): string {
+  const engine = getPreviewEngine(item);
+  if (engine === "cad") return "CAD 在线预览";
+  if (engine === "3d") return "三维模型预览";
+  if (engine === "pdf") return "PDF 在线预览";
+  if (engine === "image") return "图片预览";
+  return "暂不支持在线预览";
+}
+
+function buildPreviewUrl(item: FileItem, rawUrl: string): string {
+  const engine = getPreviewEngine(item);
+  if (engine === "cad") {
+    return `https://sharecad.org/cadframe/load?url=${encodeURIComponent(rawUrl)}`;
+  }
+  if (engine === "3d") {
+    return `/rd-3d-viewer.html?file=${encodeURIComponent(rawUrl)}&format=${encodeURIComponent(getFormatKey(item))}&name=${encodeURIComponent(item.name)}`;
+  }
+  if (engine === "pdf") {
+    return `${rawUrl}#toolbar=0&navpanes=0&scrollbar=0`;
+  }
+  return rawUrl;
+}
+
+/** 将知识库路径解析为面包屑数组 */
 function parseBreadcrumbs(virtualPath: string): Array<{ label: string; path: string }> {
-  const parts = virtualPath.replace(/^\//, "").split("/").filter(Boolean);
+  if (virtualPath === ROOT_PATH) {
+    return [{ label: ROOT_LABEL, path: ROOT_PATH }];
+  }
+  const relativePath = virtualPath.startsWith(ROOT_PATH)
+    ? virtualPath.slice(ROOT_PATH.length)
+    : virtualPath;
+  const parts = relativePath.replace(/^\//, "").split("/").filter(Boolean);
   const crumbs: Array<{ label: string; path: string }> = [];
-  let acc = "";
+  let acc = ROOT_PATH;
+  crumbs.push({ label: ROOT_LABEL, path: ROOT_PATH });
   for (const part of parts) {
     acc += "/" + part;
     crumbs.push({ label: part, path: acc });
@@ -271,8 +356,12 @@ function FileRow({
 // 主组件
 // ============================================================
 function FileManagerContent() {
-  const navigate = useNavigate();
-  const [currentPath, setCurrentPath] = useState("/ERP");
+  const [, navigate] = useLocation();
+  const { user } = useAuth();
+  const { isAdmin, isDeptManager } = usePermission();
+  const knowledgeHomePath = resolveKnowledgeHomePath(user);
+  const canManageFileManager = isAdmin || isDeptManager;
+  const [currentPath, setCurrentPath] = useState(knowledgeHomePath);
   const [history, setHistory] = useState<string[]>([]);
   const [items, setItems] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -286,6 +375,10 @@ function FileManagerContent() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<FileItem | null>(null);
+  const [previewItem, setPreviewItem] = useState<FileItem | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -306,8 +399,21 @@ function FileManagerContent() {
 
   // 初始化并加载根目录
   useEffect(() => {
-    initERPFolders().then(() => loadDirectory("/ERP"));
-  }, [loadDirectory]);
+    const init = async () => {
+      try {
+        await initERPFolders();
+        if (canManageFileManager) {
+          await createFolder(ROOT_PATH);
+          await createFolder(knowledgeHomePath);
+        }
+      } catch {
+        // 只读用户或目录已存在时，直接继续加载目录
+      } finally {
+        void loadDirectory(knowledgeHomePath);
+      }
+    };
+    void init();
+  }, [canManageFileManager, knowledgeHomePath, loadDirectory]);
 
   // ── 导航 ──────────────────────────────────────────────────
   const navigateTo = (path: string) => {
@@ -326,12 +432,36 @@ function FileManagerContent() {
     if (item.type === "folder") {
       navigateTo(item.path);
     } else {
-      downloadFile(item.path, item.name);
+      void handlePreview(item);
+    }
+  };
+
+  const handlePreview = async (item: FileItem) => {
+    if (!isPreviewable(item)) {
+      toast.info("当前文件格式暂不支持在线预览");
+      return;
+    }
+    setPreviewItem(item);
+    setPreviewLoading(true);
+    setPreviewError("");
+    setPreviewUrl("");
+    try {
+      const rawUrl = await requestPreviewUrl(item.path);
+      setPreviewUrl(buildPreviewUrl(item, rawUrl));
+    } catch (err: any) {
+      setPreviewError(err.message || "预览加载失败");
+      toast.error(err.message || "预览加载失败");
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
   // ── 新建文件夹 ────────────────────────────────────────────
   const handleCreateFolder = async () => {
+    if (!canManageFileManager) {
+      toast.error("仅管理员或部门管理员可创建文件夹");
+      return;
+    }
     const name = newFolderName.trim();
     if (!name) {
       toast.error("请输入文件夹名称");
@@ -350,6 +480,11 @@ function FileManagerContent() {
 
   // ── 上传文件 ──────────────────────────────────────────────
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canManageFileManager) {
+      toast.error("仅管理员或部门管理员可上传文件");
+      e.target.value = "";
+      return;
+    }
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
     setUploadProgress(0);
@@ -365,16 +500,13 @@ function FileManagerContent() {
     }
   };
 
-  // ── 下载 ──────────────────────────────────────────────────
-  const handleDownload = (item: FileItem) => {
-    if (item.type === "file") {
-      downloadFile(item.path, item.name);
-    }
-  };
-
   // ── 删除 ──────────────────────────────────────────────────
   const handleDeleteConfirm = async () => {
     if (!deleteConfirmItem) return;
+    if (!canManageFileManager) {
+      toast.error("仅管理员或部门管理员可删除文件");
+      return;
+    }
     try {
       await deleteEntry(deleteConfirmItem.path);
       toast.success(`已删除「${deleteConfirmItem.name}」`);
@@ -389,6 +521,10 @@ function FileManagerContent() {
   // ── 重命名 ────────────────────────────────────────────────
   const handleRenameSubmit = async (item: FileItem, newName: string) => {
     setRenamingPath(null);
+    if (!canManageFileManager) {
+      toast.error("仅管理员或部门管理员可重命名文件");
+      return;
+    }
     const trimmed = newName.trim();
     if (!trimmed || trimmed === item.name) return;
     try {
@@ -403,6 +539,10 @@ function FileManagerContent() {
   // ── 拖放上传 ──────────────────────────────────────────────
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
+    if (!canManageFileManager) {
+      toast.error("仅管理员或部门管理员可上传文件");
+      return;
+    }
     const files = Array.from(e.dataTransfer.files);
     if (files.length === 0) return;
     setUploadProgress(0);
@@ -470,7 +610,7 @@ function FileManagerContent() {
           variant="ghost"
           size="icon"
           className="h-8 w-8"
-          onClick={() => { setHistory([]); loadDirectory("/ERP"); }}
+          onClick={() => { setHistory([]); loadDirectory(knowledgeHomePath); }}
           title="根目录"
         >
           <Home className="w-4 h-4" />
@@ -488,34 +628,49 @@ function FileManagerContent() {
 
         <div className="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-1" />
 
-        {/* 新建文件夹 */}
+        {/* 返回主页 */}
         <Button
           variant="outline"
           size="sm"
           className="h-8 gap-1.5 text-xs"
-          onClick={() => { setNewFolderName(""); setNewFolderOpen(true); }}
+          onClick={() => navigate("/")}
         >
-          <FolderPlus className="w-3.5 h-3.5" />
-          新建文件夹
+          <ChevronLeft className="w-3.5 h-3.5" />
+          返回主页
         </Button>
 
-        {/* 上传文件 */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5 text-xs"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <Upload className="w-3.5 h-3.5" />
-          上传文件
-        </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={handleFileInputChange}
-        />
+        {canManageFileManager && (
+          <>
+            {/* 新建文件夹 */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => { setNewFolderName(""); setNewFolderOpen(true); }}
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+              新建文件夹
+            </Button>
+
+            {/* 上传文件 */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              上传文件
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={handleFileInputChange}
+            />
+          </>
+        )}
 
         <div className="flex-1" />
 
@@ -573,17 +728,17 @@ function FileManagerContent() {
 
       {/* ── 主内容区 ── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* 左侧导航树（仅显示部门级） */}
-        <div className="w-44 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex flex-col">
+        {/* 左侧导航树（分类） */}
+        <div className="w-52 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex flex-col">
           <div className="p-2 flex-1 overflow-y-auto">
             <button
-              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${currentPath === "/ERP" ? "bg-blue-100 text-blue-700" : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"}`}
-              onClick={() => { setHistory([]); loadDirectory("/ERP"); }}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${currentPath === knowledgeHomePath ? "bg-blue-100 text-blue-700" : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"}`}
+              onClick={() => { setHistory([]); loadDirectory(knowledgeHomePath); }}
             >
               <HardDrive className="w-4 h-4 text-blue-500 flex-shrink-0" />
-              <span className="truncate font-medium">ERP 文件库</span>
+              <span className="truncate font-medium">{ROOT_LABEL}</span>
             </button>
-            <DepartmentTree
+            <LibraryTree
               currentPath={currentPath}
               onNavigate={navigateTo}
             />
@@ -600,12 +755,25 @@ function FileManagerContent() {
           </div>
         </div>
 
-        {/* 右侧文件内容区 */}
+        {/* 中间文件清单 */}
         <div
-          className="flex-1 overflow-hidden flex flex-col"
+          className="min-w-0 flex-1 overflow-hidden flex flex-col bg-white dark:bg-gray-950"
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDrop}
         >
+          <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">文件内容</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  当前目录：{currentPath.replace(ROOT_PATH, ROOT_LABEL) || ROOT_LABEL}
+                </div>
+              </div>
+              <Badge variant="outline" className="text-[11px]">
+                {filteredItems.length} 项
+              </Badge>
+            </div>
+          </div>
           <ScrollArea className="flex-1">
             {loading ? (
               <div className="flex items-center justify-center h-40 text-gray-400">
@@ -616,7 +784,9 @@ function FileManagerContent() {
               <div className="flex flex-col items-center justify-center h-40 text-gray-400 gap-2">
                 <FolderOpen className="w-12 h-12 opacity-30" />
                 <p className="text-sm">{searchQuery ? "未找到匹配文件" : "此文件夹为空"}</p>
-                <p className="text-xs opacity-60">可将文件拖放到此处上传</p>
+                <p className="text-xs opacity-60">
+                  {canManageFileManager ? "可将文件拖放到此处上传" : "当前账号仅可浏览和在线预览"}
+                </p>
               </div>
             ) : viewMode === "icon" ? (
               /* 图标视图 */
@@ -642,9 +812,10 @@ function FileManagerContent() {
                     <FileContextMenu
                       item={item}
                       onOpen={() => handleItemDoubleClick(item)}
-                      onDownload={() => handleDownload(item)}
+                      onPreview={() => void handlePreview(item)}
                       onRename={() => setRenamingPath(item.path)}
                       onDelete={() => setDeleteConfirmItem(item)}
+                      canManage={canManageFileManager}
                     />
                   </ContextMenu>
                 ))}
@@ -677,9 +848,10 @@ function FileManagerContent() {
                       <FileContextMenu
                         item={item}
                         onOpen={() => handleItemDoubleClick(item)}
-                        onDownload={() => handleDownload(item)}
+                        onPreview={() => void handlePreview(item)}
                         onRename={() => setRenamingPath(item.path)}
                         onDelete={() => setDeleteConfirmItem(item)}
+                        canManage={canManageFileManager}
                       />
                     </ContextMenu>
                   ))}
@@ -704,10 +876,194 @@ function FileManagerContent() {
               </>
             )}
             <div className="flex-1" />
-            <span className="text-gray-400 italic text-xs">拖放文件到此处可快速上传</span>
+            <span className="text-gray-400 italic text-xs">
+              {canManageFileManager ? "拖放文件到此处可快速上传" : "当前账号仅可浏览和在线预览"}
+            </span>
           </div>
         </div>
+
+        {/* 右侧详情/预览 */}
+        <div className="w-80 flex-shrink-0 border-l border-gray-200 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900/70 flex flex-col">
+          <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">文件详情</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">当前部门文件仅支持在线预览，不提供下载</div>
+          </div>
+
+          {selectedItem ? (
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-800">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white shadow-sm border border-gray-200 dark:bg-gray-950 dark:border-gray-800">
+                    {selectedItem.type === "folder" ? (
+                      <Folder className="w-7 h-7 text-yellow-500 fill-yellow-400/80" />
+                    ) : (
+                      getFileIcon(selectedItem, 7)
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 break-all">
+                      {selectedItem.name}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {selectedItem.type === "folder" ? "文件夹" : (selectedItem.ext?.replace(".", "").toUpperCase() || "文件")}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <ScrollArea className="flex-1">
+                <div className="p-4 space-y-4">
+                  <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950">
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400">基础信息</div>
+                    <div className="mt-3 space-y-2 text-xs">
+                      <DetailRow label="名称" value={selectedItem.name} breakAll />
+                      <DetailRow label="类型" value={selectedItem.type === "folder" ? "文件夹" : "文件"} />
+                      <DetailRow label="格式" value={selectedItem.type === "folder" ? "-" : (selectedItem.ext || "-")} />
+                      <DetailRow label="大小" value={selectedItem.type === "file" ? formatFileSize(selectedItem.size) : "-"} />
+                      <DetailRow label="修改时间" value={formatDateTime(selectedItem.modifiedAt)} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950">
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400">存储路径</div>
+                    <div className="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:bg-gray-900 dark:text-gray-300 break-all">
+                      {selectedItem.path}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-dashed border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400">快速操作</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {selectedItem.type === "folder" ? (
+                        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => navigateTo(selectedItem.path)}>
+                          <FolderOpen className="w-3.5 h-3.5 mr-1" />
+                          打开文件夹
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs"
+                          onClick={() => void handlePreview(selectedItem)}
+                          disabled={!isPreviewable(selectedItem)}
+                        >
+                          <Eye className="w-3.5 h-3.5 mr-1" />
+                          在线预览
+                        </Button>
+                      )}
+                      {canManageFileManager && (
+                        <>
+                          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setRenamingPath(selectedItem.path)}>
+                            <Pencil className="w-3.5 h-3.5 mr-1" />
+                            重命名
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-8 text-xs text-red-600" onClick={() => setDeleteConfirmItem(selectedItem)}>
+                            <Trash2 className="w-3.5 h-3.5 mr-1" />
+                            删除
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {selectedItem.type === "file" ? (
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
+                      <div className="text-xs font-medium text-gray-500 dark:text-gray-400">预览能力</div>
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {getPreviewProviderLabel(selectedItem)}
+                          </div>
+                          <div className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                            {isPreviewable(selectedItem)
+                              ? "支持 CAD、PDF、3D 等文件在线查看，当前部门仅可预览不可下载。"
+                              : "当前文件格式暂不支持在线预览。"}
+                          </div>
+                        </div>
+                        <Badge variant={isPreviewable(selectedItem) ? "default" : "outline"} className="shrink-0">
+                          {isPreviewable(selectedItem) ? "可预览" : "仅详情"}
+                        </Badge>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </ScrollArea>
+            </div>
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-950">
+                <FileText className="w-8 h-8 text-gray-300" />
+              </div>
+              <div className="mt-4 text-sm font-medium text-gray-700 dark:text-gray-200">未选择文件</div>
+              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 leading-6">
+                左侧选择部门目录，中间点击文件或文件夹，这里会显示详细信息和在线预览入口。
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      <Dialog
+        open={!!previewItem}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewItem(null);
+            setPreviewUrl("");
+            setPreviewError("");
+            setPreviewLoading(false);
+          }
+        }}
+      >
+        <DialogContent className="w-[min(96vw,1400px)] max-w-none h-[88vh] p-0 overflow-hidden">
+          <div className="flex h-full flex-col bg-white dark:bg-gray-950">
+            <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+              <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                {previewItem?.name || "文件预览"}
+              </div>
+              <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {previewItem ? getPreviewProviderLabel(previewItem) : "在线预览"}
+              </div>
+            </div>
+            <div className="flex-1 bg-gray-50 p-4 dark:bg-gray-900">
+              {previewLoading ? (
+                <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  正在加载预览...
+                </div>
+              ) : previewError ? (
+                <div className="flex h-full items-center justify-center">
+                  <div className="max-w-md rounded-2xl border border-dashed border-red-200 bg-white px-6 py-8 text-center dark:bg-gray-950">
+                    <div className="text-base font-medium text-red-600">预览加载失败</div>
+                    <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">{previewError}</div>
+                  </div>
+                </div>
+              ) : previewItem && previewUrl ? (
+                PREVIEWABLE_IMAGE_FORMATS.has(getFormatKey(previewItem)) ? (
+                  <div className="flex h-full items-center justify-center overflow-auto rounded-2xl border bg-white dark:bg-gray-950">
+                    <img
+                      src={previewUrl}
+                      alt={previewItem.name}
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className="h-full overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-gray-950">
+                    <iframe
+                      src={previewUrl}
+                      title={previewItem.name}
+                      className="h-full w-full border-0"
+                    />
+                  </div>
+                )
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                  当前文件暂不支持在线预览
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── 新建文件夹对话框 ── */}
       <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>
@@ -766,6 +1122,25 @@ function FileManagerContent() {
   );
 }
 
+function DetailRow({
+  label,
+  value,
+  breakAll = false,
+}: {
+  label: string;
+  value: string;
+  breakAll?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[72px_1fr] gap-2 items-start">
+      <span className="text-gray-500 dark:text-gray-400">{label}</span>
+      <span className={breakAll ? "text-gray-900 dark:text-gray-100 break-all" : "text-gray-900 dark:text-gray-100"}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export default function FileManagerPage() {
   return (
     <FileManagerLayout>
@@ -782,15 +1157,17 @@ export default function FileManagerPage() {
 function FileContextMenu({
   item,
   onOpen,
-  onDownload,
+  onPreview,
   onRename,
   onDelete,
+  canManage,
 }: {
   item: FileItem;
   onOpen: () => void;
-  onDownload: () => void;
+  onPreview: () => void;
   onRename: () => void;
   onDelete: () => void;
+  canManage: boolean;
 }) {
   return (
     <ContextMenuContent className="w-48">
@@ -798,102 +1175,60 @@ function FileContextMenu({
         {item.type === "folder" ? (
           <><FolderOpen className="w-4 h-4 mr-2 text-yellow-500" />打开</>
         ) : (
-          <><Download className="w-4 h-4 mr-2 text-blue-500" />下载</>
+          <><Eye className="w-4 h-4 mr-2 text-blue-500" />预览</>
         )}
       </ContextMenuItem>
-      {item.type === "file" && (
-        <ContextMenuItem onClick={onDownload}>
-          <Download className="w-4 h-4 mr-2 text-blue-500" />下载文件
+      {item.type === "file" && isPreviewable(item) && (
+        <ContextMenuItem onClick={onPreview}>
+          <Eye className="w-4 h-4 mr-2 text-blue-500" />在线预览
         </ContextMenuItem>
       )}
-      <ContextMenuSeparator />
-      <ContextMenuItem onClick={onRename}>
-        <Pencil className="w-4 h-4 mr-2 text-gray-500" />重命名
-      </ContextMenuItem>
-      <ContextMenuSeparator />
-      <ContextMenuItem onClick={onDelete} className="text-red-600 focus:text-red-600">
-        <Trash2 className="w-4 h-4 mr-2" />删除
-      </ContextMenuItem>
+      {canManage && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={onRename}>
+            <Pencil className="w-4 h-4 mr-2 text-gray-500" />重命名
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={onDelete} className="text-red-600 focus:text-red-600">
+            <Trash2 className="w-4 h-4 mr-2" />删除
+          </ContextMenuItem>
+        </>
+      )}
     </ContextMenuContent>
   );
 }
 
 // ============================================================
-// 左侧部门导航树
+// 左侧知识库导航树
 // ============================================================
-const DEPARTMENTS = [
-  "管理部", "招商部", "销售部", "研发部", "生产部",
-  "质量部", "采购部", "仓库管理", "财务部",
-];
-
-function DepartmentTree({
+function LibraryTree({
   currentPath,
   onNavigate,
 }: {
   currentPath: string;
   onNavigate: (path: string) => void;
 }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [subItems, setSubItems] = useState<Record<string, FileItem[]>>({});
+  const [items, setItems] = useState<FileItem[]>([]);
 
-  const toggle = async (deptPath: string) => {
-    if (expanded.has(deptPath)) {
-      setExpanded((s) => { const n = new Set(s); n.delete(deptPath); return n; });
-    } else {
-      setExpanded((s) => new Set(s).add(deptPath));
-      if (!subItems[deptPath]) {
-        try {
-          const items = await listDirectory(deptPath);
-          setSubItems((prev) => ({ ...prev, [deptPath]: items.filter((i) => i.type === "folder") }));
-        } catch {
-          // ignore
-        }
-      }
-    }
-  };
+  useEffect(() => {
+    listDirectory(ROOT_PATH)
+      .then((result) => setItems(result.filter((item) => item.type === "folder")))
+      .catch(() => setItems([]));
+  }, [currentPath]);
 
   return (
     <div className="mt-1">
-      {DEPARTMENTS.map((dept) => {
-        const deptPath = `/ERP/${dept}`;
-        const isExpanded = expanded.has(deptPath);
-        const isActive = currentPath === deptPath || currentPath.startsWith(deptPath + "/");
-        return (
-          <div key={dept}>
-            <div
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${isActive ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40" : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"}`}
-            >
-              <button
-                className="flex-shrink-0 w-4 h-4 flex items-center justify-center"
-                onClick={(e) => { e.stopPropagation(); toggle(deptPath); }}
-              >
-                <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-              </button>
-              <button
-                className="flex items-center gap-1.5 flex-1 min-w-0"
-                onClick={() => onNavigate(deptPath)}
-              >
-                <Folder className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400/80 flex-shrink-0" />
-                <span className="truncate">{dept}</span>
-              </button>
-            </div>
-            {isExpanded && subItems[deptPath] && (
-              <div className="ml-4">
-                {subItems[deptPath].map((sub) => (
-                  <button
-                    key={sub.path}
-                    className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${currentPath === sub.path ? "bg-blue-100 text-blue-700" : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"}`}
-                    onClick={() => onNavigate(sub.path)}
-                  >
-                    <Folder className="w-3 h-3 text-yellow-400 fill-yellow-400/80 flex-shrink-0" />
-                    <span className="truncate">{sub.name}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {items.map((item) => (
+        <button
+          key={item.path}
+          className={`w-full flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${currentPath === item.path || currentPath.startsWith(item.path + "/") ? "bg-blue-100 text-blue-700" : "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400"}`}
+          onClick={() => onNavigate(item.path)}
+        >
+          <Folder className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400/80 flex-shrink-0" />
+          <span className="truncate">{item.name}</span>
+        </button>
+      ))}
     </div>
   );
 }

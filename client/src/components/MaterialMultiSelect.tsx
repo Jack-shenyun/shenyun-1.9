@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { formatDisplayNumber } from "@/lib/formatters";
 
 export interface Material {
   id: number;
@@ -54,8 +55,8 @@ export const sampleMaterials: Material[] = [
   { id: 2, code: "MAT-002", name: "医用级PE塑料", spec: "吹塑级", unit: "kg", price: 22.00, category: "原材料", stock: 3000, minStock: 800 },
   { id: 3, code: "MAT-003", name: "无纺布", spec: "25g/m²", unit: "m", price: 8.65, category: "原材料", stock: 15000, minStock: 3000 },
   { id: 4, code: "MAT-004", name: "熔喷布", spec: "25g/m²", unit: "m", price: 35.00, category: "原材料", stock: 8000, minStock: 2000 },
-  { id: 5, code: "MAT-005", name: "鼻梁条", spec: "3mm", unit: "m", price: 0.15, category: "辅料", stock: 50000, minStock: 10000 },
-  { id: 6, code: "MAT-006", name: "耳带", spec: "弹力", unit: "m", price: 0.08, category: "辅料", stock: 80000, minStock: 20000 },
+  { id: 5, code: "MAT-005", name: "鼻梁条", spec: "3mm", unit: "m", price: 0.15, category: "组件", stock: 50000, minStock: 10000 },
+  { id: 6, code: "MAT-006", name: "耳带", spec: "弹力", unit: "m", price: 0.08, category: "组件", stock: 80000, minStock: 20000 },
   { id: 7, code: "MAT-007", name: "包装盒", spec: "50只装", unit: "个", price: 1.60, category: "包装材料", stock: 20000, minStock: 5000 },
   { id: 8, code: "MAT-008", name: "包装袋", spec: "PE自封袋", unit: "个", price: 0.25, category: "包装材料", stock: 100000, minStock: 20000 },
   { id: 9, code: "MAT-009", name: "注射器针头", spec: "21G", unit: "支", price: 0.35, category: "半成品", stock: 100000, minStock: 30000 },
@@ -181,7 +182,7 @@ export default function MaterialMultiSelect({
                   <TableCell>{material.spec}</TableCell>
                   <TableCell>{material.unit}</TableCell>
                   {showPrice && (
-                    <TableCell className="text-right">¥{material.price.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">¥{formatDisplayNumber(material.price)}</TableCell>
                   )}
                   <TableCell>
                     <div className="flex items-center justify-center gap-1">
@@ -214,7 +215,7 @@ export default function MaterialMultiSelect({
                   </TableCell>
                   {showPrice && (
                     <TableCell className="text-right font-medium">
-                      ¥{(material.quantity * material.price).toFixed(2)}
+                      ¥{formatDisplayNumber(material.quantity * material.price)}
                     </TableCell>
                   )}
                   <TableCell>
@@ -235,7 +236,7 @@ export default function MaterialMultiSelect({
                     合计：
                   </TableCell>
                   <TableCell className="text-right font-bold text-primary">
-                    ¥{totalAmount.toFixed(2)}
+                    ¥{formatDisplayNumber(totalAmount)}
                   </TableCell>
                   <TableCell></TableCell>
                 </TableRow>
@@ -322,12 +323,12 @@ export default function MaterialMultiSelect({
                       <TableCell>{material.spec}</TableCell>
                       <TableCell>{material.unit}</TableCell>
                       {showPrice && (
-                        <TableCell className="text-right">¥{material.price.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">¥{formatDisplayNumber(material.price)}</TableCell>
                       )}
                       {showStock && (
                         <TableCell className="text-right">
                           <span className={material.stock && material.minStock && material.stock < material.minStock ? "text-red-600" : ""}>
-                            {material.stock?.toLocaleString() || "-"}
+                            {material.stock != null ? formatDisplayNumber(material.stock) : "-"}
                           </span>
                         </TableCell>
                       )}

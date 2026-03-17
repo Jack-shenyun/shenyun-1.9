@@ -1,6 +1,6 @@
 import { formatDateValue } from "@/lib/formatters";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -52,13 +52,14 @@ interface Training {
   trainingNo: string;
   title: string;
   type: string;
+  typeLabel: string;
   category: string;
   trainer: string;
   trainerDept: string;
   participants: number;
   duration: string;
   location: string;
-  status: "planned" | "ongoing" | "completed" | "cancelled";
+  status: "planned" | "in_progress" | "completed" | "cancelled";
   date: string;
   endDate: string;
   objectives: string;
@@ -70,22 +71,98 @@ interface Training {
 
 const statusMap: Record<string, any> = {
   planned: { label: "计划中", variant: "outline" as const },
-  ongoing: { label: "进行中", variant: "default" as const },
+  in_progress: { label: "进行中", variant: "default" as const },
   completed: { label: "已完成", variant: "secondary" as const },
   cancelled: { label: "已取消", variant: "destructive" as const },
 };
 
-
-
-const typeOptions = ["内部培训", "外部培训", "岗位培训", "在线培训"];
+const typeOptions = [
+  { label: "入职培训", value: "onboarding" },
+  { label: "技能培训", value: "skill" },
+  { label: "法规培训", value: "compliance" },
+  { label: "安全培训", value: "safety" },
+  { label: "其他培训", value: "other" },
+];
+const typeLabelMap: Record<string, string> = Object.fromEntries(
+  typeOptions.map((item) => [item.value, item.label])
+);
 const categoryOptions = ["法规培训", "技能培训", "安全培训", "质量培训", "管理培训"];
+
+function toDateInputValue(value: unknown) {
+  if (!value) return "";
+  const text = String(value);
+  return text.includes("T") ? text.slice(0, 10) : text.slice(0, 10);
+}
+
+function buildTrainingRemark(formData: {
+  category: string;
+  trainer: string;
+  trainerDept: string;
+  duration: string;
+  objectives: string;
+  materials: string;
+  assessment: string;
+  remarks: string;
+}) {
+  const detailLines = [
+    formData.category ? `培训类别：${formData.category}` : "",
+    formData.trainer ? `培训讲师：${formData.trainer}` : "",
+    formData.trainerDept ? `讲师部门：${formData.trainerDept}` : "",
+    formData.duration ? `培训时长：${formData.duration}` : "",
+    formData.objectives ? `培训目标：${formData.objectives}` : "",
+    formData.materials ? `培训材料：${formData.materials}` : "",
+    formData.assessment ? `考核方式：${formData.assessment}` : "",
+    formData.remarks ? `备注：${formData.remarks}` : "",
+  ].filter(Boolean);
+  return detailLines.join("\n");
+}
 
 export default function TrainingPage() {
   const { data: _dbData = [], isLoading, refetch } = trpc.trainings.list.useQuery();
   const createMutation = trpc.trainings.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
   const updateMutation = trpc.trainings.update.useMutation({ onSuccess: () => { refetch(); toast.success("更新成功"); } });
   const deleteMutation = trpc.trainings.delete.useMutation({ onSuccess: () => { refetch(); toast.success("删除成功"); } });
-  const trainings = _dbData as any[];
+  const { data: personnelData = [] } = trpc.personnel.list.useQuery({ limit: 5000, offset: 0 });
+  const { data: departmentsData = [] } = trpc.departments.list.useQuery({ status: "active" });
+  const personnelNameMap = useMemo(
+    () =>
+      new Map(
+        (personnelData as any[]).map((item: any) => [Number(item.id), String(item.name || "")])
+      ),
+    [personnelData]
+  );
+  const departmentNameMap = useMemo(
+    () =>
+      new Map(
+        (departmentsData as any[]).map((item: any) => [Number(item.id), String(item.name || "")])
+      ),
+    [departmentsData]
+  );
+  const trainings = useMemo(
+    () =>
+      (_dbData as any[]).map((row: any) => ({
+        id: Number(row.id || 0),
+        trainingNo: String(row.trainingNo || ""),
+        title: String(row.title || ""),
+        type: String(row.type || "other"),
+        typeLabel: typeLabelMap[String(row.type || "other")] || String(row.type || "其他培训"),
+        category: "",
+        trainer: personnelNameMap.get(Number(row.trainerId || 0)) || "",
+        trainerDept: departmentNameMap.get(Number(row.departmentId || 0)) || "",
+        participants: Number(row.participants || 0),
+        duration: "",
+        location: String(row.location || ""),
+        status: (String(row.status || "planned") as Training["status"]),
+        date: toDateInputValue(row.startDate),
+        endDate: toDateInputValue(row.endDate),
+        objectives: "",
+        content: String(row.content || ""),
+        materials: "",
+        assessment: "",
+        remarks: String(row.remark || ""),
+      })),
+    [_dbData, departmentNameMap, personnelNameMap]
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -97,7 +174,7 @@ export default function TrainingPage() {
   const [formData, setFormData] = useState({
     trainingNo: "",
     title: "",
-    type: "",
+    type: "other",
     category: "",
     trainer: "",
     trainerDept: "",
@@ -125,11 +202,10 @@ export default function TrainingPage() {
 
   const handleAdd = () => {
     setEditingTraining(null);
-    const nextNo = trainings.length + 1;
     setFormData({
-      trainingNo: `TR-2026-${String(nextNo).padStart(3, "0")}`,
+      trainingNo: "",
       title: "",
-      type: "",
+      type: "other",
       category: "",
       trainer: "",
       trainerDept: "",
@@ -183,30 +259,60 @@ export default function TrainingPage() {
       return;
     }
     deleteMutation.mutate({ id: training.id });
-    toast.success("培训记录已删除");
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!formData.title || !formData.type || !formData.date) {
       toast.error("请填写必填项", { description: "培训主题、类型、日期为必填" });
       return;
     }
 
-    if (editingTraining) {
-      toast.success("培训信息已更新");
-    } else {
-      const newTraining: Training = {
-        id: Math.max(...trainings.map((t: any) => t.id)) + 1,
-        ...formData,
-        status: formData.status as Training["status"],
-      };
-      toast.success("培训计划创建成功");
+    const trainerMatch = (personnelData as any[]).find(
+      (item: any) => String(item.name || "").trim() === String(formData.trainer || "").trim()
+    );
+    const departmentMatch = (departmentsData as any[]).find(
+      (item: any) => String(item.name || "").trim() === String(formData.trainerDept || "").trim()
+    );
+    const payload = {
+      title: formData.title.trim(),
+      type: (formData.type || "other") as
+        | "onboarding"
+        | "skill"
+        | "compliance"
+        | "safety"
+        | "other",
+      trainerId: trainerMatch?.id ? Number(trainerMatch.id) : undefined,
+      departmentId: departmentMatch?.id ? Number(departmentMatch.id) : undefined,
+      startDate: formData.date || undefined,
+      endDate: formData.endDate || undefined,
+      location: formData.location.trim() || undefined,
+      participants: Number(formData.participants || 0) || undefined,
+      content: formData.content.trim() || undefined,
+      status: (formData.status || "planned") as
+        | "planned"
+        | "in_progress"
+        | "completed"
+        | "cancelled",
+      remark: buildTrainingRemark(formData) || undefined,
+    };
+
+    try {
+      if (editingTraining) {
+        await updateMutation.mutateAsync({
+          id: editingTraining.id,
+          data: payload,
+        });
+      } else {
+        await createMutation.mutateAsync(payload);
+      }
+      setDialogOpen(false);
+    } catch (error: any) {
+      toast.error(String(error?.message || "保存培训记录失败"));
     }
-    setDialogOpen(false);
   };
 
   const completedCount = trainings.filter((t: any) => t.status === "completed").length;
-  const ongoingCount = trainings.filter((t: any) => t.status === "ongoing").length;
+  const ongoingCount = trainings.filter((t: any) => t.status === "in_progress").length;
   const plannedCount = trainings.filter((t: any) => t.status === "planned").length;
 
   const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
@@ -290,7 +396,7 @@ export default function TrainingPage() {
                 <SelectContent>
                   <SelectItem value="all">全部状态</SelectItem>
                   <SelectItem value="planned">计划中</SelectItem>
-                  <SelectItem value="ongoing">进行中</SelectItem>
+                  <SelectItem value="in_progress">进行中</SelectItem>
                   <SelectItem value="completed">已完成</SelectItem>
                   <SelectItem value="cancelled">已取消</SelectItem>
                 </SelectContent>
@@ -320,7 +426,7 @@ export default function TrainingPage() {
                   <TableRow key={training.id}>
                     <TableCell className="text-center font-medium">{training.trainingNo}</TableCell>
                     <TableCell className="text-center">{training.title}</TableCell>
-                    <TableCell className="text-center">{training.type}</TableCell>
+                    <TableCell className="text-center">{training.typeLabel}</TableCell>
                     <TableCell className="text-center">{training.trainer}</TableCell>
                     <TableCell className="text-center">{training.participants}</TableCell>
                     <TableCell className="text-center">
@@ -377,7 +483,7 @@ export default function TrainingPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>培训编号</Label>
-                  <Input value={formData.trainingNo} disabled />
+                  <Input value={formData.trainingNo} placeholder="保存后系统生成" disabled />
                 </div>
                 <div className="space-y-2">
                   <Label>培训主题 *</Label>
@@ -401,7 +507,7 @@ export default function TrainingPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {typeOptions.map((type: any) => (
-                        <SelectItem key={type} value={type}>{type}</SelectItem>
+                        <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -433,7 +539,7 @@ export default function TrainingPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="planned">计划中</SelectItem>
-                      <SelectItem value="ongoing">进行中</SelectItem>
+                      <SelectItem value="in_progress">进行中</SelectItem>
                       <SelectItem value="completed">已完成</SelectItem>
                       <SelectItem value="cancelled">已取消</SelectItem>
                     </SelectContent>
@@ -592,7 +698,7 @@ export default function TrainingPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
                 <div>
                   <FieldRow label="培训主题">{viewingTraining.title || "-"}</FieldRow>
-                  <FieldRow label="培训类型">{viewingTraining.type || "-"}</FieldRow>
+                  <FieldRow label="培训类型">{viewingTraining.typeLabel || "-"}</FieldRow>
                   <FieldRow label="培训类别">{viewingTraining.category || "-"}</FieldRow>
                   <FieldRow label="培训地点">{viewingTraining.location || "-"}</FieldRow>
                 </div>

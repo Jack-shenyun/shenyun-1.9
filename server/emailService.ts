@@ -207,7 +207,53 @@ export async function notifySterilizationArrived(params: {
 }
 
 /**
- * 2. OQC 检验合格 → 通知生产部提交入库申请
+ * 2. 生产入库申请已提交 → 通知质量部安排 OQC 检验
+ */
+export async function notifyWarehouseEntryCreatedForOqc(params: {
+  entryNo: string;
+  batchNo: string;
+  productName?: string;
+  quantity: number;
+  unit?: string;
+  qualityEmails: string[];
+}) {
+  const subject = `【入库申请待检】${params.entryNo} 已提交，请质量部安排 OQC 检验`;
+  const body = `
+    <p>您好，</p>
+    <p>以下 <strong>生产入库申请</strong> 已提交，请质量部安排成品检验：</p>
+    <table style="border-collapse:collapse;width:100%;margin:16px 0;">
+      <tr style="background:#f3f4f6;">
+        <td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;">入库申请单号</td>
+        <td style="padding:8px 12px;border:1px solid #e5e7eb;">${params.entryNo}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;">生产批号</td>
+        <td style="padding:8px 12px;border:1px solid #e5e7eb;">${params.batchNo || "-"}</td>
+      </tr>
+      <tr style="background:#f3f4f6;">
+        <td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;">申请数量</td>
+        <td style="padding:8px 12px;border:1px solid #e5e7eb;">${params.quantity} ${params.unit || ""}</td>
+      </tr>
+    </table>
+    <p style="color:#d97706;font-weight:600;">⚠️ 该入库申请已自动进入 OQC 待办列表，请及时检验。</p>
+  `;
+
+  return await sendEmail({
+    to: params.qualityEmails,
+    subject,
+    html: buildEmailTemplate({
+      title: subject,
+      batchNo: params.batchNo,
+      productName: params.productName,
+      body,
+      color: "#0f766e",
+    }),
+    text: `生产入库申请 ${params.entryNo} 已提交，批号 ${params.batchNo || "-"}，数量 ${params.quantity} ${params.unit || ""}，请质量部安排 OQC 检验。`,
+  });
+}
+
+/**
+ * 3. OQC 检验合格 → 通知生产部提交入库申请
  */
 export async function notifyOqcQualified(params: {
   batchNo: string;
@@ -258,7 +304,7 @@ export async function notifyOqcQualified(params: {
 }
 
 /**
- * 3. OQC 检验不合格 → 通知生产部和质量主管
+ * 4. OQC 检验不合格 → 通知生产部和质量主管
  */
 export async function notifyOqcUnqualified(params: {
   batchNo: string;
@@ -304,7 +350,7 @@ export async function notifyOqcUnqualified(params: {
 }
 
 /**
- * 4. 生产入库申请审批通过 → 通知仓库部执行入库
+ * 5. 生产入库申请审批通过 → 通知仓库部执行入库
  */
 export async function notifyWarehouseEntryApproved(params: {
   batchNo: string;
@@ -346,7 +392,7 @@ export async function notifyWarehouseEntryApproved(params: {
 }
 
 /**
- * 5. 生产入库完成 → 通知销售部和财务部
+ * 6. 生产入库完成 → 通知销售部和财务部
  */
 export async function notifyWarehouseEntryCompleted(params: {
   batchNo: string;

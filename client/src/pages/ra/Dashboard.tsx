@@ -1,6 +1,6 @@
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import ERPLayout from "@/components/ERPLayout";
+import RaLayout from "@/components/RaLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,7 +37,7 @@ export default function RaDashboardPage() {
     .slice(0, 5);
 
   return (
-    <ERPLayout>
+    <RaLayout>
       <div className="space-y-6">
         {/* 页面标题 */}
         <div className="flex items-center justify-between">
@@ -271,6 +271,6 @@ export default function RaDashboardPage() {
           </CardContent>
         </Card>
       </div>
-    </ERPLayout>
+    </RaLayout>
   );
 }

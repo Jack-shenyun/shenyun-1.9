@@ -1,483 +1,621 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ERPLayout from "@/components/ERPLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
+import { trpc } from "@/lib/trpc";
+import { formatCurrencyValue, formatDateValue, toRoundedString } from "@/lib/formatters";
+import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { DollarSign, Plus, Search, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
-import {
-  TrendingUp, TrendingDown, Plus, MoreHorizontal, Eye, Edit, Trash2,
-  Search, DollarSign, ArrowUpCircle, ArrowDownCircle,
-} from "lucide-react";
 
-// ==================== 类型定义 ====================
+const PAGE_SIZE = 10;
+const OTHER_FLOW_PREFIX = "__OTHER_FLOW__:";
 
-type IncomeCategory = "sales" | "service" | "investment" | "other_income";
-type ExpenseCategory = "purchase" | "salary" | "rent" | "utilities" | "marketing" | "rd" | "logistics" | "tax" | "other_expense";
-type EntryStatus = "pending" | "confirmed" | "cancelled";
-
-interface IncomeRecord {
-  id: number;
-  entryNo: string;
-  date: string;
-  category: IncomeCategory;
-  description: string;
-  amount: number;
-  currency: string;
-  counterparty: string;
-  paymentMethod: string;
-  relatedOrderNo: string;
-  status: EntryStatus;
-  remark: string;
-}
-
-interface ExpenseRecord {
-  id: number;
-  entryNo: string;
-  date: string;
-  category: ExpenseCategory;
-  description: string;
-  amount: number;
-  currency: string;
-  counterparty: string;
-  paymentMethod: string;
-  relatedOrderNo: string;
-  status: EntryStatus;
-  remark: string;
-}
-
-// ==================== 常量 ====================
-
-const incomeCategoryMap: Record<IncomeCategory, string> = {
-  sales:        "销售收入",
-  service:      "服务收入",
-  investment:   "投资收益",
-  other_income: "其他收入",
+const relatedTypeMap: Record<string, string> = {
+  sales_order: "销售回款",
+  purchase_order: "采购付款",
+  expense: "报销付款",
+  other: "其他收支",
 };
 
-const expenseCategoryMap: Record<ExpenseCategory, string> = {
-  purchase:       "采购支出",
-  salary:         "工资薪酬",
-  rent:           "租金费用",
-  utilities:      "水电费用",
-  marketing:      "市场推广",
-  rd:             "研发费用",
-  logistics:      "物流运费",
-  tax:            "税费",
-  other_expense:  "其他支出",
-};
-
-const statusMap: Record<EntryStatus, { label: string; color: string }> = {
-  pending:   { label: "待确认", color: "bg-yellow-100 text-yellow-700 border-yellow-300" },
-  confirmed: { label: "已确认", color: "bg-green-100 text-green-700 border-green-300" },
-  cancelled: { label: "已取消", color: "bg-gray-100 text-gray-500 border-gray-300" },
-};
-
-const paymentMethods = ["银行转账", "现金", "支付宝", "微信支付", "承兑汇票", "其他"];
-
-// ==================== 模拟数据 ====================
-
-const mockIncome: IncomeRecord[] = [
-  { id: 1, entryNo: "INC-2026-001", date: "2026-03-01", category: "sales", description: "销售订单 SO-2026-001 回款", amount: 22600, currency: "CNY", counterparty: "深圳某医院", paymentMethod: "银行转账", relatedOrderNo: "SO-2026-001", status: "confirmed", remark: "" },
-  { id: 2, entryNo: "INC-2026-002", date: "2026-03-03", category: "sales", description: "销售订单 SO-2026-003 预付款", amount: 8480, currency: "CNY", counterparty: "武汉某诊所", paymentMethod: "银行转账", relatedOrderNo: "SO-2026-003", status: "confirmed", remark: "" },
-  { id: 3, entryNo: "INC-2026-003", date: "2026-03-06", category: "service", description: "设备维保服务费", amount: 5000, currency: "CNY", counterparty: "成都某医院", paymentMethod: "银行转账", relatedOrderNo: "", status: "pending", remark: "" },
-  { id: 4, entryNo: "INC-2026-004", date: "2026-03-08", category: "other_income", description: "理财收益", amount: 1200, currency: "CNY", counterparty: "招商银行", paymentMethod: "银行转账", relatedOrderNo: "", status: "confirmed", remark: "" },
-];
-
-const mockExpense: ExpenseRecord[] = [
-  { id: 1, entryNo: "EXP-2026-001", date: "2026-03-01", category: "purchase", description: "采购订单 PO-2026-001 付款", amount: 11300, currency: "CNY", counterparty: "上海某材料有限公司", paymentMethod: "银行转账", relatedOrderNo: "PO-2026-001", status: "confirmed", remark: "" },
-  { id: 2, entryNo: "EXP-2026-002", date: "2026-03-05", category: "salary", description: "2026年2月工资发放", amount: 85000, currency: "CNY", counterparty: "全体员工", paymentMethod: "银行转账", relatedOrderNo: "", status: "confirmed", remark: "" },
-  { id: 3, entryNo: "EXP-2026-003", date: "2026-03-06", category: "rent", description: "3月厂房租金", amount: 30000, currency: "CNY", counterparty: "某工业园区", paymentMethod: "银行转账", relatedOrderNo: "", status: "confirmed", remark: "" },
-  { id: 4, entryNo: "EXP-2026-004", date: "2026-03-07", category: "utilities", description: "2月水电费", amount: 4200, currency: "CNY", counterparty: "供电局", paymentMethod: "银行转账", relatedOrderNo: "", status: "confirmed", remark: "" },
-  { id: 5, entryNo: "EXP-2026-005", date: "2026-03-08", category: "marketing", description: "展会参展费用", amount: 15000, currency: "CNY", counterparty: "某展览公司", paymentMethod: "银行转账", relatedOrderNo: "", status: "pending", remark: "" },
-];
-
-// ==================== 通用表单对话框 ====================
-
-function EntryFormDialog<T extends { id: number; entryNo: string; date: string; description: string; amount: number; currency: string; counterparty: string; paymentMethod: string; relatedOrderNo: string; status: EntryStatus; remark: string }>({
-  open, onClose, editing, form, setForm, onSave, categoryMap, categoryLabel,
-}: {
-  open: boolean; onClose: () => void; editing: T | null;
-  form: Partial<T>; setForm: React.Dispatch<React.SetStateAction<Partial<T>>>;
-  onSave: () => void; categoryMap: Record<string, string>; categoryLabel: string;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader><DialogTitle>{editing ? "编辑记录" : "新增记录"}</DialogTitle></DialogHeader>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1.5">
-            <Label>日期 *</Label>
-            <Input type="date" value={(form as any).date || ""} onChange={e => setForm((f: any) => ({ ...f, date: e.target.value }))} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>{categoryLabel} *</Label>
-            <Select value={(form as any).category || ""} onValueChange={v => setForm((f: any) => ({ ...f, category: v }))}>
-              <SelectTrigger><SelectValue placeholder="选择类别" /></SelectTrigger>
-              <SelectContent>{Object.entries(categoryMap).map(([k, v]) => <SelectItem key={k} value={k}>{v as string}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="col-span-2 space-y-1.5">
-            <Label>描述 *</Label>
-            <Input value={(form as any).description || ""} onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>金额 *</Label>
-            <Input type="number" value={(form as any).amount || ""} onChange={e => setForm((f: any) => ({ ...f, amount: Number(e.target.value) }))} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>币种</Label>
-            <Select value={(form as any).currency || "CNY"} onValueChange={v => setForm((f: any) => ({ ...f, currency: v }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{["CNY", "USD", "EUR"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>对方单位</Label>
-            <Input value={(form as any).counterparty || ""} onChange={e => setForm((f: any) => ({ ...f, counterparty: e.target.value }))} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>支付方式</Label>
-            <Select value={(form as any).paymentMethod || "银行转账"} onValueChange={v => setForm((f: any) => ({ ...f, paymentMethod: v }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{paymentMethods.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>关联单号</Label>
-            <Input value={(form as any).relatedOrderNo || ""} onChange={e => setForm((f: any) => ({ ...f, relatedOrderNo: e.target.value }))} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>状态</Label>
-            <Select value={(form as any).status || "pending"} onValueChange={v => setForm((f: any) => ({ ...f, status: v }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{Object.entries(statusMap).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="col-span-2 space-y-1.5">
-            <Label>备注</Label>
-            <Textarea value={(form as any).remark || ""} onChange={e => setForm((f: any) => ({ ...f, remark: e.target.value }))} rows={2} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button onClick={onSave}>保存</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+function formatMoney(value: unknown, currency = "CNY") {
+  const amount = Number(value || 0);
+  const symbol = String(currency || "CNY").toUpperCase() === "USD" ? "$" : "¥";
+  return formatCurrencyValue(amount, symbol);
 }
 
-// ==================== 收入子组件 ====================
-
-function IncomeTab() {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [records, setRecords] = useState<IncomeRecord[]>(mockIncome);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<IncomeRecord | null>(null);
-  const [form, setForm] = useState<Partial<IncomeRecord>>({});
-
-  const filtered = records.filter(r => {
-    const matchSearch = !search || r.entryNo.includes(search) || r.description.includes(search) || r.counterparty.includes(search);
-    const matchStatus = statusFilter === "all" || r.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
-
-  const totalConfirmed = records.filter(r => r.status === "confirmed").reduce((s, r) => s + r.amount, 0);
-  const totalPending = records.filter(r => r.status === "pending").reduce((s, r) => s + r.amount, 0);
-
-  const openAdd = () => { setEditing(null); setForm({ currency: "CNY", status: "pending", paymentMethod: "银行转账" }); setFormOpen(true); };
-  const openEdit = (r: IncomeRecord) => { setEditing(r); setForm({ ...r }); setFormOpen(true); };
-
-  const handleSave = () => {
-    if (!form.date || !form.description || !form.amount) { toast.error("请填写日期、描述和金额"); return; }
-    if (editing) {
-      setRecords(prev => prev.map(r => r.id === editing.id ? { ...r, ...form } as IncomeRecord : r));
-      toast.success("已更新");
-    } else {
-      const seq = String(records.length + 1).padStart(3, "0");
-      setRecords(prev => [{ id: Date.now(), entryNo: `INC-2026-${seq}`, date: form.date!, category: form.category as IncomeCategory || "other_income", description: form.description!, amount: Number(form.amount), currency: form.currency || "CNY", counterparty: form.counterparty || "", paymentMethod: form.paymentMethod || "银行转账", relatedOrderNo: form.relatedOrderNo || "", status: form.status as EntryStatus || "pending", remark: form.remark || "" }, ...prev]);
-      toast.success("已添加");
-    }
-    setFormOpen(false);
-  };
-
-  const handleDelete = (id: number) => { setRecords(prev => prev.filter(r => r.id !== id)); toast.success("已删除"); };
-  const handleConfirm = (id: number) => { setRecords(prev => prev.map(r => r.id === id ? { ...r, status: "confirmed" as EntryStatus } : r)); toast.success("已确认"); };
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
-        <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-green-600">¥{totalConfirmed.toLocaleString()}</div><div className="text-xs text-muted-foreground mt-0.5">已确认收入</div></CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-yellow-600">¥{totalPending.toLocaleString()}</div><div className="text-xs text-muted-foreground mt-0.5">待确认收入</div></CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-blue-600">{records.length}</div><div className="text-xs text-muted-foreground mt-0.5">收入笔数</div></CardContent></Card>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-8 h-9" placeholder="搜索单号、描述、对方单位..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-28 h-9"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
-            {Object.entries(statusMap).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Button size="sm" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />新增收入</Button>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>单号</TableHead>
-                <TableHead>日期</TableHead>
-                <TableHead>类别</TableHead>
-                <TableHead>描述</TableHead>
-                <TableHead>对方单位</TableHead>
-                <TableHead>支付方式</TableHead>
-                <TableHead className="text-right">金额</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="w-16"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">暂无数据</TableCell></TableRow>
-              ) : filtered.map(r => (
-                <TableRow key={r.id}>
-                  <TableCell className="font-mono text-sm">{r.entryNo}</TableCell>
-                  <TableCell className="text-sm">{r.date}</TableCell>
-                  <TableCell className="text-sm">{incomeCategoryMap[r.category]}</TableCell>
-                  <TableCell className="text-sm max-w-[180px] truncate">{r.description}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{r.counterparty || "-"}</TableCell>
-                  <TableCell className="text-sm">{r.paymentMethod}</TableCell>
-                  <TableCell className="text-right font-medium text-green-600">+¥{r.amount.toLocaleString()}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={`text-xs ${statusMap[r.status]?.color}`}>{statusMap[r.status]?.label}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(r)}><Edit className="h-4 w-4 mr-2" />编辑</DropdownMenuItem>
-                        {r.status === "pending" && <DropdownMenuItem className="text-green-600" onClick={() => handleConfirm(r.id)}><ArrowUpCircle className="h-4 w-4 mr-2" />确认</DropdownMenuItem>}
-                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />删除</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-      <div className="flex justify-end text-sm text-muted-foreground pr-1">
-        合计：<span className="font-medium text-green-600 ml-1">+¥{filtered.reduce((s, r) => s + r.amount, 0).toLocaleString()}</span>
-      </div>
-
-      <EntryFormDialog open={formOpen} onClose={() => setFormOpen(false)} editing={editing} form={form} setForm={setForm as any} onSave={handleSave} categoryMap={incomeCategoryMap} categoryLabel="收入类别" />
-    </div>
-  );
+function formatDateOnly(value: unknown) {
+  return formatDateValue(value);
 }
 
-// ==================== 支出子组件 ====================
-
-function ExpenseTab() {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [records, setRecords] = useState<ExpenseRecord[]>(mockExpense);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<ExpenseRecord | null>(null);
-  const [form, setForm] = useState<Partial<ExpenseRecord>>({});
-
-  const filtered = records.filter(r => {
-    const matchSearch = !search || r.entryNo.includes(search) || r.description.includes(search) || r.counterparty.includes(search);
-    const matchStatus = statusFilter === "all" || r.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
-
-  const totalConfirmed = records.filter(r => r.status === "confirmed").reduce((s, r) => s + r.amount, 0);
-  const totalPending = records.filter(r => r.status === "pending").reduce((s, r) => s + r.amount, 0);
-
-  const openAdd = () => { setEditing(null); setForm({ currency: "CNY", status: "pending", paymentMethod: "银行转账" }); setFormOpen(true); };
-  const openEdit = (r: ExpenseRecord) => { setEditing(r); setForm({ ...r }); setFormOpen(true); };
-
-  const handleSave = () => {
-    if (!form.date || !form.description || !form.amount) { toast.error("请填写日期、描述和金额"); return; }
-    if (editing) {
-      setRecords(prev => prev.map(r => r.id === editing.id ? { ...r, ...form } as ExpenseRecord : r));
-      toast.success("已更新");
-    } else {
-      const seq = String(records.length + 1).padStart(3, "0");
-      setRecords(prev => [{ id: Date.now(), entryNo: `OUT-2026-${seq}`, date: form.date!, category: form.category as ExpenseCategory || "other_expense", description: form.description!, amount: Number(form.amount), currency: form.currency || "CNY", counterparty: form.counterparty || "", paymentMethod: form.paymentMethod || "银行转账", relatedOrderNo: form.relatedOrderNo || "", status: form.status as EntryStatus || "pending", remark: form.remark || "" }, ...prev]);
-      toast.success("已添加");
-    }
-    setFormOpen(false);
-  };
-
-  const handleDelete = (id: number) => { setRecords(prev => prev.filter(r => r.id !== id)); toast.success("已删除"); };
-  const handleConfirm = (id: number) => { setRecords(prev => prev.map(r => r.id === id ? { ...r, status: "confirmed" as EntryStatus } : r)); toast.success("已确认"); };
-
-  // 按类别汇总
-  const categoryStats = useMemo(() => {
-    const map: Record<string, number> = {};
-    records.filter(r => r.status === "confirmed").forEach(r => {
-      map[r.category] = (map[r.category] || 0) + r.amount;
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  }, [records]);
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
-        <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-red-600">¥{totalConfirmed.toLocaleString()}</div><div className="text-xs text-muted-foreground mt-0.5">已确认支出</div></CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-yellow-600">¥{totalPending.toLocaleString()}</div><div className="text-xs text-muted-foreground mt-0.5">待确认支出</div></CardContent></Card>
-        <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-blue-600">{records.length}</div><div className="text-xs text-muted-foreground mt-0.5">支出笔数</div></CardContent></Card>
-      </div>
-
-      {/* 支出分类汇总 */}
-      {categoryStats.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2 pt-4"><CardTitle className="text-sm font-medium text-muted-foreground">支出分类汇总（已确认）</CardTitle></CardHeader>
-          <CardContent className="pb-4">
-            <div className="space-y-2">
-              {categoryStats.map(([cat, amt]) => {
-                const pct = Math.round(amt / totalConfirmed * 100);
-                return (
-                  <div key={cat} className="flex items-center gap-3">
-                    <span className="text-sm w-20 shrink-0">{expenseCategoryMap[cat as ExpenseCategory] || cat}</span>
-                    <div className="flex-1 bg-muted rounded-full h-2">
-                      <div className="bg-red-400 h-2 rounded-full" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className="text-sm font-medium w-24 text-right">¥{amt.toLocaleString()}</span>
-                    <span className="text-xs text-muted-foreground w-8">{pct}%</span>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-8 h-9" placeholder="搜索单号、描述、对方单位..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-28 h-9"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部状态</SelectItem>
-            {Object.entries(statusMap).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Button size="sm" onClick={openAdd}><Plus className="h-4 w-4 mr-1" />新增支出</Button>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>单号</TableHead>
-                <TableHead>日期</TableHead>
-                <TableHead>类别</TableHead>
-                <TableHead>描述</TableHead>
-                <TableHead>对方单位</TableHead>
-                <TableHead>支付方式</TableHead>
-                <TableHead className="text-right">金额</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead className="w-16"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-8">暂无数据</TableCell></TableRow>
-              ) : filtered.map(r => (
-                <TableRow key={r.id}>
-                  <TableCell className="font-mono text-sm">{r.entryNo}</TableCell>
-                  <TableCell className="text-sm">{r.date}</TableCell>
-                  <TableCell className="text-sm">{expenseCategoryMap[r.category]}</TableCell>
-                  <TableCell className="text-sm max-w-[180px] truncate">{r.description}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{r.counterparty || "-"}</TableCell>
-                  <TableCell className="text-sm">{r.paymentMethod}</TableCell>
-                  <TableCell className="text-right font-medium text-red-600">-¥{r.amount.toLocaleString()}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={`text-xs ${statusMap[r.status]?.color}`}>{statusMap[r.status]?.label}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(r)}><Edit className="h-4 w-4 mr-2" />编辑</DropdownMenuItem>
-                        {r.status === "pending" && <DropdownMenuItem className="text-green-600" onClick={() => handleConfirm(r.id)}><ArrowDownCircle className="h-4 w-4 mr-2" />确认</DropdownMenuItem>}
-                        <DropdownMenuItem className="text-destructive" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />删除</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-      <div className="flex justify-end text-sm text-muted-foreground pr-1">
-        合计：<span className="font-medium text-red-600 ml-1">-¥{filtered.reduce((s, r) => s + r.amount, 0).toLocaleString()}</span>
-      </div>
-
-      <EntryFormDialog open={formOpen} onClose={() => setFormOpen(false)} editing={editing} form={form} setForm={setForm as any} onSave={handleSave} categoryMap={expenseCategoryMap} categoryLabel="支出类别" />
-    </div>
-  );
+function buildBankAccountLabel(account: any) {
+  return [
+    String(account?.accountName || "").trim(),
+    String(account?.bankName || "").trim(),
+    String(account?.accountNo || "").trim(),
+  ].filter(Boolean).join(" / ");
 }
 
-// ==================== 主页面 ====================
+function buildRelationKeys(relatedType: unknown, relatedId: unknown, relatedNo: unknown) {
+  const type = String(relatedType || "").trim();
+  const keys: string[] = [];
+  const id = Number(relatedId || 0);
+  const no = String(relatedNo || "").trim();
+  if (type && Number.isFinite(id) && id > 0) {
+    keys.push(`${type}:id:${id}`);
+  }
+  if (type && no) {
+    keys.push(`${type}:no:${no}`);
+  }
+  return keys;
+}
+
+function parseOtherFlowRemark(raw: unknown) {
+  const text = String(raw || "");
+  if (!text.startsWith(OTHER_FLOW_PREFIX)) {
+    return { counterparty: "", note: text };
+  }
+  try {
+    const parsed = JSON.parse(text.slice(OTHER_FLOW_PREFIX.length));
+    return {
+      counterparty: String(parsed?.counterparty || ""),
+      note: String(parsed?.note || ""),
+    };
+  } catch {
+    return { counterparty: "", note: text };
+  }
+}
+
+function buildOtherFlowRemark(counterparty: string, note: string) {
+  return `${OTHER_FLOW_PREFIX}${JSON.stringify({
+    counterparty: counterparty.trim(),
+    note: note.trim(),
+  })}`;
+}
+
+function buildManualRecordNo(type: "receipt" | "payment") {
+  const prefix = type === "receipt" ? "INC" : "EXP";
+  return `${prefix}-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+}
 
 export default function ExpenseManagementPage() {
+  const trpcUtils = trpc.useUtils();
+  const [search, setSearch] = useState("");
+  const [relatedTypeFilter, setRelatedTypeFilter] = useState("all");
+  const [incomePage, setIncomePage] = useState(1);
+  const [expensePage, setExpensePage] = useState(1);
+  const [activeTab, setActiveTab] = useState<"income" | "expense">("income");
+  const [formOpen, setFormOpen] = useState(false);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [manualForm, setManualForm] = useState({
+    type: "receipt" as "receipt" | "payment",
+    paymentDate: new Date().toISOString().slice(0, 10),
+    amount: "",
+    currency: "CNY",
+    bankAccountId: "",
+    paymentMethod: "银行转账",
+    customerId: "",
+    counterparty: "",
+    remark: "",
+  });
+
+  const { data: paymentRecords = [], isLoading: paymentLoading } = trpc.paymentRecords.list.useQuery({ limit: 2000 });
+  const { data: customers = [], isLoading: customerLoading } = trpc.customers.list.useQuery({ limit: 500 });
+  const { data: suppliers = [], isLoading: supplierLoading } = trpc.suppliers.list.useQuery({ limit: 500 });
+  const { data: bankAccounts = [], isLoading: bankLoading } = trpc.bankAccounts.list.useQuery({});
+  const { data: receivables = [], isLoading: receivableLoading } = trpc.accountsReceivable.list.useQuery({ limit: 500 });
+  const { data: payables = [], isLoading: payableLoading } = trpc.accountsPayable.list.useQuery({ limit: 500 });
+  const { data: expenses = [], isLoading: expenseLoading } = trpc.expenses.list.useQuery({ limit: 500 });
+  const isLoading = paymentLoading || customerLoading || supplierLoading || bankLoading || receivableLoading || payableLoading || expenseLoading;
+  const createPaymentMutation = trpc.paymentRecords.create.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        trpcUtils.paymentRecords.list.invalidate(),
+        trpcUtils.bankAccounts.list.invalidate(),
+      ]);
+      toast.success("手工收支已新增");
+      setFormOpen(false);
+      setManualForm((prev) => ({
+        ...prev,
+        amount: "",
+        customerId: "",
+        counterparty: "",
+        remark: "",
+        bankAccountId: "",
+        paymentDate: new Date().toISOString().slice(0, 10),
+      }));
+    },
+  });
+
+  const customerMap = useMemo(
+    () => new Map((customers as any[]).map((row: any) => [Number(row.id), String(row.name || "")])),
+    [customers],
+  );
+  const supplierMap = useMemo(
+    () => new Map((suppliers as any[]).map((row: any) => [Number(row.id), String(row.name || "")])),
+    [suppliers],
+  );
+  const bankAccountMap = useMemo(
+    () => new Map((bankAccounts as any[]).map((row: any) => [Number(row.id), buildBankAccountLabel(row)])),
+    [bankAccounts],
+  );
+  const existingRelationKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of paymentRecords as any[]) {
+      for (const key of buildRelationKeys(row.relatedType, row.relatedId, row.relatedNo)) {
+        set.add(key);
+      }
+    }
+    return set;
+  }, [paymentRecords]);
+
+  const allRows = useMemo(() => {
+    const rows = (paymentRecords as any[]).map((row: any) => {
+      const type = String(row.type || "");
+      const relatedType = String(row.relatedType || "other");
+      const otherFlowMeta = relatedType === "other" ? parseOtherFlowRemark(row.remark) : { counterparty: "", note: String(row.remark || "") };
+      const counterparty =
+        relatedType === "other"
+          ? (otherFlowMeta.counterparty || String(row.relatedNo || row.recordNo || "-"))
+          : type === "receipt"
+          ? customerMap.get(Number(row.customerId || 0)) || String(row.relatedNo || row.recordNo || "-")
+          : supplierMap.get(Number(row.supplierId || 0)) || (relatedType === "expense" ? "报销付款" : String(row.relatedNo || row.recordNo || "-"));
+
+      return {
+        id: Number(row.id || 0),
+        recordNo: String(row.recordNo || ""),
+        paymentDate: formatDateOnly(row.paymentDate),
+        type,
+        relatedType,
+        relatedTypeLabel: relatedTypeMap[relatedType] || relatedType,
+        relatedNo: String(row.relatedNo || ""),
+        counterparty,
+        amount: Number(row.amountBase || row.amount || 0),
+        originalAmount: Number(row.amount || 0),
+        currency: String(row.currency || "CNY"),
+        paymentMethod: String(row.paymentMethod || "-"),
+        bankAccountName: bankAccountMap.get(Number(row.bankAccountId || 0)) || "-",
+        remark: relatedType === "other" ? otherFlowMeta.note : String(row.remark || ""),
+      };
+    });
+
+    for (const row of receivables as any[]) {
+      const paidAmount = Number(row?.paidAmount ?? row?.receivedAmount ?? 0);
+      if (!(paidAmount > 0)) continue;
+      const relatedNo = String(row?.orderNo || row?.invoiceNo || "").trim();
+      const relatedId = Number(row?.salesOrderId || 0);
+      const keys = buildRelationKeys("sales_order", relatedId, relatedNo);
+      if (keys.some((key) => existingRelationKeys.has(key))) continue;
+      rows.push({
+        id: `receivable-${row.id}`,
+        recordNo: String(row.invoiceNo || row.orderNo || `AR-${row.id}`),
+        paymentDate: formatDateOnly(row.receiptDate || row.updatedAt || row.createdAt),
+        type: "receipt",
+        relatedType: "sales_order",
+        relatedTypeLabel: relatedTypeMap.sales_order,
+        relatedNo,
+        counterparty: String(row.customerName || customerMap.get(Number(row.customerId || 0)) || "-"),
+        amount: paidAmount,
+        originalAmount: paidAmount,
+        currency: String(row.currency || "CNY"),
+        paymentMethod: String(row.paymentMethod || "-"),
+        bankAccountName: bankAccountMap.get(Number(row.bankAccountId || 0)) || "-",
+        remark: String(row.remark || ""),
+      });
+    }
+
+    for (const row of payables as any[]) {
+      const paidAmount = Number(row?.paidAmount || 0);
+      if (!(paidAmount > 0)) continue;
+      const relatedNo = String(row?.orderNo || row?.invoiceNo || "").trim();
+      const relatedId = Number(row?.purchaseOrderId || 0);
+      const keys = buildRelationKeys("purchase_order", relatedId, relatedNo);
+      if (keys.some((key) => existingRelationKeys.has(key))) continue;
+      rows.push({
+        id: `payable-${row.id}`,
+        recordNo: String(row.invoiceNo || row.orderNo || `AP-${row.id}`),
+        paymentDate: formatDateOnly(row.paymentDate || row.updatedAt || row.createdAt),
+        type: "payment",
+        relatedType: "purchase_order",
+        relatedTypeLabel: relatedTypeMap.purchase_order,
+        relatedNo,
+        counterparty: String(row.supplierName || supplierMap.get(Number(row.supplierId || 0)) || "-"),
+        amount: paidAmount,
+        originalAmount: paidAmount,
+        currency: String(row.currency || "CNY"),
+        paymentMethod: String(row.paymentMethod || "-"),
+        bankAccountName: bankAccountMap.get(Number(row.bankAccountId || 0)) || "-",
+        remark: String(row.remark || ""),
+      });
+    }
+
+    for (const row of expenses as any[]) {
+      if (String(row?.status || "") !== "paid") continue;
+      const paidAmount = Number(row?.totalAmount || 0);
+      if (!(paidAmount > 0)) continue;
+      const relatedNo = String(row?.reimbursementNo || "").trim();
+      const relatedId = Number(row?.id || 0);
+      const keys = buildRelationKeys("expense", relatedId, relatedNo);
+      if (keys.some((key) => existingRelationKeys.has(key))) continue;
+      rows.push({
+        id: `expense-${row.id}`,
+        recordNo: String(row.reimbursementNo || `EXP-${row.id}`),
+        paymentDate: formatDateOnly(row.paidAt || row.updatedAt || row.createdAt),
+        type: "payment",
+        relatedType: "expense",
+        relatedTypeLabel: relatedTypeMap.expense,
+        relatedNo,
+        counterparty: String(row.applicantName || row.department || "报销付款"),
+        amount: paidAmount,
+        originalAmount: paidAmount,
+        currency: String(row.currency || "CNY"),
+        paymentMethod: "报销付款",
+        bankAccountName: bankAccountMap.get(Number(row.bankAccountId || 0)) || "-",
+        remark: String(row.description || row.remark || ""),
+      });
+    }
+
+    return rows.sort((a, b) => String(b.paymentDate).localeCompare(String(a.paymentDate)));
+  }, [bankAccountMap, customerMap, existingRelationKeys, expenses, payables, paymentRecords, receivables, supplierMap]);
+
+  const filteredRows = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return allRows.filter((row) => {
+      const matchesType = relatedTypeFilter === "all" || row.relatedType === relatedTypeFilter;
+      const matchesSearch =
+        !keyword ||
+        row.recordNo.toLowerCase().includes(keyword) ||
+        row.counterparty.toLowerCase().includes(keyword) ||
+        row.relatedNo.toLowerCase().includes(keyword) ||
+        row.relatedTypeLabel.toLowerCase().includes(keyword);
+      return matchesType && matchesSearch;
+    });
+  }, [allRows, relatedTypeFilter, search]);
+
+  const incomeRows = useMemo(() => filteredRows.filter((row) => row.type === "receipt"), [filteredRows]);
+  const expenseRows = useMemo(() => filteredRows.filter((row) => row.type === "payment"), [filteredRows]);
+
+  const incomeTotal = incomeRows.reduce((sum, row) => sum + row.amount, 0);
+  const expenseTotal = expenseRows.reduce((sum, row) => sum + row.amount, 0);
+
+  const incomePages = Math.max(1, Math.ceil(incomeRows.length / PAGE_SIZE));
+  const expensePages = Math.max(1, Math.ceil(expenseRows.length / PAGE_SIZE));
+  const pagedIncomeRows = incomeRows.slice((incomePage - 1) * PAGE_SIZE, incomePage * PAGE_SIZE);
+  const pagedExpenseRows = expenseRows.slice((expensePage - 1) * PAGE_SIZE, expensePage * PAGE_SIZE);
+
+  useEffect(() => {
+    setIncomePage(1);
+    setExpensePage(1);
+  }, [relatedTypeFilter, search]);
+
+  useEffect(() => {
+    if (incomePage > incomePages) setIncomePage(incomePages);
+  }, [incomePage, incomePages]);
+
+  useEffect(() => {
+    if (expensePage > expensePages) setExpensePage(expensePages);
+  }, [expensePage, expensePages]);
+
+  const openCreateDialog = () => {
+    setManualForm({
+      type: activeTab === "income" ? "receipt" : "payment",
+      paymentDate: new Date().toISOString().slice(0, 10),
+      amount: "",
+      currency: "CNY",
+      bankAccountId: "",
+      paymentMethod: "银行转账",
+      customerId: "",
+      counterparty: "",
+      remark: "",
+    });
+    setFormOpen(true);
+  };
+
+  const handleCreateManualRecord = async () => {
+    const amount = Number(manualForm.amount || 0);
+    const bankAccountId = Number(manualForm.bankAccountId || 0);
+    if (!(amount > 0)) {
+      toast.error("请输入有效金额");
+      return;
+    }
+    if (!bankAccountId) {
+      toast.error("请选择账户");
+      return;
+    }
+    if (!manualForm.counterparty.trim()) {
+      toast.error("请填写往来单位或摘要");
+      return;
+    }
+
+    await createPaymentMutation.mutateAsync({
+      recordNo: buildManualRecordNo(manualForm.type),
+      type: manualForm.type,
+      relatedType: "other",
+      relatedNo: manualForm.counterparty.trim(),
+      customerId: manualForm.customerId ? Number(manualForm.customerId) : undefined,
+      amount: toRoundedString(amount, 2),
+      currency: manualForm.currency,
+      amountBase: toRoundedString(amount, 2),
+      exchangeRate: "1",
+      bankAccountId,
+      paymentDate: manualForm.paymentDate,
+      paymentMethod: manualForm.paymentMethod || "银行转账",
+      remark: buildOtherFlowRemark(manualForm.counterparty, manualForm.remark),
+    });
+  };
+
   return (
     <ERPLayout>
-      <div className="w-full px-3 py-4 md:px-4 md:py-5">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <DollarSign className="h-6 w-6 text-primary" />
+      <div className="w-full px-3 py-4 md:px-4 md:py-5 space-y-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <DollarSign className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold">费用管理</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">系统联动流水只读，手工补录统一走“其他收支”。</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold">费用管理</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">管理公司收入与支出记录，实时掌握资金流动情况</p>
-          </div>
+          <Button onClick={openCreateDialog}>
+            <Plus className="h-4 w-4 mr-1" />
+            {activeTab === "income" ? "新增收入" : "新增支出"}
+          </Button>
         </div>
 
-        <Tabs defaultValue="income">
-          <TabsList className="mb-4">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input className="pl-8 h-9" placeholder="搜索流水号、往来单位、来源单号..." value={search} onChange={(event) => setSearch(event.target.value)} />
+          </div>
+          <Select value={relatedTypeFilter} onValueChange={setRelatedTypeFilter}>
+            <SelectTrigger className="w-36 h-9"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部来源</SelectItem>
+              {Object.entries(relatedTypeMap).map(([key, label]) => (
+                <SelectItem key={key} value={key}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "income" | "expense")}>
+          <TabsList className="mb-3">
             <TabsTrigger value="income" className="gap-2">
-              <TrendingUp className="h-4 w-4" />收入管理
+              <TrendingUp className="h-4 w-4" />
+              收入管理
             </TabsTrigger>
             <TabsTrigger value="expense" className="gap-2">
-              <TrendingDown className="h-4 w-4" />支出管理
+              <TrendingDown className="h-4 w-4" />
+              支出管理
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="income"><IncomeTab /></TabsContent>
-          <TabsContent value="expense"><ExpenseTab /></TabsContent>
+
+          <TabsContent value="income" className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-green-600">{formatMoney(incomeTotal)}</div><div className="text-xs text-muted-foreground mt-0.5">已收款金额</div></CardContent></Card>
+              <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-blue-600">{incomeRows.length}</div><div className="text-xs text-muted-foreground mt-0.5">收款笔数</div></CardContent></Card>
+              <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-emerald-600">{incomeRows.filter((row) => row.relatedType === "sales_order").length}</div><div className="text-xs text-muted-foreground mt-0.5">销售回款</div></CardContent></Card>
+            </div>
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>流水号</TableHead>
+                      <TableHead>收款日期</TableHead>
+                      <TableHead>来源</TableHead>
+                      <TableHead>往来单位</TableHead>
+                      <TableHead>来源单号</TableHead>
+                      <TableHead>收款账户</TableHead>
+                      <TableHead>收款方式</TableHead>
+                      <TableHead className="text-right">金额</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">加载中...</TableCell></TableRow>
+                    ) : incomeRows.length === 0 ? (
+                      <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">暂无收入流水</TableCell></TableRow>
+                    ) : pagedIncomeRows.map((row) => (
+                      <TableRow key={`income-${row.id}`}>
+                        <TableCell className="font-mono text-sm">{row.recordNo}</TableCell>
+                        <TableCell>{formatDateOnly(row.paymentDate)}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-xs">{row.relatedTypeLabel}</Badge></TableCell>
+                        <TableCell className="font-medium">{row.counterparty}</TableCell>
+                        <TableCell>{row.relatedNo || "-"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{row.bankAccountName}</TableCell>
+                        <TableCell>{row.paymentMethod}</TableCell>
+                        <TableCell className="text-right font-medium text-green-600">{formatMoney(row.originalAmount || row.amount, row.currency)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+            <TablePaginationFooter total={incomeRows.length} page={incomePage} pageSize={PAGE_SIZE} onPageChange={setIncomePage} />
+          </TabsContent>
+
+          <TabsContent value="expense" className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-red-600">{formatMoney(expenseTotal)}</div><div className="text-xs text-muted-foreground mt-0.5">已付款金额</div></CardContent></Card>
+              <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-blue-600">{expenseRows.length}</div><div className="text-xs text-muted-foreground mt-0.5">付款笔数</div></CardContent></Card>
+              <Card><CardContent className="pt-4 pb-3"><div className="text-xl font-bold text-amber-600">{expenseRows.filter((row) => row.relatedType === "expense").length}</div><div className="text-xs text-muted-foreground mt-0.5">报销付款</div></CardContent></Card>
+            </div>
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>流水号</TableHead>
+                      <TableHead>付款日期</TableHead>
+                      <TableHead>来源</TableHead>
+                      <TableHead>往来单位</TableHead>
+                      <TableHead>来源单号</TableHead>
+                      <TableHead>付款账户</TableHead>
+                      <TableHead>付款方式</TableHead>
+                      <TableHead className="text-right">金额</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">加载中...</TableCell></TableRow>
+                    ) : expenseRows.length === 0 ? (
+                      <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">暂无支出流水</TableCell></TableRow>
+                    ) : pagedExpenseRows.map((row) => (
+                      <TableRow key={`expense-${row.id}`}>
+                        <TableCell className="font-mono text-sm">{row.recordNo}</TableCell>
+                        <TableCell>{formatDateOnly(row.paymentDate)}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-xs">{row.relatedTypeLabel}</Badge></TableCell>
+                        <TableCell className="font-medium">{row.counterparty}</TableCell>
+                        <TableCell>{row.relatedNo || "-"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{row.bankAccountName}</TableCell>
+                        <TableCell>{row.paymentMethod}</TableCell>
+                        <TableCell className="text-right font-medium text-red-600">-{formatMoney(row.originalAmount || row.amount, row.currency)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+            <TablePaginationFooter total={expenseRows.length} page={expensePage} pageSize={PAGE_SIZE} onPageChange={setExpensePage} />
+          </TabsContent>
         </Tabs>
+
+        <Dialog open={formOpen} onOpenChange={setFormOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>{manualForm.type === "receipt" ? "新增收入" : "新增支出"}</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>收支类型</Label>
+                <Select value={manualForm.type} onValueChange={(value) => setManualForm((prev) => ({ ...prev, type: value as "receipt" | "payment" }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="receipt">收入</SelectItem>
+                    <SelectItem value="payment">支出</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>日期</Label>
+                <Input type="date" value={manualForm.paymentDate} onChange={(event) => setManualForm((prev) => ({ ...prev, paymentDate: event.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>金额</Label>
+                <Input type="number" value={manualForm.amount} onChange={(event) => setManualForm((prev) => ({ ...prev, amount: event.target.value }))} placeholder="输入金额" />
+              </div>
+              <div className="space-y-2">
+                <Label>币种</Label>
+                <Select value={manualForm.currency} onValueChange={(value) => setManualForm((prev) => ({ ...prev, currency: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["CNY", "USD", "EUR", "GBP", "JPY", "HKD"].map((currency) => (
+                      <SelectItem key={currency} value={currency}>{currency}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>账户</Label>
+                <Select value={manualForm.bankAccountId} onValueChange={(value) => setManualForm((prev) => ({ ...prev, bankAccountId: value }))}>
+                  <SelectTrigger><SelectValue placeholder="选择账户" /></SelectTrigger>
+                  <SelectContent>
+                    {(bankAccounts as any[]).map((account: any) => (
+                      <SelectItem key={account.id} value={String(account.id)}>
+                        {buildBankAccountLabel(account)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>往来单位 / 摘要</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={manualForm.counterparty}
+                    onChange={(event) => setManualForm((prev) => ({
+                      ...prev,
+                      counterparty: event.target.value,
+                      customerId: "",
+                    }))}
+                    placeholder="可手工输入，也可从客户档案选择"
+                  />
+                  <Button type="button" variant="outline" onClick={() => setCustomerPickerOpen(true)}>
+                    选择客户
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>收支方式</Label>
+                <Input value={manualForm.paymentMethod} onChange={(event) => setManualForm((prev) => ({ ...prev, paymentMethod: event.target.value }))} placeholder="如：银行转账、现金" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>备注</Label>
+                <Textarea rows={4} value={manualForm.remark} onChange={(event) => setManualForm((prev) => ({ ...prev, remark: event.target.value }))} placeholder="补充说明" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setFormOpen(false)}>取消</Button>
+              <Button onClick={handleCreateManualRecord} disabled={createPaymentMutation.isPending}>确认新增</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <EntityPickerDialog
+          open={customerPickerOpen}
+          onOpenChange={setCustomerPickerOpen}
+          title="选择客户"
+          searchPlaceholder="搜索客户编码、客户名称、联系人..."
+          rows={(customers as any[])}
+          selectedId={manualForm.customerId}
+          columns={[
+            { key: "code", title: "客户编码", render: (row: any) => row.code || "-" },
+            { key: "name", title: "客户名称", render: (row: any) => row.name || "-" },
+            { key: "contactPerson", title: "联系人", render: (row: any) => row.contactPerson || row.contact || "-" },
+            { key: "phone", title: "电话", render: (row: any) => row.phone || "-" },
+          ]}
+          onSelect={(row: any) => {
+            setManualForm((prev) => ({
+              ...prev,
+              customerId: String(row?.id || ""),
+              counterparty: String(row?.name || ""),
+            }));
+            setCustomerPickerOpen(false);
+          }}
+          filterFn={(row: any, query: string) => {
+            const keyword = query.toLowerCase();
+            return (
+              String(row?.code || "").toLowerCase().includes(keyword) ||
+              String(row?.name || "").toLowerCase().includes(keyword) ||
+              String(row?.contactPerson || row?.contact || "").toLowerCase().includes(keyword) ||
+              String(row?.phone || "").toLowerCase().includes(keyword)
+            );
+          }}
+        />
       </div>
     </ERPLayout>
   );

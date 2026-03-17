@@ -38,11 +38,13 @@ export function getSessionCookieOptions(
   //     : shouldSetDomain
   //       ? hostname
   //       : undefined;
-
+  const secure = isSecureRequest(req);
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    // 本地 http 环境下，SameSite=None 会因为缺少 Secure 被浏览器直接拒绝。
+    // 线上 https 继续使用 None，保证跨站 OAuth/门户跳转可用。
+    sameSite: secure ? "none" : "lax",
+    secure,
   };
 }

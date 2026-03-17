@@ -1,10 +1,13 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import { formatDate } from "@/lib/formatters";
+import { formatDate, formatDisplayNumber, roundToDigits } from "@/lib/formatters";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { EntityPickerDialog } from "@/components/EntityPickerDialog";
+import DateTextInput from "@/components/DateTextInput";
 import ERPLayout from "@/components/ERPLayout";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +31,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 
 const statusMap: Record<string, { label: string; variant: "outline" | "default" | "secondary" | "destructive" }> = {
   draft:    { label: "草稿",   variant: "outline" },
@@ -44,20 +48,96 @@ interface MaterialItem {
   requiredQty: number;
   unit: string;
   actualQty: number;
+  inventoryId?: number;
+  warehouseId?: number;
+  warehouseName?: string;
   batchNo: string;       // 物料批号
   availableQty: number;  // 该批次库存可用数量（参考）
   remark: string;
 }
 
+type MaterialRequisitionSignature = {
+  id: string;
+  action: "create" | "approve";
+  signerName: string;
+  signedAt: string;
+};
+
+function parseMaterialRequisitionRemark(raw: unknown): { selfServiceMode: boolean; note: string; signatures: MaterialRequisitionSignature[] } {
+  if (!raw) return { selfServiceMode: false, note: "", signatures: [] };
+  try {
+    const parsed = JSON.parse(String(raw));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return {
+        selfServiceMode: Boolean((parsed as any).selfServiceMode),
+        note: String((parsed as any).note || ""),
+        signatures: Array.isArray((parsed as any).signatures)
+          ? (parsed as any).signatures.map((item: any) => ({
+              id: String(item?.id || `${Date.now()}`),
+              action: String(item?.action || "create") === "approve" ? "approve" : "create",
+              signerName: String(item?.signerName || ""),
+              signedAt: String(item?.signedAt || ""),
+            }))
+          : [],
+      };
+    }
+  } catch {
+    return { selfServiceMode: false, note: String(raw), signatures: [] };
+  }
+  return { selfServiceMode: false, note: String(raw), signatures: [] };
+}
+
+function buildMaterialRequisitionRemark(params: {
+  selfServiceMode: boolean;
+  note: string;
+  signatures?: MaterialRequisitionSignature[];
+}) {
+  return JSON.stringify({
+    selfServiceMode: params.selfServiceMode,
+    note: params.note || "",
+    signatures: params.signatures || [],
+  });
+}
+
+function createMaterialRequisitionSignature(action: "create" | "approve", signerName: string): MaterialRequisitionSignature {
+  return {
+    id: `${action}-${Date.now()}`,
+    action,
+    signerName,
+    signedAt: new Date().toISOString(),
+  };
+}
+
+function formatWholeNumber(value: unknown) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const num = Number(text);
+  if (Number.isFinite(num)) return formatDisplayNumber(num);
+  return text.includes(".") ? text.split(".")[0] : text;
+}
+
+function formatDisplayQty(value: unknown, digits = 4) {
+  const text = String(value ?? "").trim();
+  if (!text) return "-";
+  const num = Number(text);
+  if (!Number.isFinite(num)) return text;
+  return formatDisplayNumber(num, { maximumFractionDigits: Math.min(digits, 2) });
+}
+
 export default function MaterialRequisitionPage() {
+  const PAGE_SIZE = 10;
   const { canDelete } = usePermission();
+  const { user } = useAuth();
+  const trpcUtils = trpc.useUtils();
   const { data: orders = [], isLoading, refetch } = trpc.materialRequisitionOrders.list.useQuery({});
   const { data: productionOrders = [] } = trpc.productionOrders.list.useQuery({});
+  const { data: productionPlans = [] } = trpc.productionPlans.list.useQuery({});
   const { data: warehouseList = [] } = trpc.warehouses.list.useQuery({});
   const { data: productsData = [] } = trpc.products.list.useQuery();
+  const { data: allQualifiedInventory = [] } = trpc.inventory.list.useQuery({ status: "qualified", limit: 3000 });
 
   const createMutation = trpc.materialRequisitionOrders.create.useMutation({
-    onSuccess: () => { refetch(); toast.success("领料单已创建"); setDialogOpen(false); },
+    onSuccess: () => { refetch(); toast.success("领料单已保存"); setDialogOpen(false); },
     onError: (e) => toast.error("创建失败", { description: e.message }),
   });
   const updateMutation = trpc.materialRequisitionOrders.update.useMutation({
@@ -76,6 +156,12 @@ export default function MaterialRequisitionPage() {
   const [editingOrder, setEditingOrder] = useState<any>(null);
   const [viewingOrder, setViewingOrder] = useState<any>(null);
   const [items, setItems] = useState<MaterialItem[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordValue, setPasswordValue] = useState("");
+  const [passwordAction, setPasswordAction] = useState<"create" | "approve" | null>(null);
+  const [pendingApproveOrder, setPendingApproveOrder] = useState<any>(null);
+  const verifyPasswordMutation = trpc.auth.verifyPassword.useMutation();
 
   // 自主领料模式（true = 自主领料，false = 关联生产指令）
   const [selfServiceMode, setSelfServiceMode] = useState(false);
@@ -92,28 +178,10 @@ export default function MaterialRequisitionPage() {
   const [batchPickerOpen, setBatchPickerOpen] = useState(false);
   const [batchPickerItemIdx, setBatchPickerItemIdx] = useState<number>(-1); // 当前正在选择批号的行索引
   const [batchSearchCode, setBatchSearchCode] = useState<string>(""); // 用于查询库存的物料编码
+  const [batchPickerSelected, setBatchPickerSelected] = useState<Set<number>>(new Set());
 
   // 当前选中的生产指令对应的 productId（用于查询 BOM）
   const [selectedProductId, setSelectedProductId] = useState<number>(0);
-
-  // 查询选中产品的 BOM 物料明细
-  const { data: bomItems = [], refetch: refetchBom } = trpc.bom.getByProductId.useQuery(
-    { productId: selectedProductId },
-    { enabled: selectedProductId > 0 }
-  );
-
-  // 查询库存中该物料的所有批次（批号选择器用）
-  const { data: inventoryBatches = [] } = trpc.inventory.list.useQuery(
-    { search: batchSearchCode },
-    { enabled: batchPickerOpen && batchSearchCode.length > 0 }
-  );
-
-  // 自主领料 - 查询库存列表（产品选择器用）
-  const { data: inventoryForPicker = [] } = trpc.inventory.list.useQuery(
-    { search: inventoryPickerSearch, limit: 200 },
-    { enabled: inventoryPickerOpen }
-  );
-
   const [formData, setFormData] = useState({
     requisitionNo: "",
     productionOrderId: "",
@@ -134,6 +202,148 @@ export default function MaterialRequisitionPage() {
     selfServiceInventoryId: "",
   });
 
+  const appendSignatureToRemark = (remarkText: unknown, action: "create" | "approve") => {
+    const meta = parseMaterialRequisitionRemark(remarkText);
+    const signerName = String((user as any)?.name || "当前用户");
+    return buildMaterialRequisitionRemark({
+      selfServiceMode: meta.selfServiceMode,
+      note: meta.note,
+      signatures: [...meta.signatures, createMaterialRequisitionSignature(action, signerName)],
+    });
+  };
+
+  // 查询选中产品的 BOM 物料明细
+  const { data: bomItems = [], refetch: refetchBom } = trpc.bom.getByProductId.useQuery(
+    { productId: selectedProductId },
+    { enabled: selectedProductId > 0 }
+  );
+  const selectedProductionOrder = useMemo(
+    () => (productionOrders as any[]).find((po: any) => Number(po.id) === Number(formData.productionOrderId)),
+    [productionOrders, formData.productionOrderId],
+  );
+  const currentProductId = Number(selectedProductionOrder?.productId || selectedProductId || 0);
+  const sourcePlanProductId = useMemo(() => {
+    if (!selectedProductionOrder?.planId) return 0;
+    const sourcePlan = (productionPlans as any[]).find((plan: any) => Number(plan.id) === Number(selectedProductionOrder.planId));
+    return Number(sourcePlan?.productId || 0);
+  }, [productionPlans, selectedProductionOrder]);
+  const { data: sourcePlanBomItems = [] } = trpc.bom.list.useQuery(
+    { productId: sourcePlanProductId },
+    {
+      enabled:
+        Number(formData.productionOrderId) > 0 &&
+        selectedProductionOrder?.orderType === "semi_finished" &&
+        sourcePlanProductId > 0 &&
+        sourcePlanProductId !== selectedProductId,
+    }
+  );
+
+  const warehouseNameMap = useMemo(
+    () =>
+      Object.fromEntries(
+        (warehouseList as any[]).map((warehouse: any) => [Number(warehouse.id), String(warehouse.name || "")])
+      ) as Record<number, string>,
+    [warehouseList]
+  );
+
+  const materialWarehouseOptions = useMemo(
+    () =>
+      (warehouseList as any[]).filter((warehouse: any) => {
+        const text = `${String(warehouse?.name || "")} ${String(warehouse?.code || "")}`.toLowerCase();
+        return text.includes("原料") || text.includes("raw") || text.includes("暂存") || text.includes("staging");
+      }),
+    [warehouseList]
+  );
+
+  const getWarehouseName = (warehouseId?: number | string) => {
+    const id = Number(warehouseId || 0);
+    return id > 0 ? warehouseNameMap[id] || "" : "";
+  };
+
+  // 查询库存中该物料的所有批次（批号选择器用）
+  const { data: inventoryBatches = [] } = trpc.inventory.list.useQuery(
+    { search: batchSearchCode },
+    { enabled: batchPickerOpen && batchSearchCode.length > 0 }
+  );
+  const availableInventoryBatches = useMemo(
+    () => (inventoryBatches as any[]).filter((batch: any) => Number(batch.quantity || 0) > 0),
+    [inventoryBatches],
+  );
+  const inventoryBatchesWithMeta = useMemo(
+    () =>
+      availableInventoryBatches
+        .map((batch: any) => ({
+          ...batch,
+          warehouseName: getWarehouseName(batch?.warehouseId),
+        }))
+        .sort((a: any, b: any) => {
+          const aTime = new Date(String(a.inboundDate || a.createdAt || a.updatedAt || 0)).getTime();
+          const bTime = new Date(String(b.inboundDate || b.createdAt || b.updatedAt || 0)).getTime();
+          if (aTime !== bTime) return aTime - bTime;
+          return String(a.batchNo || a.lotNo || "").localeCompare(String(b.batchNo || b.lotNo || ""), "zh-CN");
+        }),
+    [availableInventoryBatches, warehouseNameMap],
+  );
+  const materialWarehouseIdSet = useMemo(
+    () => new Set(materialWarehouseOptions.map((warehouse: any) => Number(warehouse.id))),
+    [materialWarehouseOptions],
+  );
+  const qualifiedInventoryWithMeta = useMemo(
+    () =>
+      ((allQualifiedInventory as any[]) || [])
+        .filter((item: any) => Number(item.quantity || 0) > 0 && materialWarehouseIdSet.has(Number(item.warehouseId || 0)))
+        .map((item: any) => {
+          const matchedProduct = (productsData as any[]).find((product: any) => Number(product.id) === Number(item.productId));
+          return {
+            ...item,
+            warehouseName: getWarehouseName(item?.warehouseId),
+            specification: matchedProduct?.specification || "",
+          };
+        })
+        .sort((a: any, b: any) => {
+          const aTime = new Date(String(a.productionDate || a.createdAt || a.updatedAt || 0)).getTime();
+          const bTime = new Date(String(b.productionDate || b.createdAt || b.updatedAt || 0)).getTime();
+          if (aTime !== bTime) return aTime - bTime;
+          return String(a.batchNo || a.lotNo || "").localeCompare(String(b.batchNo || b.lotNo || ""), "zh-CN");
+        }),
+    [allQualifiedInventory, getWarehouseName, materialWarehouseIdSet, productsData],
+  );
+  const visibleBatchOptions = useMemo(
+    () => {
+      const currentItem = batchPickerItemIdx >= 0 ? items[batchPickerItemIdx] : null;
+      return inventoryBatchesWithMeta.filter((batch: any) => {
+        if (Number(batch.quantity || 0) <= 0.000001) return false;
+        if (currentItem?.warehouseId && Number(batch.warehouseId || 0) !== Number(currentItem.warehouseId)) return false;
+        return true;
+      });
+    },
+    [batchPickerItemIdx, inventoryBatchesWithMeta, items],
+  );
+
+  // 自主领料 - 查询库存列表（产品选择器用）
+  const { data: inventoryForPicker = [] } = trpc.inventory.list.useQuery(
+    { search: inventoryPickerSearch, limit: 200 },
+    { enabled: inventoryPickerOpen }
+  );
+
+  const normalizeMaterialItem = (item: any, fallbackWarehouseId?: number | string): MaterialItem => {
+    const resolvedWarehouseId = Number(item?.warehouseId || fallbackWarehouseId || 0);
+    return {
+      materialCode: String(item?.materialCode || ""),
+      materialName: String(item?.materialName || ""),
+      specification: String(item?.specification || ""),
+      requiredQty: Number(item?.requiredQty || 0),
+      unit: String(item?.unit || ""),
+      actualQty: Number(item?.actualQty || 0),
+      inventoryId: item?.inventoryId == null ? undefined : Number(item.inventoryId),
+      warehouseId: resolvedWarehouseId || undefined,
+      warehouseName: String(item?.warehouseName || getWarehouseName(resolvedWarehouseId) || ""),
+      batchNo: String(item?.batchNo || ""),
+      availableQty: Number(item?.availableQty || 0),
+      remark: String(item?.remark || ""),
+    };
+  };
+
   const filteredOrders = (orders as any[]).filter((o) => {
     const matchSearch = !searchTerm ||
       String(o.requisitionNo ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -141,18 +351,29 @@ export default function MaterialRequisitionPage() {
     const matchStatus = statusFilter === "all" || o.status === statusFilter;
     return matchSearch && matchStatus;
   });
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
+  const pagedOrders = filteredOrders.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const genNo = () => {
-    const now = new Date();
-    return `MR-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(Date.now()).slice(-4)}`;
-  };
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, filteredOrders.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (selectedProductionOrder?.productId && Number(selectedProductionOrder.productId) !== Number(selectedProductId)) {
+      setSelectedProductId(Number(selectedProductionOrder.productId));
+    }
+  }, [selectedProductionOrder, selectedProductId]);
 
   const handleAdd = () => {
     setEditingOrder(null);
     setSelectedProductId(0);
     setItems([]);
     setFormData({
-      requisitionNo: genNo(),
+      requisitionNo: "",
       productionOrderId: "",
       productionOrderNo: "",
       productName: "",
@@ -180,25 +401,36 @@ export default function MaterialRequisitionPage() {
       if (order.items) { parsedItems = JSON.parse(order.items) || []; }
       else { const extra = JSON.parse(order.remark || "{}"); parsedItems = extra.items || []; }
     } catch {}
-    setItems(parsedItems.length > 0 ? parsedItems : []);
-    setSelectedProductId(0);
+    const remarkMeta = parseMaterialRequisitionRemark(order.remark);
+    const linkedProductionOrder = (productionOrders as any[]).find((po: any) => Number(po.id) === Number(order.productionOrderId));
+    const linkedProduct = linkedProductionOrder
+      ? (productsData as any[]).find((p: any) => Number(p.id) === Number(linkedProductionOrder.productId))
+      : null;
+    const firstSelfServiceItem = parsedItems[0];
+    setItems(parsedItems.length > 0 ? parsedItems.map((item) => normalizeMaterialItem(item, order.warehouseId)) : []);
+    setSelfServiceMode(remarkMeta.selfServiceMode);
+    setSelectedProductId(Number(linkedProductionOrder?.productId || 0));
     setFormData({
       requisitionNo: order.requisitionNo,
       productionOrderId: order.productionOrderId ? String(order.productionOrderId) : "",
       productionOrderNo: order.productionOrderNo || "",
-      productName: "",
-      productSpec: "",
-      productDescription: "",
-      batchNo: "",
-      plannedQty: "",
-      unit: "",
+      productName: linkedProduct?.name || linkedProductionOrder?.productName || "",
+      productSpec: linkedProduct?.specification || "",
+      productDescription: linkedProduct?.description || "",
+      batchNo: linkedProductionOrder?.batchNo || "",
+      plannedQty: formatWholeNumber(linkedProductionOrder?.plannedQty),
+      unit: remarkMeta.selfServiceMode ? firstSelfServiceItem?.unit || "" : linkedProductionOrder?.unit || linkedProduct?.unit || "",
       warehouseId: order.warehouseId ? String(order.warehouseId) : "",
-      applicationDate: order.applicationDate ? String(order.applicationDate).split("T")[0] : "",
-      remark: "",
-      selfServiceItemName: "",
-      selfServiceItemSpec: "",
-      selfServiceItemCode: "",
-      selfServiceInventoryId: "",
+      applicationDate: order.requisitionDate
+        ? String(order.requisitionDate).split("T")[0]
+        : order.applicationDate
+          ? String(order.applicationDate).split("T")[0]
+          : "",
+      remark: remarkMeta.note,
+      selfServiceItemName: remarkMeta.selfServiceMode ? firstSelfServiceItem?.materialName || "" : "",
+      selfServiceItemSpec: remarkMeta.selfServiceMode ? firstSelfServiceItem?.specification || "" : "",
+      selfServiceItemCode: remarkMeta.selfServiceMode ? firstSelfServiceItem?.materialCode || "" : "",
+      selfServiceInventoryId: remarkMeta.selfServiceMode && firstSelfServiceItem ? "__existing__" : "",
     });
     setDialogOpen(true);
   };
@@ -208,18 +440,33 @@ export default function MaterialRequisitionPage() {
     setViewDialogOpen(true);
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const focusId = Number(params.get("focusId") || 0);
+    if (!focusId || viewDialogOpen) return;
+    const matchedOrder = (orders as any[]).find((order: any) => Number(order.id) === focusId);
+    if (!matchedOrder) return;
+    setViewingOrder(matchedOrder);
+    setViewDialogOpen(true);
+    params.delete("focusId");
+    const nextQuery = params.toString();
+    window.history.replaceState({}, "", nextQuery ? `/production/material-requisition?${nextQuery}` : "/production/material-requisition");
+  }, [orders, viewDialogOpen]);
+
   const handleDelete = (order: any) => {
     if (!canDelete) { toast.error("您没有删除权限"); return; }
     deleteMutation.mutate({ id: order.id });
   };
 
-  const handleApprove = (order: any) => {
-    updateMutation.mutate({ id: order.id, data: { status: "approved" } });
+  const openPasswordConfirm = (action: "create" | "approve", order?: any) => {
+    setPasswordAction(action);
+    setPendingApproveOrder(order || null);
+    setPasswordValue("");
+    setPasswordDialogOpen(true);
   };
 
   const handleIssue = (order: any) => {
-    updateMutation.mutate({ id: order.id, data: { status: "issued" } });
-    toast.success("已发料");
+    openPasswordConfirm("approve", order);
   };
 
   // 选择生产指令后自动带入产品信息
@@ -234,14 +481,14 @@ export default function MaterialRequisitionPage() {
       productSpec: product?.specification || "",
       productDescription: product?.description || "",
       batchNo: po.batchNo || "",
-      plannedQty: po.plannedQty || "",
+      plannedQty: formatWholeNumber(po.plannedQty),
       unit: po.unit || product?.unit || "",
     }));
     setSelectedProductId(newProductId);
     setOrderPickerOpen(false);
     // 延迟一下再提示，等 BOM 查询触发
     setTimeout(() => {
-      if (newProductId > 0) {
+      if (!selfServiceMode && newProductId > 0) {
         toast.info("正在根据 BOM 自动带出物料明细...");
       }
     }, 300);
@@ -269,6 +516,9 @@ export default function MaterialRequisitionPage() {
       requiredQty: 0,
       unit: inv.unit || product?.unit || "",
       actualQty: 0,
+      inventoryId: Number(inv.id || 0) || undefined,
+      warehouseId: Number(inv.warehouseId || 0) || undefined,
+      warehouseName: getWarehouseName(inv.warehouseId),
       batchNo: inv.batchNo || inv.lotNo || "",
       availableQty: Number(inv.quantity) || 0,
       remark: "",
@@ -294,6 +544,9 @@ export default function MaterialRequisitionPage() {
         requiredQty: 0,
         unit: inv.unit || product?.unit || "",
         actualQty: 0,
+        inventoryId: Number(inv.id || 0) || undefined,
+        warehouseId: Number(inv.warehouseId || 0) || undefined,
+        warehouseName: getWarehouseName(inv.warehouseId),
         batchNo: inv.batchNo || inv.lotNo || "",
         availableQty: Number(inv.quantity) || 0,
         remark: "",
@@ -320,50 +573,199 @@ export default function MaterialRequisitionPage() {
   };
 
   // 当 BOM 数据加载完成时，自动填充物料明细（扣减已领数量）
-  const handleLoadBomItems = () => {
-    if ((bomItems as any[]).length === 0) {
-      toast.warning("该产品暂无 BOM 数据，请手动添加物料");
+  const handleLoadBomItems = async () => {
+    const productionOrderId = Number(formData.productionOrderId || 0);
+    if (productionOrderId <= 0) {
+      toast.warning("请先选择生产指令");
       return;
     }
-    const plannedQty = Number(formData.plannedQty) || 1;
-    const poId = formData.productionOrderId ? Number(formData.productionOrderId) : 0;
-    const issuedForPo = issuedQtyMap[poId] || {};
-    // 只取 level=2 的物料（二级组件/半成品）和 level=3 的原材料
-    const rawMaterials = (bomItems as any[]).filter((b: any) => b.level === 3 || b.level === 2);
-    const newItems: MaterialItem[] = rawMaterials.map((b: any) => {
-      const bomQtyPerUnit = Number(b.quantity) || 0;
-      const totalNeeded = bomQtyPerUnit * plannedQty; // 总需求量
-      const key = b.materialCode || b.materialName;
-      const alreadyIssued = issuedForPo[key] || 0;
-      const remaining = Math.max(0, totalNeeded - alreadyIssued); // 剩余需领
-      return {
-        materialCode: b.materialCode || "",
-        materialName: b.materialName || "",
-        specification: b.specification || "",
-        requiredQty: remaining,
-        unit: b.unit || "",
-        actualQty: remaining,
-        batchNo: "",
-        availableQty: 0,
-        remark: alreadyIssued > 0 ? `已领${alreadyIssued}，总需${totalNeeded}` : "",
-      };
-    }).filter((item) => item.requiredQty > 0); // 过滤已领完的物料
-    if (newItems.length === 0) {
-      toast.success("所有物料均已领完，无需再次领料");
+    try {
+      const suggestedItems = await trpcUtils.materialRequisitionOrders.getSuggestedItems.fetch({ productionOrderId });
+      const newItems = (suggestedItems as MaterialItem[])
+        .filter((item) => Number(item.requiredQty || 0) > 0)
+        .map((item) => normalizeMaterialItem(item, formData.warehouseId));
+      if (newItems.length === 0) {
+        toast.warning("该生产指令暂无可带出的 BOM 物料");
+        return;
+      }
+      setItems(newItems);
+      toast.success(`已从 BOM 带出 ${newItems.length} 条待领物料`);
+    } catch (error) {
+      console.error("加载 BOM 物料失败", error);
+      toast.error("带出 BOM 物料失败");
+    }
+  };
+
+  const findMatchingInventoryRows = (item: MaterialItem) => {
+    const code = String(item.materialCode || "").trim();
+    const name = String(item.materialName || "").trim();
+    const specification = String(item.specification || "").trim();
+    return qualifiedInventoryWithMeta.filter((inventory: any) => {
+      const inventoryCode = String(inventory.materialCode || "").trim();
+      const inventoryName = String(inventory.itemName || "").trim();
+      const inventorySpec = String(inventory.specification || "").trim();
+      if (code && inventoryCode === code) return true;
+      if (name && inventoryName === name) {
+        if (!specification) return true;
+        return !inventorySpec || inventorySpec === specification;
+      }
+      return false;
+    });
+  };
+
+  const autoAssignWarehouseAndBatch = (sourceItems: MaterialItem[]) => {
+    const inventoryRemainMap = new Map<number, number>();
+    qualifiedInventoryWithMeta.forEach((inventory: any) => {
+      inventoryRemainMap.set(Number(inventory.id), Number(inventory.quantity || 0) || 0);
+    });
+
+    const nextItems: MaterialItem[] = [];
+    const missingMaterials: string[] = [];
+    const insufficientMaterials: string[] = [];
+
+    sourceItems.forEach((item) => {
+      if (!item.materialCode && !item.materialName) {
+        nextItems.push(item);
+        return;
+      }
+
+      const targetQty = Number(item.actualQty || item.requiredQty || 0);
+      if (targetQty <= 0) {
+        nextItems.push({
+          ...item,
+          inventoryId: undefined,
+          warehouseId: undefined,
+          warehouseName: "",
+          batchNo: "",
+          availableQty: 0,
+        });
+        return;
+      }
+
+      const matchedInventoryRows = findMatchingInventoryRows(item);
+      if (matchedInventoryRows.length === 0) {
+        missingMaterials.push(item.materialName || item.materialCode);
+        nextItems.push({
+          ...item,
+          inventoryId: undefined,
+          warehouseId: undefined,
+          warehouseName: "",
+          batchNo: "",
+          availableQty: 0,
+        });
+        return;
+      }
+
+      let remainingQty = roundToDigits(targetQty, 4);
+
+      matchedInventoryRows.forEach((inventory: any) => {
+        if (remainingQty <= 0) return;
+        const inventoryId = Number(inventory.id || 0);
+        const availableQty = Number(inventoryRemainMap.get(inventoryId) || 0);
+        if (availableQty <= 0) return;
+
+        const allocatedQty = Math.min(remainingQty, availableQty);
+        if (allocatedQty <= 0) return;
+
+        nextItems.push({
+          ...item,
+          inventoryId: inventoryId || undefined,
+          warehouseId: Number(inventory.warehouseId || 0) || undefined,
+          warehouseName: inventory.warehouseName || getWarehouseName(inventory.warehouseId),
+          batchNo: inventory.batchNo || inventory.lotNo || "",
+          availableQty: Number(inventory.quantity || 0) || 0,
+          requiredQty: roundToDigits(allocatedQty, 4),
+          actualQty: roundToDigits(allocatedQty, 4),
+        });
+
+        inventoryRemainMap.set(inventoryId, roundToDigits(availableQty - allocatedQty, 4));
+        remainingQty = roundToDigits(remainingQty - allocatedQty, 4);
+      });
+
+      if (remainingQty > 0) {
+        insufficientMaterials.push(`${item.materialName || item.materialCode} 缺 ${remainingQty}`);
+        nextItems.push({
+          ...item,
+          inventoryId: undefined,
+          warehouseId: undefined,
+          warehouseName: "",
+          batchNo: "",
+          availableQty: 0,
+          requiredQty: remainingQty,
+          actualQty: remainingQty,
+          remark: [item.remark, `库存不足，剩余待分配 ${remainingQty}`].filter(Boolean).join("；"),
+        });
+      }
+    });
+
+    return { nextItems, missingMaterials, insufficientMaterials };
+  };
+
+  const handleAutoFillWarehouseAndBatch = async () => {
+    const productionOrderId = Number(formData.productionOrderId || 0);
+    if (productionOrderId <= 0) {
+      toast.warning("请先选择生产指令");
       return;
     }
-    setItems(newItems);
-    toast.success(`已从 BOM 带出 ${newItems.length} 条待领物料（已扣减已领数量）`);
+
+    try {
+      let sourceItems = items;
+      if (sourceItems.length === 0) {
+        const suggestedItems = await trpcUtils.materialRequisitionOrders.getSuggestedItems.fetch({ productionOrderId });
+        sourceItems = (suggestedItems as MaterialItem[])
+          .filter((item) => Number(item.requiredQty || 0) > 0)
+          .map((item) => normalizeMaterialItem(item, formData.warehouseId));
+      }
+
+      if (sourceItems.length === 0) {
+        toast.warning("该生产指令暂无可带出的 BOM 物料");
+        return;
+      }
+
+      const { nextItems, missingMaterials, insufficientMaterials } = autoAssignWarehouseAndBatch(sourceItems);
+      setItems(nextItems);
+
+      if (missingMaterials.length > 0) {
+        toast.warning(`以下物料暂无可用库存：${missingMaterials.join("、")}`);
+        return;
+      }
+
+      if (insufficientMaterials.length > 0) {
+        toast.warning(`已按先进先出分配，部分库存不足：${insufficientMaterials.join("、")}`);
+        return;
+      }
+
+      toast.success("已按先进先出自动带入仓库和批号");
+    } catch (error) {
+      console.error("自动带入仓库批号失败", error);
+      toast.error("自动带入仓库批号失败");
+    }
   };
 
   const addItem = () => {
-    setItems([...items, { materialCode: "", materialName: "", specification: "", requiredQty: 0, unit: "件", actualQty: 0, batchNo: "", availableQty: 0, remark: "" }]);
+    setItems([
+      ...items,
+      {
+        materialCode: "",
+        materialName: "",
+        specification: "",
+        requiredQty: 0,
+        unit: "件",
+        actualQty: 0,
+        inventoryId: undefined,
+        warehouseId: formData.warehouseId ? Number(formData.warehouseId) : undefined,
+        warehouseName: getWarehouseName(formData.warehouseId),
+        batchNo: "",
+        availableQty: 0,
+        remark: "",
+      },
+    ]);
   };
 
   // 复制一行（用于同一物料选不同批次）
   const duplicateItem = (idx: number) => {
     const item = items[idx];
-    const newItem = { ...item, batchNo: "", availableQty: 0, actualQty: 0 };
+    const newItem = { ...item, inventoryId: undefined, batchNo: "", availableQty: 0, actualQty: 0 };
     const newItems = [...items];
     newItems.splice(idx + 1, 0, newItem);
     setItems(newItems);
@@ -373,19 +775,55 @@ export default function MaterialRequisitionPage() {
   const openBatchPicker = (idx: number) => {
     const item = items[idx];
     setBatchPickerItemIdx(idx);
+    setBatchPickerSelected(item.inventoryId ? new Set([Number(item.inventoryId)]) : new Set());
     // 优先用物料编码搜索，若无编码则用物料名称
     // 后端 search 字段同时匹配 itemName / batchNo / materialCode
     setBatchSearchCode(item.materialCode || item.materialName || "");
     setBatchPickerOpen(true);
   };
 
-  // 选择批号
-  const handleBatchSelect = (batch: any) => {
+  const handleBatchToggle = (batchId: number) => {
+    setBatchPickerSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(batchId)) next.delete(batchId);
+      else next.add(batchId);
+      return next;
+    });
+  };
+
+  const handleBatchConfirm = () => {
     if (batchPickerItemIdx < 0) return;
-    updateItem(batchPickerItemIdx, "batchNo", batch.batchNo || batch.lotNo || "");
-    updateItem(batchPickerItemIdx, "availableQty", Number(batch.quantity) || 0);
+    if (batchPickerSelected.size === 0) {
+      toast.warning("请至少选择一个批次");
+      return;
+    }
+    const selectedBatches = visibleBatchOptions.filter((batch: any) => batchPickerSelected.has(Number(batch.id)));
+    if (selectedBatches.length === 0) {
+      toast.warning("未找到已选批次");
+      return;
+    }
+
+    setItems((prev) => {
+      const currentItem = prev[batchPickerItemIdx];
+      if (!currentItem) return prev;
+      const nextRows = selectedBatches.map((batch: any, index: number) => ({
+        ...currentItem,
+        inventoryId: Number(batch.id || 0) || undefined,
+        warehouseId: Number(batch.warehouseId || 0) || undefined,
+        warehouseName: getWarehouseName(batch.warehouseId),
+        batchNo: batch.batchNo || batch.lotNo || "",
+        availableQty: Number(batch.quantity) || 0,
+        actualQty: index === 0 ? currentItem.actualQty : 0,
+        requiredQty: index === 0 ? currentItem.requiredQty : 0,
+      }));
+      const next = [...prev];
+      next.splice(batchPickerItemIdx, 1, ...nextRows);
+      return next;
+    });
+
     setBatchPickerOpen(false);
     setBatchPickerItemIdx(-1);
+    setBatchPickerSelected(new Set());
   };
 
   const removeItem = (idx: number) => {
@@ -393,45 +831,113 @@ export default function MaterialRequisitionPage() {
   };
 
   const updateItem = (idx: number, field: keyof MaterialItem, value: any) => {
-    setItems(items.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+    setItems((prev) => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
   };
 
-  const handleSubmit = () => {
-    if (!formData.requisitionNo) {
-      toast.error("请填写领料单号");
+  const handleItemWarehouseChange = (idx: number, warehouseId: string) => {
+    const nextWarehouseId = warehouseId ? Number(warehouseId) : undefined;
+    const nextWarehouseName = getWarehouseName(nextWarehouseId);
+    setItems((prev) =>
+      prev.map((item, itemIdx) =>
+        itemIdx === idx
+          ? {
+              ...item,
+              warehouseId: nextWarehouseId,
+              warehouseName: nextWarehouseName,
+              batchNo: "",
+              availableQty: 0,
+            }
+          : item
+      )
+    );
+  };
+
+  const getOrderWarehouseIdFromItems = () => {
+    const firstMatched = items.find((item) => Number(item.warehouseId || 0) > 0);
+    return firstMatched?.warehouseId ? Number(firstMatched.warehouseId) : (formData.warehouseId ? Number(formData.warehouseId) : undefined);
+  };
+
+  const submitCreateOrUpdate = () => {
+    if (selfServiceMode && !formData.productionOrderId) {
+      toast.error("自主领料必须关联生产指令");
       return;
     }
     // items 单独存入 items 字段（JSON 字符串），remark 存备注 + selfServiceMode 元数据
     const itemsJson = JSON.stringify(items);
-    const remarkMeta = JSON.stringify({ selfServiceMode, note: formData.remark });
+    const baseRemarkMeta = buildMaterialRequisitionRemark({ selfServiceMode, note: formData.remark });
+    const remarkMeta = appendSignatureToRemark(baseRemarkMeta, "create");
+    const orderWarehouseId = getOrderWarehouseIdFromItems();
     const payload = {
-      requisitionNo: formData.requisitionNo,
+      requisitionNo: formData.requisitionNo || undefined,
       productionOrderId: formData.productionOrderId ? Number(formData.productionOrderId) : undefined,
       productionOrderNo: formData.productionOrderNo || undefined,
-      warehouseId: formData.warehouseId ? Number(formData.warehouseId) : undefined,
+      warehouseId: orderWarehouseId,
       requisitionDate: formData.applicationDate || undefined,
       status: "draft" as const,
       items: itemsJson,
       remark: remarkMeta,
     };
     if (editingOrder) {
-      updateMutation.mutate({ id: editingOrder.id, data: { items: itemsJson, remark: remarkMeta } });
+      updateMutation.mutate({
+        id: editingOrder.id,
+        data: {
+          productionOrderId: formData.productionOrderId ? Number(formData.productionOrderId) : undefined,
+          productionOrderNo: formData.productionOrderNo || undefined,
+          warehouseId: orderWarehouseId,
+          requisitionDate: formData.applicationDate || undefined,
+          status: "draft",
+          items: itemsJson,
+          remark: remarkMeta,
+        },
+      });
     } else {
       createMutation.mutate(payload);
+    }
+  };
+
+  const handleSubmit = () => {
+    openPasswordConfirm("create");
+  };
+
+  const handlePasswordConfirm = async () => {
+    if (!passwordValue.trim()) {
+      toast.error("请输入密码");
+      return;
+    }
+    try {
+      await verifyPasswordMutation.mutateAsync({ password: passwordValue });
+      if (passwordAction === "create") {
+        submitCreateOrUpdate();
+      } else if (passwordAction === "approve" && pendingApproveOrder) {
+        const remarkMeta = appendSignatureToRemark(pendingApproveOrder.remark, "approve");
+        updateMutation.mutate({
+          id: pendingApproveOrder.id,
+          data: {
+            status: "issued",
+            remark: remarkMeta,
+          },
+        });
+      }
+      setPasswordDialogOpen(false);
+      setPasswordValue("");
+      setPasswordAction(null);
+      setPendingApproveOrder(null);
+    } catch (error: any) {
+      toast.error(error?.message || "密码校验失败");
     }
   };
 
   const getViewItems = (order: any): MaterialItem[] => {
     try {
       // 优先从独立的 items 字段读取，兼容旧数据（存在 remark.items 中）
-      if (order.items) return JSON.parse(order.items) || [];
+      if (order.items) return (JSON.parse(order.items) || []).map((item: any) => normalizeMaterialItem(item, order.warehouseId));
       const extra = JSON.parse(order.remark || "{}");
-      return extra.items || [];
+      return (extra.items || []).map((item: any) => normalizeMaterialItem(item, order.warehouseId));
     } catch { return []; }
   };
 
   const draftCount = (orders as any[]).filter((o) => o.status === "draft").length;
-  const pendingCount = (orders as any[]).filter((o) => o.status === "pending").length;
+  const pendingCount = (orders as any[]).filter((o) => o.status === "pending" || o.status === "approved").length;
   const issuedCount = (orders as any[]).filter((o) => o.status === "issued").length;
 
   // ── 领料状态计算 ──────────────────────────────────────────────
@@ -480,7 +986,8 @@ export default function MaterialRequisitionPage() {
       const product = (productsData as any[]).find((p: any) => p.id === po.productId);
       const reqStatus = getRequisitionStatus(po);
       return { ...po, productName: product?.name || "-", productSpec: product?.specification || "", reqStatus };
-    });
+    })
+    .filter((po: any) => po.reqStatus !== "full");
 
   // 库存产品列表（用于自主领料弹窗选择），附加规格
   const inventoryWithSpec = useMemo(() => {
@@ -489,21 +996,31 @@ export default function MaterialRequisitionPage() {
       return {
         ...inv,
         specification: product?.specification || inv.specification || inv.spec || "",
+        warehouseName: getWarehouseName(inv?.warehouseId),
       };
     });
-  }, [inventoryForPicker, productsData]);
+  }, [inventoryForPicker, productsData, warehouseNameMap]);
 
-  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  const FieldRow = ({ label, children }: { label: string; children: React.ReactNode }) => {
+    const renderValue = (value: React.ReactNode): React.ReactNode => {
+      if (value == null || value === "") return "-";
+      if (value instanceof Date) return value.toISOString().slice(0, 10);
+      if (Array.isArray(value)) {
+        const items = value
+          .map((item) => item instanceof Date ? item.toISOString().slice(0, 10) : item)
+          .filter((item) => item != null && item !== "");
+        return items.length > 0 ? items.join(" ") : "-";
+      }
+      return value;
+    };
 
-    <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
-
-      <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
-
-      <span className="flex-1 text-sm text-right break-all">{children}</span>
-
-    </div>
-
-  );
+    return (
+      <div className="flex items-start gap-2 py-1.5 border-b border-border/40 last:border-0">
+        <span className="w-24 shrink-0 text-sm text-muted-foreground">{label}</span>
+        <span className="flex-1 text-sm text-right break-all">{renderValue(children)}</span>
+      </div>
+    );
+  };
 
 
   return (
@@ -568,7 +1085,7 @@ export default function MaterialRequisitionPage() {
                   <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">加载中...</TableCell></TableRow>
                 ) : filteredOrders.length === 0 ? (
                   <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">暂无领料单</TableCell></TableRow>
-                ) : filteredOrders.map((order: any) => {
+                ) : pagedOrders.map((order: any) => {
                   const po = (productionOrders as any[]).find((p: any) => p.id === order.productionOrderId);
                   const product = po ? (productsData as any[]).find((p: any) => p.id === po.productId) : null;
                   return (
@@ -592,21 +1109,21 @@ export default function MaterialRequisitionPage() {
                             {order.status === "draft" && (
                               <>
                                 <DropdownMenuItem onClick={() => handleEdit(order)}><Edit className="h-4 w-4 mr-2" />编辑</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => updateMutation.mutate({ id: order.id, data: { status: "pending" } })}>
-                                  <CheckCircle className="h-4 w-4 mr-2" />提交审批
+                                <DropdownMenuItem onClick={() => handleIssue(order)}>
+                                  <CheckCircle className="h-4 w-4 mr-2" />审核通过并发料
                                 </DropdownMenuItem>
                               </>
                             )}
                             {order.status === "pending" && (
                               <>
-                                <DropdownMenuItem onClick={() => handleApprove(order)}><CheckCircle className="h-4 w-4 mr-2" />审批通过</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleIssue(order)}><Truck className="h-4 w-4 mr-2" />审核通过并发料</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => updateMutation.mutate({ id: order.id, data: { status: "rejected" } })} className="text-destructive">
                                   <XCircle className="h-4 w-4 mr-2" />拒绝
                                 </DropdownMenuItem>
                               </>
                             )}
                             {order.status === "approved" && (
-                              <DropdownMenuItem onClick={() => handleIssue(order)}><Truck className="h-4 w-4 mr-2" />确认发料</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleIssue(order)}><Truck className="h-4 w-4 mr-2" />审核通过并发料</DropdownMenuItem>
                             )}
                             {canDelete && (
                               <DropdownMenuItem onClick={() => handleDelete(order)} className="text-destructive">
@@ -623,40 +1140,33 @@ export default function MaterialRequisitionPage() {
             </Table>
           </CardContent>
         </Card>
+        <TablePaginationFooter total={filteredOrders.length} page={currentPage} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
 
         {/* 新建/编辑对话框 */}
         <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DraggableDialogContent className="max-w-4xl">
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto text-sm [&_input]:text-sm [&_label]:text-sm [&_[role=combobox]]:text-sm [&_textarea]:text-sm">
             <DialogHeader>
               <div className="flex items-center justify-between pr-6">
                 <div>
-                  <DialogTitle>{editingOrder ? "编辑领料单" : "新建领料单"}</DialogTitle>
-                  <DialogDescription>填写领料申请信息及物料明细</DialogDescription>
+                  <DialogTitle className="text-2xl font-bold tracking-tight">{editingOrder ? "编辑领料单" : "新建领料单"}</DialogTitle>
+                  <DialogDescription className="mt-1 text-sm text-muted-foreground">填写领料申请信息及物料明细</DialogDescription>
                 </div>
                 {/* 自主领料切换按钮 */}
                 <button
                   type="button"
                   onClick={() => {
                     setSelfServiceMode(!selfServiceMode);
-                    // 切换模式时清空关联信息
+                    // 切换模式时保留生产指令，仅清空自主选料缓存和明细，避免两种模式数据互串
                     setFormData((f) => ({
                       ...f,
-                      productionOrderId: "",
-                      productionOrderNo: "",
-                      productName: "",
-                      productSpec: "",
-                      productDescription: "",
-                      batchNo: "",
-                      plannedQty: "",
                       selfServiceItemName: "",
                       selfServiceItemSpec: "",
                       selfServiceItemCode: "",
                       selfServiceInventoryId: "",
                     }));
-                    setSelectedProductId(0);
                     setItems([]);
                   }}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm font-medium transition-all ${
+                  className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-all ${
                     selfServiceMode
                       ? "bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
                       : "bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100"
@@ -671,36 +1181,28 @@ export default function MaterialRequisitionPage() {
                 </button>
               </div>
             </DialogHeader>
-            <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-1">
+            <div className="space-y-5 py-4 max-h-[65vh] overflow-y-auto pr-1">
 
-              {/* 第一行：领料单号 + 申请日期 + 领料仓库 + 状态 */}
-              <div className="grid grid-cols-4 gap-4">
+              {/* 第一行：领料单号 + 申请日期 + 计划数量 */}
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label>领料单号 *</Label>
+                  <Label className="font-semibold">领料单号 *</Label>
                   <Input
+                    className="h-10"
                     value={formData.requisitionNo}
                     onChange={(e) => setFormData({ ...formData, requisitionNo: e.target.value })}
-                    readOnly={!!editingOrder}
+                    placeholder="保存后系统生成"
+                    readOnly
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>申请日期</Label>
-                  <Input type="date" value={formData.applicationDate} onChange={(e) => setFormData({ ...formData, applicationDate: e.target.value })} />
+                  <Label className="font-semibold">申请日期</Label>
+                  <DateTextInput className="h-10" value={formData.applicationDate} onChange={(value) => setFormData({ ...formData, applicationDate: value })} />
                 </div>
                 <div className="space-y-2">
-                  <Label>领料仓库</Label>
-                  <Select value={formData.warehouseId} onValueChange={(v) => setFormData({ ...formData, warehouseId: v })}>
-                    <SelectTrigger><SelectValue placeholder="选择仓库" /></SelectTrigger>
-                    <SelectContent>
-                      {(warehouseList as any[]).map((w: any) => (
-                        <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>计划数量</Label>
+                  <Label className="font-semibold">计划数量</Label>
                   <Input
+                    className="h-10"
                     value={formData.plannedQty}
                     onChange={(e) => setFormData({ ...formData, plannedQty: e.target.value })}
                     placeholder="自动带入"
@@ -712,94 +1214,120 @@ export default function MaterialRequisitionPage() {
               {!selfServiceMode ? (
                 /* 普通模式：关联生产指令 */
                 <div className="space-y-2">
-                  <Label>关联生产指令</Label>
+                  <Label className="font-semibold">关联生产指令</Label>
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full justify-start font-normal"
+                    className="h-10 w-full justify-start text-sm font-normal"
                     onClick={() => setOrderPickerOpen(true)}
                   >
                     {formData.productionOrderId ? (
-                      <span className="flex items-center gap-2">
+                      <span className="flex items-center gap-2 text-sm">
                         <span className="text-green-600">✓</span>
                         <span className="font-mono text-xs text-muted-foreground">{formData.productionOrderNo}</span>
                         {formData.productName && <span className="font-medium">{formData.productName}</span>}
-                        {formData.batchNo && <span className="text-muted-foreground text-xs">批次: {formData.batchNo}</span>}
+                        {formData.batchNo && <span className="text-xs text-muted-foreground">批次: {formData.batchNo}</span>}
                       </span>
                     ) : (
-                      <span className="text-muted-foreground">点击选择生产指令...</span>
+                      <span className="text-sm text-muted-foreground">点击选择生产指令...</span>
                     )}
                   </Button>
                 </div>
               ) : (
-                /* 自主领料模式：从仓库选择产品 */
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Label>选择产品</Label>
-                    <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">自主领料</span>
+                /* 自主领料模式：先关联生产指令，再从仓库选择产品 */
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Label className="font-semibold">关联生产指令</Label>
+                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-600">自主领料</span>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-10 w-full justify-start text-sm font-normal"
+                      onClick={() => setOrderPickerOpen(true)}
+                    >
+                      {formData.productionOrderId ? (
+                        <span className="flex items-center gap-2 text-sm">
+                          <span className="text-green-600">✓</span>
+                          <span className="font-mono text-xs text-muted-foreground">{formData.productionOrderNo}</span>
+                          {formData.productName && <span className="font-medium">{formData.productName}</span>}
+                          {formData.batchNo && <span className="text-xs text-muted-foreground">批次: {formData.batchNo}</span>}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">点击选择生产指令...</span>
+                      )}
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full justify-start font-normal"
-                    onClick={() => {
-                      setInventoryPickerSearch("");
-                      setInventoryPickerOpen(true);
-                    }}
-                  >
-                    {formData.selfServiceInventoryId ? (
-                      <span className="flex items-center gap-2">
-                        <span className="text-green-600">✓</span>
-                        {formData.selfServiceItemCode && (
-                          <span className="font-mono text-xs text-muted-foreground">{formData.selfServiceItemCode}</span>
-                        )}
-                        <span className="font-medium">{formData.selfServiceItemName}</span>
-                        {formData.selfServiceItemSpec && (
-                          <span className="text-muted-foreground text-xs">规格: {formData.selfServiceItemSpec}</span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">点击从仓库选择产品...</span>
-                    )}
-                  </Button>
+                  <div className="space-y-2">
+                    <Label className="font-semibold">选择产品</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-10 w-full justify-start text-sm font-normal"
+                      onClick={() => {
+                        if (!formData.productionOrderId) {
+                          toast.error("请先关联生产指令");
+                          return;
+                        }
+                        setInventoryPickerSearch("");
+                        setInventoryPickerOpen(true);
+                      }}
+                    >
+                      {formData.selfServiceInventoryId ? (
+                        <span className="flex items-center gap-2 text-sm">
+                          <span className="text-green-600">✓</span>
+                          {formData.selfServiceItemCode && (
+                            <span className="font-mono text-xs text-muted-foreground">{formData.selfServiceItemCode}</span>
+                          )}
+                          <span className="font-medium">{formData.selfServiceItemName}</span>
+                          {formData.selfServiceItemSpec && (
+                            <span className="text-xs text-muted-foreground">规格: {formData.selfServiceItemSpec}</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">点击从仓库选择产品...</span>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               )}
 
               {/* 产品信息展示（只读，选择后自动带入） */}
               {!selfServiceMode && formData.productionOrderId && (formData.productName || formData.productSpec) && (
-                <div className="rounded-md bg-muted/50 p-3 grid grid-cols-4 gap-3 text-sm">
+                <div className="grid grid-cols-4 gap-3 rounded-md bg-muted/50 p-4 text-sm">
                   {formData.productName && (
-                    <div><span className="text-muted-foreground text-xs">产品名称</span><p className="font-medium">{formData.productName}</p></div>
+                    <div><span className="text-xs text-muted-foreground">产品名称</span><p className="mt-1 font-medium">{formData.productName}</p></div>
                   )}
                   {formData.productSpec && (
-                    <div><span className="text-muted-foreground text-xs">规格型号</span><p>{formData.productSpec}</p></div>
+                    <div><span className="text-xs text-muted-foreground">规格型号</span><p className="mt-1">{formData.productSpec}</p></div>
                   )}
                   {formData.batchNo && (
-                    <div><span className="text-muted-foreground text-xs">生产批号</span><p className="font-mono">{formData.batchNo}</p></div>
+                    <div><span className="text-xs text-muted-foreground">生产批号</span><p className="mt-1 font-mono">{formData.batchNo}</p></div>
                   )}
                   {formData.unit && (
-                    <div><span className="text-muted-foreground text-xs">单位</span><p>{formData.unit}</p></div>
+                    <div><span className="text-xs text-muted-foreground">单位</span><p className="mt-1">{formData.unit}</p></div>
                   )}
                   {formData.productDescription && (
-                    <div className="col-span-4"><span className="text-muted-foreground text-xs">产品描述</span><p>{formData.productDescription}</p></div>
+                    <div className="col-span-4"><span className="text-xs text-muted-foreground">产品描述</span><p className="mt-1">{formData.productDescription}</p></div>
                   )}
                 </div>
               )}
 
               {/* 自主领料模式 - 产品信息展示 */}
               {selfServiceMode && formData.selfServiceInventoryId && (formData.selfServiceItemName || formData.selfServiceItemSpec) && (
-                <div className="rounded-md bg-blue-50/60 border border-blue-100 p-3 grid grid-cols-4 gap-3 text-sm">
+                <div className="grid grid-cols-4 gap-3 rounded-md border border-blue-100 bg-blue-50/60 p-4 text-sm">
                   {formData.selfServiceItemName && (
-                    <div><span className="text-muted-foreground text-xs">产品名称</span><p className="font-medium">{formData.selfServiceItemName}</p></div>
+                    <div><span className="text-xs text-muted-foreground">产品名称</span><p className="mt-1 font-medium">{formData.selfServiceItemName}</p></div>
                   )}
                   {formData.selfServiceItemSpec && (
-                    <div><span className="text-muted-foreground text-xs">规格型号</span><p>{formData.selfServiceItemSpec}</p></div>
+                    <div><span className="text-xs text-muted-foreground">规格型号</span><p className="mt-1">{formData.selfServiceItemSpec}</p></div>
                   )}
                   {formData.selfServiceItemCode && (
-                    <div><span className="text-muted-foreground text-xs">物料编码</span><p className="font-mono">{formData.selfServiceItemCode}</p></div>
+                    <div><span className="text-xs text-muted-foreground">物料编码</span><p className="mt-1 font-mono">{formData.selfServiceItemCode}</p></div>
                   )}
                   {formData.unit && (
-                    <div><span className="text-muted-foreground text-xs">单位</span><p>{formData.unit}</p></div>
+                    <div><span className="text-xs text-muted-foreground">单位</span><p className="mt-1">{formData.unit}</p></div>
                   )}
                 </div>
               )}
@@ -809,80 +1337,112 @@ export default function MaterialRequisitionPage() {
               {/* 物料明细 */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>物料明细</Label>
+                  <Label className="font-semibold">物料明细</Label>
                   <div className="flex gap-2">
                     {!selfServiceMode && selectedProductId > 0 && (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
+                        onClick={handleAutoFillWarehouseAndBatch}
+                        className="h-9 text-sm"
+                      >
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        一键带入仓库批号
+                      </Button>
+                    )}
+                    {!selfServiceMode && selectedProductId > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={handleLoadBomItems}
-                        className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                        className="h-9 text-sm text-blue-600 border-blue-200 hover:bg-blue-50"
                       >
                         <RefreshCw className="h-3 w-3 mr-1" />
                         从 BOM 带出物料
                       </Button>
                     )}
-                    <Button type="button" variant="outline" size="sm" onClick={addItem}>
+                    <Button type="button" variant="outline" size="sm" className="h-9 text-sm" onClick={addItem}>
                       <Plus className="h-3 w-3 mr-1" />手动添加
                     </Button>
                   </div>
                 </div>
 
                 {items.length === 0 ? (
-                  <div className="border rounded-md p-6 text-center text-sm text-muted-foreground">
+                  <div className="rounded-md border p-6 text-center text-sm text-muted-foreground">
                     {selfServiceMode
-                      ? "请先选择产品，或直接手动添加物料"
+                      ? "请先关联生产指令，再选择产品，或直接手动添加物料"
                       : selectedProductId > 0
                         ? "点击「从 BOM 带出物料」自动填充，或手动添加物料"
                         : "可选择关联生产指令（可选），或直接手动添加物料"}
                   </div>
                 ) : (
                   <div className="border rounded-md overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
-                    <Table>
+                      <Table>
                       <TableHeader>
-                        <TableRow className="bg-muted/60 text-xs">
-                          <TableHead className="font-bold py-2 pl-3">物料编码</TableHead>
-                          <TableHead className="font-bold py-2">物料名称</TableHead>
-                          <TableHead className="font-bold py-2">规格</TableHead>
-                          <TableHead className="font-bold py-2">批号</TableHead>
-                          <TableHead className="text-right font-bold py-2">需求数量</TableHead>
-                          <TableHead className="text-right font-bold py-2">实领数量</TableHead>
-                          <TableHead className="font-bold py-2">单位</TableHead>
-                          <TableHead className="w-[70px] text-center font-bold py-2">操作</TableHead>
+                        <TableRow className="bg-muted/60 text-sm">
+                          <TableHead className="py-3 text-sm font-bold">物料名称</TableHead>
+                          <TableHead className="w-[120px] py-3 text-sm font-bold">规格</TableHead>
+                          <TableHead className="w-[92px] py-3 text-sm font-bold">领料仓库</TableHead>
+                          <TableHead className="py-3 text-sm font-bold">批号</TableHead>
+                          <TableHead className="w-[60px] py-3 text-right text-sm font-bold">需求数量</TableHead>
+                          <TableHead className="w-[68px] py-3 text-right text-sm font-bold">实领数量</TableHead>
+                          <TableHead className="w-[56px] py-3 text-sm font-bold">单位</TableHead>
+                          <TableHead className="w-[56px] py-3 text-center text-sm font-bold">操作</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {items.map((item, idx) => (
-                          <TableRow key={idx} className="text-xs hover:bg-muted/30">
-                            <TableCell className="py-2 pl-3 font-mono text-muted-foreground">{item.materialCode || <span className="text-gray-300">-</span>}</TableCell>
-                            <TableCell className="py-2 font-medium">{item.materialName || <span className="text-muted-foreground">-</span>}</TableCell>
-                            <TableCell className="py-2 text-muted-foreground">{item.specification || "-"}</TableCell>
+                          <TableRow key={idx} className="text-sm hover:bg-muted/30">
+                            <TableCell className="py-3 text-sm font-medium">{item.materialName || <span className="text-muted-foreground">-</span>}</TableCell>
+                            <TableCell className="max-w-[120px] py-3 text-sm text-muted-foreground truncate" title={item.specification || "-"}>
+                              {item.specification || "-"}
+                            </TableCell>
+                            <TableCell className="py-2">
+                              <Select
+                                value={item.warehouseId ? String(item.warehouseId) : "__none__"}
+                                onValueChange={(value) => handleItemWarehouseChange(idx, value === "__none__" ? "" : value)}
+                              >
+                                <SelectTrigger className="h-9 min-w-[82px] text-sm">
+                                  <SelectValue placeholder="选择仓库" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">未选择</SelectItem>
+                                  {materialWarehouseOptions.map((w: any) => (
+                                    <SelectItem key={w.id} value={String(w.id)}>{w.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
                             <TableCell className="py-2">
                               <button
                                 type="button"
-                                className={`text-xs px-2 py-1 rounded border transition-colors ${
+                                className={`rounded border px-2.5 py-1.5 text-sm transition-colors ${
                                   item.batchNo
                                     ? "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
                                     : "bg-gray-50 border-gray-200 text-gray-400 hover:bg-gray-100"
                                 }`}
                                 onClick={() => openBatchPicker(idx)}
                               >
-                                {item.batchNo || "选批号"}
-                                {item.availableQty > 0 && <span className="ml-1 text-gray-400 text-[10px]">/{item.availableQty}</span>}
+                                {item.batchNo ? (
+                                  <span>{item.availableQty > 0 ? formatDisplayNumber(item.availableQty) : "-"}</span>
+                                ) : (
+                                  "选批号"
+                                )}
                               </button>
                             </TableCell>
-                            <TableCell className="py-2 text-right text-muted-foreground">{item.requiredQty > 0 ? item.requiredQty : "-"}</TableCell>
+                            <TableCell className="py-3 text-right text-sm text-muted-foreground">{item.requiredQty > 0 ? item.requiredQty : "-"}</TableCell>
                             <TableCell className="py-2 text-right">
                               <Input
                                 type="number"
                                 value={item.actualQty}
                                 onChange={(e) => updateItem(idx, "actualQty", Number(e.target.value))}
-                                className="h-7 w-20 text-xs text-right ml-auto"
+                                className="ml-auto h-9 w-14 text-sm text-right"
                               />
                             </TableCell>
-                            <TableCell className="py-2 text-muted-foreground">{item.unit || "-"}</TableCell>
-                            <TableCell className="py-2 text-center">
+                            <TableCell className="py-3 text-sm text-muted-foreground">{item.unit || "-"}</TableCell>
+                            <TableCell className="py-3 text-center">
                               <div className="flex items-center justify-center gap-0.5">
                                 <button
                                   type="button"
@@ -910,7 +1470,7 @@ export default function MaterialRequisitionPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>备注</Label>
+                <Label className="font-semibold">备注</Label>
                 <Textarea value={formData.remark} onChange={(e) => setFormData({ ...formData, remark: e.target.value })} rows={2} />
               </div>
             </div>
@@ -918,6 +1478,44 @@ export default function MaterialRequisitionPage() {
               <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
               <Button onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
                 {editingOrder ? "保存修改" : "创建领料单"}
+              </Button>
+            </DialogFooter>
+          </DraggableDialogContent>
+        </DraggableDialog>
+
+        <DraggableDialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+          <DraggableDialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{passwordAction === "approve" ? "审核通过并确认发料" : "电子签名确认"}</DialogTitle>
+              <DialogDescription>
+                按 FDA 电子记录要求，请由当前登录用户输入密码完成本次{passwordAction === "approve" ? "审核/发料" : "保存"}确认
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>当前用户</Label>
+                <Input value={String((user as any)?.name || "")} readOnly className="bg-muted/40" />
+              </div>
+              <div className="space-y-2">
+                <Label>密码</Label>
+                <Input
+                  type="password"
+                  value={passwordValue}
+                  onChange={(e) => setPasswordValue(e.target.value)}
+                  placeholder="请输入当前用户密码"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handlePasswordConfirm();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>取消</Button>
+              <Button onClick={handlePasswordConfirm} disabled={verifyPasswordMutation.isPending}>
+                确认
               </Button>
             </DialogFooter>
           </DraggableDialogContent>
@@ -934,7 +1532,7 @@ export default function MaterialRequisitionPage() {
             { key: "productName", title: "产品名称", render: (po) => <span className="font-medium">{po.productName}</span> },
             { key: "productSpec", title: "规格型号", render: (po) => <span className="text-muted-foreground">{po.productSpec || "-"}</span> },
             { key: "batchNo", title: "生产批号", render: (po) => <span className="font-mono">{po.batchNo || "-"}</span> },
-            { key: "plannedQty", title: "计划数量", render: (po) => <span>{po.plannedQty} {po.unit}</span> },
+            { key: "plannedQty", title: "计划数量", render: (po) => <span>{formatWholeNumber(po.plannedQty)} {po.unit}</span> },
             { key: "status", title: "状态", render: (po) => {
               const statusLabels: Record<string, string> = { draft: "草稿", planned: "已计划", in_progress: "生产中", completed: "已完成", cancelled: "已取消" };
               return <span>{statusLabels[po.status] || po.status}</span>;
@@ -945,7 +1543,7 @@ export default function MaterialRequisitionPage() {
               return <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">未领料</span>;
             }},
           ]}
-          rows={availableOrders.filter((po: any) => po.reqStatus !== "full")}
+          rows={availableOrders}
           filterFn={(po, q) => {
             const lower = q.toLowerCase();
             return String(po.orderNo || "").toLowerCase().includes(lower) ||
@@ -957,7 +1555,7 @@ export default function MaterialRequisitionPage() {
 
         {/* 自主领料 - 从仓库选择产品弹窗 */}
         <DraggableDialog open={inventoryPickerOpen} onOpenChange={(open) => { setInventoryPickerOpen(open); if (!open) setInventoryPickerSelected(new Set()); }}>
-          <DraggableDialogContent className="max-w-3xl">
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>从仓库选择产品</DialogTitle>
               <DialogDescription>从库存中选择需要领取的产品（支持多选）</DialogDescription>
@@ -993,6 +1591,7 @@ export default function MaterialRequisitionPage() {
                       <TableHead className="py-2">产品名称</TableHead>
                       <TableHead className="py-2">物料编码</TableHead>
                       <TableHead className="py-2">规格型号</TableHead>
+                      <TableHead className="py-2">仓库</TableHead>
                       <TableHead className="py-2">批号</TableHead>
                       <TableHead className="py-2 text-right">库存数量</TableHead>
                       <TableHead className="py-2">单位</TableHead>
@@ -1002,7 +1601,7 @@ export default function MaterialRequisitionPage() {
                   <TableBody>
                     {inventoryWithSpec.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8 text-sm">
+                        <TableCell colSpan={9} className="text-center text-muted-foreground py-8 text-sm">
                           {inventoryPickerSearch ? "暂无匹配的库存记录" : "加载中..."}
                         </TableCell>
                       </TableRow>
@@ -1040,8 +1639,9 @@ export default function MaterialRequisitionPage() {
                           <TableCell className="py-1.5 font-medium">{inv.itemName}</TableCell>
                           <TableCell className="py-1.5 font-mono text-muted-foreground">{inv.materialCode || "-"}</TableCell>
                           <TableCell className="py-1.5 text-muted-foreground">{inv.specification || "-"}</TableCell>
+                          <TableCell className="py-1.5">{inv.warehouseName || "-"}</TableCell>
                           <TableCell className="py-1.5 font-mono text-blue-600">{inv.batchNo || inv.lotNo || "-"}</TableCell>
-                          <TableCell className="py-1.5 text-right font-medium">{Number(inv.quantity).toFixed(4)}</TableCell>
+                          <TableCell className="py-1.5 text-right font-medium">{formatDisplayQty(inv.quantity)}</TableCell>
                           <TableCell className="py-1.5">{inv.unit || "-"}</TableCell>
                           <TableCell className="py-1.5">
                             <span className={`px-1.5 py-0.5 rounded text-xs ${
@@ -1081,84 +1681,155 @@ export default function MaterialRequisitionPage() {
 
         {/* 查看详情 */}
         <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-          <DraggableDialogContent>
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
             {viewingOrder && (
-              <div className="space-y-4">
-                {/* 标准头部 */}
-                <div className="border-b pb-3">
-                  <h2 className="text-lg font-semibold">领料单详情</h2>
-                  <p className="text-sm text-muted-foreground">
-                    {viewingOrder.requisitionNo}
-                    {viewingOrder.status && (
-                      <> · <Badge variant={statusMap[viewingOrder.status]?.variant || "outline"} className={`ml-1 ${getStatusSemanticClass(viewingOrder.status, statusMap[viewingOrder.status]?.label)}`}>
-                        {statusMap[viewingOrder.status]?.label || String(viewingOrder.status ?? "-")}
-                      </Badge></>
-                    )}
-                  </p>
-                </div>
+              (() => {
+                const linkedProductionOrder = (productionOrders as any[]).find((po: any) => Number(po.id) === Number(viewingOrder.productionOrderId));
+                const linkedProduct = linkedProductionOrder
+                  ? (productsData as any[]).find((product: any) => Number(product.id) === Number(linkedProductionOrder.productId))
+                  : null;
+                const viewItems = getViewItems(viewingOrder);
+                const remarkMeta = parseMaterialRequisitionRemark(viewingOrder.remark);
+                const materialRequisitionPrintData = {
+                  requisitionNo: viewingOrder.requisitionNo || "",
+                  department: "生产部",
+                  applicantName: remarkMeta.signatures.find((item) => item.action === "create")?.signerName || "",
+                  applyDate: viewingOrder.applicationDate || "",
+                  productionOrderNo: viewingOrder.productionOrderNo || "",
+                  status: statusMap[viewingOrder.status]?.label || viewingOrder.status || "",
+                  items: viewItems.map((item) => ({
+                    materialCode: item.materialCode || "",
+                    materialName: item.materialName || "",
+                    specification: item.specification || "",
+                    quantity: Number(item.requiredQty || 0),
+                    unit: item.unit || "",
+                    remark: item.remark || "",
+                  })),
+                };
 
-                <div className="space-y-6 py-2">
-                  {/* 基本信息分区 */}
-                  <div>
-                    <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                return (
+                  <div className="space-y-4">
+                    <div className="border-b pb-3">
+                      <h2 className="text-lg font-semibold">领料单详情</h2>
+                      <p className="text-sm text-muted-foreground">
+                        {viewingOrder.requisitionNo}
+                        {viewingOrder.status && (
+                          <>
+                            {" "}·{" "}
+                            <Badge
+                              variant={statusMap[viewingOrder.status]?.variant || "outline"}
+                              className={getStatusSemanticClass(viewingOrder.status, statusMap[viewingOrder.status]?.label)}
+                            >
+                              {statusMap[viewingOrder.status]?.label || String(viewingOrder.status ?? "-")}
+                            </Badge>
+                          </>
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="py-4 space-y-6 max-h-[65vh] overflow-y-auto pr-2">
                       <div>
-                        <FieldRow label="关联任务">{viewingOrder.productionOrderNo || "-"}</FieldRow>
+                        <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                          <div>
+                            <FieldRow label="领料单号">
+                              <span className="font-mono">{viewingOrder.requisitionNo || "-"}</span>
+                            </FieldRow>
+                            <FieldRow label="关联任务">{viewingOrder.productionOrderNo || "-"}</FieldRow>
+                            <FieldRow label="申请日期">{formatDate(viewingOrder.applicationDate)}</FieldRow>
+                          </div>
+                          <div>
+                            <FieldRow label="产品名称">{linkedProduct?.name || viewingOrder.productName || "-"}</FieldRow>
+                            <FieldRow label="规格型号">{linkedProduct?.specification || "-"}</FieldRow>
+                            <FieldRow label="生产批号">{linkedProductionOrder?.batchNo || viewingOrder.batchNo || "-"}</FieldRow>
+                          </div>
+                        </div>
+                        {linkedProduct?.description ? (
+                          <div className="mt-2 pt-2 border-t border-border/40">
+                            <span className="text-sm text-muted-foreground">产品描述：</span>
+                            <span className="text-sm">{linkedProduct.description}</span>
+                          </div>
+                        ) : null}
                       </div>
-                      <div>
-                        <FieldRow label="申请日期">{formatDate(viewingOrder.applicationDate)}</FieldRow>
+
+                      {viewItems.length > 0 && (
+                        <div>
+                          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">物料明细</h3>
+                          <div className="border rounded-md overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-muted/60">
+                                  <TableHead className="text-center font-bold">物料名称</TableHead>
+                                  <TableHead className="w-[120px] text-center font-bold">规格</TableHead>
+                                  <TableHead className="w-[92px] text-center font-bold">领料仓库</TableHead>
+                                  <TableHead className="text-center font-bold">批号</TableHead>
+                                  <TableHead className="w-[88px] text-center font-bold">需求数量</TableHead>
+                                  <TableHead className="w-[88px] text-center font-bold">实领数量</TableHead>
+                                  <TableHead className="text-center font-bold">单位</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {viewItems.map((item, idx) => (
+                                  <TableRow key={idx}>
+                                    <TableCell className="text-center">{item.materialName || "-"}</TableCell>
+                                    <TableCell className="max-w-[120px] text-center text-muted-foreground truncate" title={item.specification || "-"}>
+                                      {item.specification || "-"}
+                                    </TableCell>
+                                    <TableCell className="text-center">{item.warehouseName || getWarehouseName(item.warehouseId) || "-"}</TableCell>
+                                    <TableCell className="text-center font-mono">{item.batchNo || "-"}</TableCell>
+                                    <TableCell className="text-center">{item.requiredQty}</TableCell>
+                                    <TableCell className="text-center">{item.actualQty}</TableCell>
+                                    <TableCell className="text-center">{item.unit || "-"}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      )}
+
+                      {remarkMeta.note ? (
+                        <div>
+                          <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
+                          <p className="text-sm text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">{remarkMeta.note}</p>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
+                      <div className="flex gap-2 flex-wrap" />
+                      <div className="flex gap-2 flex-wrap justify-end">
+                        {viewingOrder.status !== "issued" ? (
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              handleIssue(viewingOrder);
+                              setViewDialogOpen(false);
+                            }}
+                          >
+                            <Truck className="h-4 w-4 mr-2" />
+                            确认发料
+                          </Button>
+                        ) : null}
+                        <TemplatePrintPreviewButton
+                          templateKey="material_requisition"
+                          data={materialRequisitionPrintData}
+                          title={`领料单打印预览 - ${viewingOrder.requisitionNo}`}
+                        />
+                        <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
+                        <Button variant="outline" size="sm" onClick={() => handleEdit(viewingOrder)}>编辑</Button>
                       </div>
                     </div>
                   </div>
-
-                  {/* 物料明细分区 */}
-                  {getViewItems(viewingOrder).length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">物料明细 ({getViewItems(viewingOrder).length} 项)</h3>
-                      <div className="border rounded-md overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="bg-muted/60">
-                              <TableHead className="text-center font-bold">物料编码</TableHead>
-                              <TableHead className="text-center font-bold">物料名称</TableHead>
-                              <TableHead className="text-center font-bold">规格</TableHead>
-                              <TableHead className="text-center font-bold">需求数量</TableHead>
-                              <TableHead className="text-center font-bold">单位</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {getViewItems(viewingOrder).map((item, idx) => (
-                              <TableRow key={idx}>
-                                <TableCell className="text-center font-mono">{item.materialCode}</TableCell>
-                                <TableCell className="text-center">{item.materialName}</TableCell>
-                                <TableCell className="text-center text-muted-foreground">{item.specification || "-"}</TableCell>
-                                <TableCell className="text-center">{item.requiredQty}</TableCell>
-                                <TableCell className="text-center">{item.unit}</TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 标准操作按钮 */}
-                <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
-                  <div className="flex gap-2 flex-wrap"></div>
-                  <div className="flex gap-2 flex-wrap justify-end">
-                    <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
-                    <Button variant="outline" size="sm" onClick={() => handleEdit(viewingOrder)}>编辑</Button>
-                  </div>
-                </div>
-              </div>
+                );
+              })()
             )}
           </DraggableDialogContent>
         </DraggableDialog>
 
         {/* 批号选择弹窗 */}
-        <DraggableDialog open={batchPickerOpen} onOpenChange={(open) => { setBatchPickerOpen(open); if (!open) setBatchPickerItemIdx(-1); }}>
-          <DraggableDialogContent className="max-w-2xl">
+        <DraggableDialog open={batchPickerOpen} onOpenChange={(open) => { setBatchPickerOpen(open); if (!open) { setBatchPickerItemIdx(-1); setBatchPickerSelected(new Set()); } }}>
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>选择物料批号</DialogTitle>
               <DialogDescription>
@@ -1181,9 +1852,11 @@ export default function MaterialRequisitionPage() {
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/60 text-xs">
+                      <TableHead className="py-2 w-8" />
                       <TableHead className="py-2">物料名称</TableHead>
                       <TableHead className="py-2">物料编码</TableHead>
                       <TableHead className="py-2">规格</TableHead>
+                      <TableHead className="py-2">仓库</TableHead>
                       <TableHead className="py-2">批号</TableHead>
                       <TableHead className="py-2">库存数量</TableHead>
                       <TableHead className="py-2">单位</TableHead>
@@ -1192,16 +1865,30 @@ export default function MaterialRequisitionPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(inventoryBatches as any[]).length === 0 ? (
-                      <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-6 text-sm">暂无匹配的库存批次</TableCell></TableRow>
+                    {visibleBatchOptions.length === 0 ? (
+                      <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-6 text-sm">暂无可用库存批次</TableCell></TableRow>
                     ) : (
-                      (inventoryBatches as any[]).map((batch: any) => (
-                        <TableRow key={batch.id} className="text-xs cursor-pointer hover:bg-muted/50">
+                      visibleBatchOptions.map((batch: any) => (
+                        <TableRow
+                          key={batch.id}
+                          className={`text-xs cursor-pointer hover:bg-muted/50 ${batchPickerSelected.has(Number(batch.id)) ? "bg-blue-50" : ""}`}
+                          onClick={() => handleBatchToggle(Number(batch.id))}
+                        >
+                          <TableCell className="py-1.5">
+                            <input
+                              type="checkbox"
+                              className="cursor-pointer"
+                              checked={batchPickerSelected.has(Number(batch.id))}
+                              onChange={() => handleBatchToggle(Number(batch.id))}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </TableCell>
                           <TableCell className="py-1.5">{batch.itemName}</TableCell>
                           <TableCell className="py-1.5 font-mono">{batch.materialCode || "-"}</TableCell>
                           <TableCell className="py-1.5 text-muted-foreground">{batch.specification || batch.spec || "-"}</TableCell>
+                          <TableCell className="py-1.5">{batch.warehouseName || "-"}</TableCell>
                           <TableCell className="py-1.5 font-mono text-blue-600">{batch.batchNo || batch.lotNo || "-"}</TableCell>
-                          <TableCell className="py-1.5 font-medium">{Number(batch.quantity).toFixed(4)}</TableCell>
+                          <TableCell className="py-1.5 font-medium">{formatDisplayQty(batch.quantity)}</TableCell>
                           <TableCell className="py-1.5">{batch.unit || "-"}</TableCell>
                           <TableCell className="py-1.5">
                             <span className={`px-1.5 py-0.5 rounded text-xs ${
@@ -1213,7 +1900,17 @@ export default function MaterialRequisitionPage() {
                             </span>
                           </TableCell>
                           <TableCell className="py-1.5">
-                            <Button size="sm" variant="ghost" className="h-7 text-xs text-blue-600" onClick={() => handleBatchSelect(batch)}>选择</Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs text-blue-600"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleBatchToggle(Number(batch.id));
+                              }}
+                            >
+                              {batchPickerSelected.has(Number(batch.id)) ? "已选" : "选择"}
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))
@@ -1222,8 +1919,14 @@ export default function MaterialRequisitionPage() {
                 </Table>
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setBatchPickerOpen(false)}>取消</Button>
+            <DialogFooter className="flex items-center justify-between gap-2">
+              <span className="text-sm text-muted-foreground">
+                {batchPickerSelected.size > 0 ? `已选择 ${batchPickerSelected.size} 个批次` : "可多选批次后确认"}
+              </span>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => { setBatchPickerOpen(false); setBatchPickerItemIdx(-1); setBatchPickerSelected(new Set()); }}>取消</Button>
+                <Button onClick={handleBatchConfirm} disabled={batchPickerSelected.size === 0}>确认</Button>
+              </div>
             </DialogFooter>
           </DraggableDialogContent>
         </DraggableDialog>

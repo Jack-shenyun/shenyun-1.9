@@ -1,4 +1,17 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, date, boolean, json, tinyint } from "drizzle-orm/mysql-core";
+import {
+  int,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+  decimal,
+  date,
+  boolean,
+  json,
+  tinyint,
+} from "drizzle-orm/mysql-core";
+import { PRODUCT_CATEGORY_VALUES } from "../shared/productCategories";
 
 /**
  * Core user table backing auth flow.
@@ -7,16 +20,22 @@ export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
+  englishName: varchar("englishName", { length: 100 }),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  dataScope: mysqlEnum("dataScope", ["self", "department", "all"])
+    .default("self")
+    .notNull(),
   department: varchar("department", { length: 64 }), // 所属部门
   position: varchar("position", { length: 64 }), // 职位
   phone: varchar("phone", { length: 20 }),
+  emailSignature: text("emailSignature"),
   visibleApps: text("visibleApps"), // 首页显示应用，逗号分隔的应用 ID
+  visibleForms: text("visibleForms"), // 侧边栏表单显示，逗号分隔的表单路径
   // 微信相关字段
-  wxAccount: varchar("wxAccount", { length: 64 }),   // 微信号（展示用）
-  wxOpenid: varchar("wxOpenid", { length: 64 }),     // 微信公众号 OpenID（发消息用）
+  wxAccount: varchar("wxAccount", { length: 64 }), // 微信号（展示用）
+  wxOpenid: varchar("wxOpenid", { length: 64 }), // 微信公众号 OpenID（发消息用）
   wxNickname: varchar("wxNickname", { length: 100 }), // 微信昵称
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -28,6 +47,21 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+export const userDashboardPermissions = mysqlTable(
+  "user_dashboard_permissions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    dashboardId: varchar("dashboardId", { length: 64 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  }
+);
+
+export type UserDashboardPermission =
+  typeof userDashboardPermissions.$inferSelect;
+export type InsertUserDashboardPermission =
+  typeof userDashboardPermissions.$inferInsert;
+
 // ==================== 产品与物料管理 ====================
 
 /**
@@ -35,26 +69,42 @@ export type InsertUser = typeof users.$inferInsert;
  */
 export const products = mysqlTable("products", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
+  sourceCompanyId: int("sourceCompanyId"),
+  sourceProductId: int("sourceProductId"),
+  isSyncedFromMain: boolean("isSyncedFromMain").default(false).notNull(),
   isMedicalDevice: boolean("isMedicalDevice").default(true).notNull(), // 是否为医疗器械
   isSterilized: boolean("isSterilized").default(false).notNull(), // 是否灭菌
   code: varchar("code", { length: 50 }).notNull().unique(), // 产品编码
   name: varchar("name", { length: 200 }).notNull(), // 产品名称
   specification: varchar("specification", { length: 200 }), // 规格型号
   category: varchar("category", { length: 100 }), // 产品属性（NMPA/FDA/CE/OEM等）
-  productCategory: mysqlEnum("productCategory", ["finished", "semi_finished", "raw_material", "auxiliary", "other"]), // 产品分类（成品/半成品/原材料/辅料/其他）
+  productCategory: mysqlEnum("productCategory", PRODUCT_CATEGORY_VALUES), // 产品分类（成品/半成品/原材料/组件/设备/耗材/包装材料/其他）
   unit: varchar("unit", { length: 20 }), // 计量单位
   registrationNo: varchar("registrationNo", { length: 100 }), // 注册证号
   udiDi: varchar("udiDi", { length: 100 }), // UDI-DI
+  medicalInsuranceCode: varchar("medicalInsuranceCode", { length: 120 }), // 医保C码
   manufacturer: varchar("manufacturer", { length: 200 }), // 生产厂家
   storageCondition: varchar("storageCondition", { length: 200 }), // 储存条件
   shelfLife: int("shelfLife"), // 保质期(月)
   riskLevel: mysqlEnum("riskLevel", ["I", "II", "III"]), // 风险等级
-  sourceType: mysqlEnum("sourceType", ["production", "purchase"]).default("production"), // 来源类型：生产/采购
-  salePermission: mysqlEnum("salePermission", ["saleable", "not_saleable"]).default("saleable").notNull(), // 销售权限：销售/不销售
-  procurePermission: mysqlEnum("procurePermission", ["purchasable", "production_only"]).default("purchasable").notNull(), // 获取权限：采购/生产
+  sourceType: mysqlEnum("sourceType", ["production", "purchase"]).default(
+    "production"
+  ), // 来源类型：生产/采购
+  salePermission: mysqlEnum("salePermission", ["saleable", "not_saleable"])
+    .default("saleable")
+    .notNull(), // 销售权限：销售/不销售
+  procurePermission: mysqlEnum("procurePermission", [
+    "purchasable",
+    "production_only",
+  ])
+    .default("purchasable")
+    .notNull(), // 获取权限：采购/生产
   needCustoms: boolean("needCustoms").default(false), // 是否需要报关
   priceByPayment: json("priceByPayment"), // 按付款方式的价格 JSON: {"cash": 100, "monthly": 95, "quarterly": 90}
-  status: mysqlEnum("status", ["draft", "active", "discontinued"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "active", "discontinued"])
+    .default("draft")
+    .notNull(),
   description: text("description"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -70,6 +120,8 @@ export type InsertProduct = typeof products.$inferInsert;
 export const bom = mysqlTable("bom", {
   id: int("id").autoincrement().primaryKey(),
   productId: int("productId").notNull(), // 产品ID
+  baseProductQty: decimal("baseProductQty", { precision: 12, scale: 4 }), // 基准成品数量
+  baseProductUnit: varchar("baseProductUnit", { length: 20 }), // 基准成品单位
   parentId: int("parentId"), // 父级物料ID（null表示直接挂在成品下的二级物料）
   level: int("level").notNull().default(2), // 层级：2=半成品/组件, 3=原材料
   materialCode: varchar("materialCode", { length: 50 }).notNull(), // 物料编码
@@ -79,7 +131,9 @@ export const bom = mysqlTable("bom", {
   unit: varchar("unit", { length: 20 }), // 单位
   unitPrice: decimal("unitPrice", { precision: 12, scale: 4 }).default("0"), // 单价
   version: varchar("version", { length: 20 }), // BOM版本
-  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "inactive"])
+    .default("active")
+    .notNull(),
   remark: varchar("remark", { length: 500 }), // 备注
   bomCode: varchar("bomCode", { length: 50 }), // BOM编号（自动生成，可手动修改）
   effectiveDate: date("effectiveDate"), // 生效日期
@@ -97,10 +151,17 @@ export type InsertBom = typeof bom.$inferInsert;
  */
 export const customers = mysqlTable("customers", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
+  linkedCompanyId: int("linkedCompanyId"),
   code: varchar("code", { length: 50 }).notNull().unique(), // 客户编码
   name: varchar("name", { length: 200 }).notNull(), // 客户名称
   shortName: varchar("shortName", { length: 100 }), // 简称
-  type: mysqlEnum("type", ["hospital", "dealer", "domestic", "overseas"]).notNull(), // 客户类型
+  type: mysqlEnum("type", [
+    "hospital",
+    "dealer",
+    "domestic",
+    "overseas",
+  ]).notNull(), // 客户类型
   contactPerson: varchar("contactPerson", { length: 50 }), // 联系人
   phone: varchar("phone", { length: 50 }),
   email: varchar("email", { length: 100 }),
@@ -111,8 +172,11 @@ export const customers = mysqlTable("customers", {
   currency: varchar("currency", { length: 10 }).default("CNY"), // 结算币种
   creditLimit: decimal("creditLimit", { precision: 12, scale: 2 }), // 信用额度
   taxNo: varchar("taxNo", { length: 50 }), // 税号
+  taxRate: decimal("taxRate", { precision: 5, scale: 2 }), // 税率
   bankAccount: varchar("bankAccount", { length: 100 }), // 银行账号
-  status: mysqlEnum("status", ["active", "inactive", "blacklist"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "inactive", "blacklist"])
+    .default("active")
+    .notNull(),
   source: varchar("source", { length: 50 }), // 客户来源
   country: varchar("country", { length: 50 }), // 国家（海外客户使用）
   bankName: varchar("bankName", { length: 100 }), // 开户行
@@ -133,6 +197,8 @@ export type InsertCustomer = typeof customers.$inferInsert;
  */
 export const suppliers = mysqlTable("suppliers", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
+  linkedCompanyId: int("linkedCompanyId"),
   code: varchar("code", { length: 50 }).notNull().unique(), // 供应商编码
   name: varchar("name", { length: 200 }).notNull(), // 供应商名称
   shortName: varchar("shortName", { length: 100 }), // 简称
@@ -142,12 +208,20 @@ export const suppliers = mysqlTable("suppliers", {
   email: varchar("email", { length: 100 }),
   address: text("address"),
   businessLicense: varchar("businessLicense", { length: 100 }), // 营业执照号
-  qualificationLevel: mysqlEnum("qualificationLevel", ["A", "B", "C", "pending"]).default("pending"), // 资质等级
+  qualificationLevel: mysqlEnum("qualificationLevel", [
+    "A",
+    "B",
+    "C",
+    "pending",
+  ]).default("pending"), // 资质等级
   paymentTerms: varchar("paymentTerms", { length: 100 }),
+  creditDays: int("creditDays").default(30), // 账期天数，仅账期支付时使用
   bankAccount: varchar("bankAccount", { length: 100 }),
   taxNo: varchar("taxNo", { length: 50 }),
   evaluationScore: decimal("evaluationScore", { precision: 5, scale: 2 }), // 评估得分
-  status: mysqlEnum("status", ["qualified", "pending", "disqualified"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["qualified", "pending", "disqualified"])
+    .default("pending")
+    .notNull(),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -156,21 +230,49 @@ export const suppliers = mysqlTable("suppliers", {
 export type Supplier = typeof suppliers.$inferSelect;
 export type InsertSupplier = typeof suppliers.$inferInsert;
 
+export const supplierProfileRecords = mysqlTable("supplier_profile_records", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
+  recordNo: varchar("recordNo", { length: 50 }).notNull().unique(),
+  supplierId: int("supplierId").notNull(),
+  supplierName: varchar("supplierName", { length: 200 }).notNull(),
+  formType: mysqlEnum("formType", [
+    "survey",
+    "annual_evaluation",
+    "quality_agreement",
+  ]).notNull(),
+  templateCode: varchar("templateCode", { length: 50 }).notNull(),
+  serialNo: varchar("serialNo", { length: 50 }),
+  title: varchar("title", { length: 200 }).notNull(),
+  yearLabel: varchar("yearLabel", { length: 20 }),
+  status: mysqlEnum("status", ["draft", "completed"])
+    .default("draft")
+    .notNull(),
+  formData: text("formData"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SupplierProfileRecord = typeof supplierProfileRecords.$inferSelect;
+export type InsertSupplierProfileRecord =
+  typeof supplierProfileRecords.$inferInsert;
+
 /**
  * 产品-供应商价格关联表
  * 记录每个产品对应的供应商及采购价格，支持自动生成采购订单草稿
  */
 export const productSupplierPrices = mysqlTable("product_supplier_prices", {
   id: int("id").autoincrement().primaryKey(),
-  productId: int("productId").notNull(),         // 关联产品
-  supplierId: int("supplierId").notNull(),         // 关联供应商
-  purchasePrice: decimal("purchasePrice", { precision: 12, scale: 4 }), // 采购单价
-  currency: varchar("currency", { length: 10 }).default("CNY"),         // 币种
-  moq: int("moq").default(1),                     // 最小起订量
-  leadTimeDays: int("leadTimeDays"),               // 交货周期（天）
-  isDefault: tinyint("isDefault").default(0),     // 是否为默认供应商
-  validFrom: date("validFrom"),                   // 价格有效期开始
-  validTo: date("validTo"),                       // 价格有效期结束
+  productId: int("productId").notNull(), // 关联产品
+  supplierId: int("supplierId").notNull(), // 关联供应商
+  unitPrice: decimal("unitPrice", { precision: 15, scale: 4 }).notNull(), // 采购单价
+  currency: varchar("currency", { length: 10 }).default("CNY").notNull(), // 币种
+  minOrderQty: int("minOrderQty").default(1), // 最小起订量
+  leadTimeDays: int("leadTimeDays").default(0), // 交货周期（天）
+  isDefault: tinyint("isDefault").default(0), // 是否为默认供应商
+  effectiveDate: date("effectiveDate"), // 价格有效期开始
+  expiryDate: date("expiryDate"), // 价格有效期结束
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -178,7 +280,8 @@ export const productSupplierPrices = mysqlTable("product_supplier_prices", {
 });
 
 export type ProductSupplierPrice = typeof productSupplierPrices.$inferSelect;
-export type InsertProductSupplierPrice = typeof productSupplierPrices.$inferInsert;
+export type InsertProductSupplierPrice =
+  typeof productSupplierPrices.$inferInsert;
 
 // ==================== 仓库与库存管理 ====================
 
@@ -187,13 +290,22 @@ export type InsertProductSupplierPrice = typeof productSupplierPrices.$inferInse
  */
 export const warehouses = mysqlTable("warehouses", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
+  isVirtual: boolean("isVirtual").default(false).notNull(),
   code: varchar("code", { length: 50 }).notNull().unique(),
   name: varchar("name", { length: 100 }).notNull(),
-  type: mysqlEnum("type", ["raw_material", "semi_finished", "finished", "quarantine"]).notNull(),
+  type: mysqlEnum("type", [
+    "raw_material",
+    "semi_finished",
+    "finished",
+    "quarantine",
+  ]).notNull(),
   address: text("address"),
   manager: varchar("manager", { length: 50 }),
   phone: varchar("phone", { length: 50 }),
-  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "inactive"])
+    .default("active")
+    .notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -206,6 +318,7 @@ export type InsertWarehouse = typeof warehouses.$inferInsert;
  */
 export const inventory = mysqlTable("inventory", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
   warehouseId: int("warehouseId").notNull(),
   productId: int("productId"),
   materialCode: varchar("materialCode", { length: 50 }), // 物料编码(原材料)
@@ -216,7 +329,14 @@ export const inventory = mysqlTable("inventory", {
   quantity: decimal("quantity", { precision: 12, scale: 4 }).notNull(), // 库存数量
   unit: varchar("unit", { length: 20 }),
   location: varchar("location", { length: 50 }), // 库位
-  status: mysqlEnum("status", ["qualified", "quarantine", "unqualified", "reserved"]).default("quarantine").notNull(),
+  status: mysqlEnum("status", [
+    "qualified",
+    "quarantine",
+    "unqualified",
+    "reserved",
+  ])
+    .default("quarantine")
+    .notNull(),
   productionDate: date("productionDate"), // 生产日期
   expiryDate: date("expiryDate"), // 有效期
   udiPi: varchar("udiPi", { length: 100 }), // UDI-PI
@@ -233,13 +353,21 @@ export type InsertInventory = typeof inventory.$inferInsert;
  */
 export const inventoryTransactions = mysqlTable("inventory_transactions", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
   inventoryId: int("inventoryId"),
   productId: int("productId"),
   warehouseId: int("warehouseId").notNull(),
   type: mysqlEnum("type", [
-    "purchase_in", "production_in", "return_in", "other_in",
-    "production_out", "sales_out", "return_out", "other_out",
-    "transfer", "adjust"
+    "purchase_in",
+    "production_in",
+    "return_in",
+    "other_in",
+    "production_out",
+    "sales_out",
+    "return_out",
+    "other_out",
+    "transfer",
+    "adjust",
   ]).notNull(),
   documentNo: varchar("documentNo", { length: 50 }), // 单据号
   itemName: varchar("itemName", { length: 200 }).notNull(),
@@ -257,8 +385,9 @@ export const inventoryTransactions = mysqlTable("inventory_transactions", {
   operatorId: int("operatorId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;;
-export type InsertInventoryTransaction = typeof inventoryTransactions.$inferInsert;
+export type InventoryTransaction = typeof inventoryTransactions.$inferSelect;
+export type InsertInventoryTransaction =
+  typeof inventoryTransactions.$inferInsert;
 
 // ==================== 销售订单管理 ====================
 
@@ -267,6 +396,9 @@ export type InsertInventoryTransaction = typeof inventoryTransactions.$inferInse
  */
 export const salesOrders = mysqlTable("sales_orders", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
+  sourceCompanyId: int("sourceCompanyId"),
+  sourcePurchaseOrderId: int("sourcePurchaseOrderId"),
   orderNo: varchar("orderNo", { length: 50 }).notNull().unique(), // 订单号
   customerId: int("customerId").notNull(),
   orderDate: date("orderDate").notNull(),
@@ -275,20 +407,45 @@ export const salesOrders = mysqlTable("sales_orders", {
   currency: varchar("currency", { length: 10 }).default("CNY"),
   paymentMethod: varchar("paymentMethod", { length: 50 }), // 付款方式：现结/月结/季结等
   totalAmountBase: decimal("totalAmountBase", { precision: 14, scale: 2 }), // 本位币金额
-  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default("1"), // 汇率
+  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default(
+    "1"
+  ), // 汇率
   paymentTermId: int("paymentTermId"), // 付款条款ID
   depositRate: decimal("depositRate", { precision: 5, scale: 2 }), // 定金比例 (如 30.00 表示 30%)
   depositAmount: decimal("depositAmount", { precision: 14, scale: 2 }), // 定金金额
   depositPaid: decimal("depositPaid", { precision: 14, scale: 2 }).default("0"), // 已付定金
-  status: mysqlEnum("status", ["draft", "pending_review", "approved", "pending_payment", "confirmed", "in_production", "ready_to_ship", "partial_shipped", "shipped", "completed", "cancelled"]).default("draft").notNull(),
-  paymentStatus: mysqlEnum("paymentStatus", ["unpaid", "partial", "paid"]).default("unpaid").notNull(),
+  status: mysqlEnum("status", [
+    "draft",
+    "pending_review",
+    "approved",
+    "pending_payment",
+    "confirmed",
+    "in_production",
+    "ready_to_ship",
+    "partial_shipped",
+    "shipped",
+    "completed",
+    "cancelled",
+  ])
+    .default("draft")
+    .notNull(),
+  paymentStatus: mysqlEnum("paymentStatus", ["unpaid", "partial", "paid"])
+    .default("unpaid")
+    .notNull(),
   shippingAddress: text("shippingAddress"),
   shippingContact: varchar("shippingContact", { length: 50 }), // 收货联系人
   shippingPhone: varchar("shippingPhone", { length: 50 }), // 收货电话
   needsShipping: boolean("needsShipping").default(false), // 是否需要运费
   shippingFee: decimal("shippingFee", { precision: 14, scale: 2 }), // 运费金额
+  tradeTerm: varchar("tradeTerm", { length: 20 }), // 贸易条款
+  receiptAccountId: int("receiptAccountId"), // 收款账户
   isExport: boolean("isExport").default(false), // 是否报关
-  customsStatus: mysqlEnum("customsStatus", ["not_required", "pending", "in_progress", "completed"]).default("not_required"), // 报关状态
+  customsStatus: mysqlEnum("customsStatus", [
+    "not_required",
+    "pending",
+    "in_progress",
+    "completed",
+  ]).default("not_required"), // 报关状态
   remark: text("remark"),
   salesPersonId: int("salesPersonId"),
   createdBy: int("createdBy"),
@@ -300,12 +457,60 @@ export type SalesOrder = typeof salesOrders.$inferSelect;
 export type InsertSalesOrder = typeof salesOrders.$inferInsert;
 
 /**
+ * 销售报价单表
+ */
+export const salesQuotes = mysqlTable("sales_quotes", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
+  quoteNo: varchar("quoteNo", { length: 50 }).notNull().unique(), // 报价单号
+  customerId: int("customerId").notNull(),
+  quoteDate: date("quoteDate").notNull(),
+  validUntil: date("validUntil"), // 有效期至
+  deliveryDate: date("deliveryDate"), // 预计交期
+  totalAmount: decimal("totalAmount", { precision: 14, scale: 2 }),
+  currency: varchar("currency", { length: 10 }).default("CNY"),
+  paymentMethod: varchar("paymentMethod", { length: 50 }), // 付款方式
+  totalAmountBase: decimal("totalAmountBase", { precision: 14, scale: 2 }), // 本位币金额
+  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default(
+    "1"
+  ), // 汇率
+  status: mysqlEnum("status", [
+    "draft",
+    "sent",
+    "accepted",
+    "rejected",
+    "expired",
+    "converted",
+  ])
+    .default("draft")
+    .notNull(),
+  shippingAddress: text("shippingAddress"),
+  shippingContact: varchar("shippingContact", { length: 50 }),
+  shippingPhone: varchar("shippingPhone", { length: 50 }),
+  tradeTerm: varchar("tradeTerm", { length: 20 }),
+  receiptAccountId: int("receiptAccountId"),
+  linkedOrderId: int("linkedOrderId"), // 已转销售订单 ID
+  remark: text("remark"),
+  salesPersonId: int("salesPersonId"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SalesQuote = typeof salesQuotes.$inferSelect;
+export type InsertSalesQuote = typeof salesQuotes.$inferInsert;
+
+/**
  * 订单审批历史记录表
  */
 export const orderApprovals = mysqlTable("order_approvals", {
   id: int("id").autoincrement().primaryKey(),
   orderId: int("orderId").notNull(), // 订单ID
-  orderType: mysqlEnum("orderType", ["sales", "purchase", "production"]).notNull(), // 订单类型
+  orderType: mysqlEnum("orderType", [
+    "sales",
+    "purchase",
+    "production",
+  ]).notNull(), // 订单类型
   action: mysqlEnum("action", ["submit", "approve", "reject"]).notNull(), // 操作类型
   approver: varchar("approver", { length: 100 }), // 审批人
   approverId: int("approverId"), // 审批人 ID
@@ -327,13 +532,33 @@ export const salesOrderItems = mysqlTable("sales_order_items", {
   unit: varchar("unit", { length: 20 }),
   unitPrice: decimal("unitPrice", { precision: 12, scale: 4 }),
   amount: decimal("amount", { precision: 14, scale: 2 }),
-  deliveredQty: decimal("deliveredQty", { precision: 12, scale: 4 }).default("0"), // 已发货数量
+  deliveredQty: decimal("deliveredQty", { precision: 12, scale: 4 }).default(
+    "0"
+  ), // 已发货数量
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export type SalesOrderItem = typeof salesOrderItems.$inferSelect;
 export type InsertSalesOrderItem = typeof salesOrderItems.$inferInsert;
+
+/**
+ * 销售报价单明细表
+ */
+export const salesQuoteItems = mysqlTable("sales_quote_items", {
+  id: int("id").autoincrement().primaryKey(),
+  quoteId: int("quoteId").notNull(),
+  productId: int("productId").notNull(),
+  quantity: decimal("quantity", { precision: 12, scale: 4 }).notNull(),
+  unit: varchar("unit", { length: 20 }),
+  unitPrice: decimal("unitPrice", { precision: 12, scale: 4 }),
+  amount: decimal("amount", { precision: 14, scale: 2 }),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SalesQuoteItem = typeof salesQuoteItems.$inferSelect;
+export type InsertSalesQuoteItem = typeof salesQuoteItems.$inferInsert;
 
 // ==================== 采购订单管理 ====================
 
@@ -342,17 +567,38 @@ export type InsertSalesOrderItem = typeof salesOrderItems.$inferInsert;
  */
 export const purchaseOrders = mysqlTable("purchase_orders", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
+  internalCompanyId: int("internalCompanyId"),
+  linkedSalesOrderId: int("linkedSalesOrderId"),
   orderNo: varchar("orderNo", { length: 50 }).notNull().unique(),
   supplierId: int("supplierId").notNull(),
+  supplierName: varchar("supplierName", { length: 200 }),
   orderDate: date("orderDate").notNull(),
   expectedDate: date("expectedDate"), // 预计到货日期
   totalAmount: decimal("totalAmount", { precision: 14, scale: 2 }),
   currency: varchar("currency", { length: 10 }).default("CNY"),
   totalAmountBase: decimal("totalAmountBase", { precision: 14, scale: 2 }), // 本位币金额
-  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default("1"), // 汇率
+  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default(
+    "1"
+  ), // 汇率
   materialRequestId: int("materialRequestId"), // 关联物料申请单
-  status: mysqlEnum("status", ["draft", "approved", "ordered", "partial_received", "received", "cancelled"]).default("draft").notNull(),
-  paymentStatus: mysqlEnum("paymentStatus", ["unpaid", "partial", "paid"]).default("unpaid").notNull(),
+  status: mysqlEnum("status", [
+    "draft",
+    "pending_approval",
+    "approved",
+    "rejected",
+    "issued",
+    "ordered",
+    "partial_received",
+    "received",
+    "completed",
+    "cancelled",
+  ])
+    .default("draft")
+    .notNull(),
+  paymentStatus: mysqlEnum("paymentStatus", ["unpaid", "partial", "paid"])
+    .default("unpaid")
+    .notNull(),
   remark: text("remark"),
   buyerId: int("buyerId"),
   approvedBy: int("approvedBy"),
@@ -395,17 +641,29 @@ export type InsertPurchaseOrderItem = typeof purchaseOrderItems.$inferInsert;
 export const productionOrders = mysqlTable("production_orders", {
   id: int("id").autoincrement().primaryKey(),
   orderNo: varchar("orderNo", { length: 50 }).notNull().unique(),
-  orderType: mysqlEnum("orderType", ["finished", "semi_finished", "rework"]).default("finished").notNull(), // 指令类型：成品/半成品/返工
+  orderType: mysqlEnum("orderType", ["finished", "semi_finished", "rework"])
+    .default("finished")
+    .notNull(), // 指令类型：成品/半成品/返工
   productId: int("productId").notNull(),
   plannedQty: decimal("plannedQty", { precision: 12, scale: 4 }).notNull(), // 计划数量
-  completedQty: decimal("completedQty", { precision: 12, scale: 4 }).default("0"), // 完成数量
+  completedQty: decimal("completedQty", { precision: 12, scale: 4 }).default(
+    "0"
+  ), // 完成数量
   unit: varchar("unit", { length: 20 }),
   batchNo: varchar("batchNo", { length: 50 }), // 生产批号
   plannedStartDate: date("plannedStartDate"),
   plannedEndDate: date("plannedEndDate"),
   actualStartDate: date("actualStartDate"),
   actualEndDate: date("actualEndDate"),
-  status: mysqlEnum("status", ["draft", "planned", "in_progress", "completed", "cancelled"]).default("draft").notNull(),
+  status: mysqlEnum("status", [
+    "draft",
+    "planned",
+    "in_progress",
+    "completed",
+    "cancelled",
+  ])
+    .default("draft")
+    .notNull(),
   salesOrderId: int("salesOrderId"), // 关联销售订单
   planId: int("planId"), // 关联生产计划
   productionDate: date("productionDate"), // 生产日期
@@ -459,13 +717,22 @@ export const documents = mysqlTable("documents", {
   id: int("id").autoincrement().primaryKey(),
   docNo: varchar("docNo", { length: 50 }).notNull().unique(), // 文件编号
   title: varchar("title", { length: 200 }).notNull(), // 文件标题
-  category: mysqlEnum("category", ["policy", "sop", "record", "certificate", "external", "contract"]).notNull(),
+  category: mysqlEnum("category", [
+    "policy",
+    "sop",
+    "record",
+    "certificate",
+    "external",
+    "contract",
+  ]).notNull(),
   version: varchar("version", { length: 20 }), // 版本号
   department: varchar("department", { length: 50 }), // 归属部门
   effectiveDate: date("effectiveDate"), // 生效日期
   expiryDate: date("expiryDate"), // 失效日期
   filePath: text("filePath"), // 文件路径
-  status: mysqlEnum("status", ["draft", "reviewing", "approved", "obsolete"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "reviewing", "approved", "obsolete"])
+    .default("draft")
+    .notNull(),
   description: text("description"),
   createdBy: int("createdBy"),
   approvedBy: int("approvedBy"),
@@ -489,11 +756,20 @@ export const equipment = mysqlTable("equipment", {
   manufacturer: varchar("manufacturer", { length: 200 }), // 制造商
   serialNo: varchar("serialNo", { length: 100 }), // 出厂编号
   purchaseDate: date("purchaseDate"), // 购置日期
+  warrantyDate: date("warrantyDate"), // 保修截止
   installDate: date("installDate"), // 安装日期
   location: varchar("location", { length: 100 }), // 安装位置
   department: varchar("department", { length: 50 }), // 使用部门
-  status: mysqlEnum("status", ["normal", "maintenance", "repair", "scrapped"]).default("normal").notNull(),
+  responsible: varchar("responsible", { length: 100 }), // 责任人
+  inspectionRequirement: text("inspectionRequirement"), // 点检要求
+  maintenanceRequirement: text("maintenanceRequirement"), // 保养要求
+  status: mysqlEnum("status", ["normal", "maintenance", "repair", "scrapped"])
+    .default("normal")
+    .notNull(),
+  lastMaintenanceDate: date("lastMaintenanceDate"), // 上次保养
   nextMaintenanceDate: date("nextMaintenanceDate"), // 下次保养日期
+  maintenanceCycle: int("maintenanceCycle").default(30), // 保养周期（天）
+  assetValue: decimal("assetValue", { precision: 14, scale: 2 }).default("0"), // 资产价值
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -502,6 +778,82 @@ export const equipment = mysqlTable("equipment", {
 export type Equipment = typeof equipment.$inferSelect;
 export type InsertEquipment = typeof equipment.$inferInsert;
 
+export const equipmentInspections = mysqlTable("equipment_inspections", {
+  id: int("id").autoincrement().primaryKey(),
+  inspectionNo: varchar("inspectionNo", { length: 50 }).notNull().unique(),
+  equipmentId: int("equipmentId").notNull(),
+  equipmentCode: varchar("equipmentCode", { length: 50 }),
+  equipmentName: varchar("equipmentName", { length: 200 }).notNull(),
+  equipmentModel: varchar("equipmentModel", { length: 100 }),
+  equipmentLocation: varchar("equipmentLocation", { length: 100 }),
+  equipmentDepartment: varchar("equipmentDepartment", { length: 50 }),
+  equipmentResponsible: varchar("equipmentResponsible", { length: 100 }),
+  inspectionDate: date("inspectionDate"),
+  inspectionType: mysqlEnum("inspectionType", [
+    "daily",
+    "shift",
+    "weekly",
+    "monthly",
+    "special",
+  ])
+    .default("daily")
+    .notNull(),
+  inspector: varchar("inspector", { length: 100 }),
+  reviewer: varchar("reviewer", { length: 100 }),
+  result: mysqlEnum("result", ["normal", "abnormal", "shutdown"])
+    .default("normal")
+    .notNull(),
+  status: mysqlEnum("status", ["draft", "completed"])
+    .default("draft")
+    .notNull(),
+  detailItems: text("detailItems"),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EquipmentInspection = typeof equipmentInspections.$inferSelect;
+export type InsertEquipmentInspection =
+  typeof equipmentInspections.$inferInsert;
+
+export const equipmentMaintenances = mysqlTable("equipment_maintenances", {
+  id: int("id").autoincrement().primaryKey(),
+  maintenanceNo: varchar("maintenanceNo", { length: 50 }).notNull().unique(),
+  equipmentId: int("equipmentId").notNull(),
+  equipmentCode: varchar("equipmentCode", { length: 50 }),
+  equipmentName: varchar("equipmentName", { length: 200 }).notNull(),
+  equipmentModel: varchar("equipmentModel", { length: 100 }),
+  equipmentLocation: varchar("equipmentLocation", { length: 100 }),
+  equipmentDepartment: varchar("equipmentDepartment", { length: 50 }),
+  equipmentResponsible: varchar("equipmentResponsible", { length: 100 }),
+  maintenanceDate: date("maintenanceDate"),
+  maintenanceType: mysqlEnum("maintenanceType", [
+    "routine",
+    "periodic",
+    "annual",
+    "special",
+  ])
+    .default("routine")
+    .notNull(),
+  executor: varchar("executor", { length: 100 }),
+  reviewer: varchar("reviewer", { length: 100 }),
+  status: mysqlEnum("status", ["planned", "in_progress", "completed"])
+    .default("planned")
+    .notNull(),
+  result: mysqlEnum("result", ["pass", "need_repair", "pending"])
+    .default("pending")
+    .notNull(),
+  nextMaintenanceDate: date("nextMaintenanceDate"),
+  detailItems: text("detailItems"),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EquipmentMaintenance = typeof equipmentMaintenances.$inferSelect;
+export type InsertEquipmentMaintenance =
+  typeof equipmentMaintenances.$inferInsert;
+
 // ==================== 财务部 ====================
 
 /**
@@ -509,6 +861,7 @@ export type InsertEquipment = typeof equipment.$inferInsert;
  */
 export const accountsReceivable = mysqlTable("accounts_receivable", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
   invoiceNo: varchar("invoiceNo", { length: 50 }).notNull(), // 发票号
   customerId: int("customerId").notNull(),
   salesOrderId: int("salesOrderId"),
@@ -516,13 +869,17 @@ export const accountsReceivable = mysqlTable("accounts_receivable", {
   paidAmount: decimal("paidAmount", { precision: 14, scale: 2 }).default("0"), // 已收金额
   currency: varchar("currency", { length: 10 }).default("CNY"),
   amountBase: decimal("amountBase", { precision: 14, scale: 2 }), // 本位币金额
-  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default("1"),
+  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default(
+    "1"
+  ),
   bankAccountId: int("bankAccountId"), // 收款银行账户
   invoiceDate: date("invoiceDate"),
   dueDate: date("dueDate"), // 到期日
   paymentMethod: varchar("paymentMethod", { length: 50 }), // 收款方式
   receiptDate: date("receiptDate"), // 收款日期
-  status: mysqlEnum("status", ["pending", "partial", "paid", "overdue"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "partial", "paid", "overdue"])
+    .default("pending")
+    .notNull(),
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -537,20 +894,26 @@ export type InsertAccountsReceivable = typeof accountsReceivable.$inferInsert;
  */
 export const accountsPayable = mysqlTable("accounts_payable", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
   invoiceNo: varchar("invoiceNo", { length: 50 }).notNull(),
   supplierId: int("supplierId").notNull(),
+  supplierName: varchar("supplierName", { length: 200 }),
   purchaseOrderId: int("purchaseOrderId"),
   amount: decimal("amount", { precision: 14, scale: 2 }).notNull(), // 应付金额
   paidAmount: decimal("paidAmount", { precision: 14, scale: 2 }).default("0"), // 已付金额
   currency: varchar("currency", { length: 10 }).default("CNY"),
   amountBase: decimal("amountBase", { precision: 14, scale: 2 }), // 本位币金额
-  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default("1"),
+  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default(
+    "1"
+  ),
   bankAccountId: int("bankAccountId"), // 付款银行账户
   invoiceDate: date("invoiceDate"),
   dueDate: date("dueDate"),
   paymentMethod: varchar("paymentMethod", { length: 50 }), // 付款方式
   paymentDate: date("paymentDate"), // 付款日期
-  status: mysqlEnum("status", ["pending", "partial", "paid", "overdue"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "partial", "paid", "overdue"])
+    .default("pending")
+    .notNull(),
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -559,6 +922,96 @@ export const accountsPayable = mysqlTable("accounts_payable", {
 
 export type AccountsPayable = typeof accountsPayable.$inferSelect;
 export type InsertAccountsPayable = typeof accountsPayable.$inferInsert;
+
+/**
+ * 收票记录表
+ */
+export const receivedInvoices = mysqlTable("received_invoices", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
+  invoiceNo: varchar("invoiceNo", { length: 50 }).notNull(),
+  invoiceCode: varchar("invoiceCode", { length: 50 }),
+  invoiceType: mysqlEnum("invoiceType", [
+    "vat_special",
+    "vat_normal",
+    "electronic",
+    "receipt",
+  ])
+    .default("vat_special")
+    .notNull(),
+  supplierId: int("supplierId"),
+  supplierName: varchar("supplierName", { length: 200 }).notNull(),
+  payableIds: text("payableIds"),
+  relatedOrderNo: varchar("relatedOrderNo", { length: 500 }),
+  invoiceDate: date("invoiceDate"),
+  receiveDate: date("receiveDate"),
+  amountExTax: decimal("amountExTax", { precision: 14, scale: 2 }).notNull(),
+  taxRate: decimal("taxRate", { precision: 5, scale: 2 }).default("13.00"),
+  taxAmount: decimal("taxAmount", { precision: 14, scale: 2 }).default("0.00"),
+  totalAmount: decimal("totalAmount", { precision: 14, scale: 2 }).notNull(),
+  verifyCode: varchar("verifyCode", { length: 100 }),
+  status: mysqlEnum("status", [
+    "pending",
+    "received",
+    "verified",
+    "booked",
+    "cancelled",
+  ])
+    .default("received")
+    .notNull(),
+  remark: text("remark"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ReceivedInvoice = typeof receivedInvoices.$inferSelect;
+export type InsertReceivedInvoice = typeof receivedInvoices.$inferInsert;
+
+/**
+ * 开票记录表
+ */
+export const issuedInvoices = mysqlTable("issued_invoices", {
+  id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
+  invoiceNo: varchar("invoiceNo", { length: 50 }),
+  invoiceType: mysqlEnum("invoiceType", [
+    "vat_special",
+    "vat_normal",
+    "electronic",
+    "receipt",
+  ])
+    .default("vat_special")
+    .notNull(),
+  customerId: int("customerId"),
+  customerName: varchar("customerName", { length: 200 }).notNull(),
+  receivableIds: text("receivableIds"),
+  relatedOrderNo: varchar("relatedOrderNo", { length: 500 }),
+  reconcileMonth: varchar("reconcileMonth", { length: 20 }),
+  invoiceDate: date("invoiceDate"),
+  amountExTax: decimal("amountExTax", { precision: 14, scale: 2 }).notNull(),
+  taxRate: decimal("taxRate", { precision: 5, scale: 2 }).default("13.00"),
+  taxAmount: decimal("taxAmount", { precision: 14, scale: 2 }).default("0.00"),
+  totalAmount: decimal("totalAmount", { precision: 14, scale: 2 }).notNull(),
+  bankAccountId: int("bankAccountId"),
+  bankAccount: varchar("bankAccount", { length: 500 }),
+  status: mysqlEnum("status", [
+    "draft",
+    "pending_approval",
+    "issued",
+    "cancelled",
+    "red_issued",
+  ])
+    .default("draft")
+    .notNull(),
+  remark: text("remark"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type IssuedInvoice = typeof issuedInvoices.$inferSelect;
+export type InsertIssuedInvoice = typeof issuedInvoices.$inferInsert;
 
 // ==================== 经销商管理 ====================
 
@@ -576,7 +1029,9 @@ export const dealerQualifications = mysqlTable("dealer_qualifications", {
   contractNo: varchar("contractNo", { length: 100 }), // 合同编号
   contractExpiry: date("contractExpiry"), // 合同有效期
   territory: text("territory"), // 授权区域
-  status: mysqlEnum("status", ["pending", "approved", "expired", "terminated"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "approved", "expired", "terminated"])
+    .default("pending")
+    .notNull(),
   approvedBy: int("approvedBy"),
   approvedAt: timestamp("approvedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -584,8 +1039,8 @@ export const dealerQualifications = mysqlTable("dealer_qualifications", {
 });
 
 export type DealerQualification = typeof dealerQualifications.$inferSelect;
-export type InsertDealerQualification = typeof dealerQualifications.$inferInsert;
-
+export type InsertDealerQualification =
+  typeof dealerQualifications.$inferInsert;
 
 // ==================== 电子签名管理 (FDA 21 CFR Part 11 合规) ====================
 
@@ -596,44 +1051,62 @@ export type InsertDealerQualification = typeof dealerQualifications.$inferInsert
 export const electronicSignatures = mysqlTable("electronic_signatures", {
   id: int("id").autoincrement().primaryKey(),
   // 签名关联信息
-  documentType: mysqlEnum("documentType", ["IQC", "IPQC", "OQC", "release", "review", "approval"]).notNull(), // 文档类型
+  documentType: mysqlEnum("documentType", [
+    "IQC",
+    "IPQC",
+    "OQC",
+    "release",
+    "review",
+    "approval",
+  ]).notNull(), // 文档类型
   documentId: int("documentId").notNull(), // 关联文档ID
   documentNo: varchar("documentNo", { length: 50 }).notNull(), // 关联单据号
-  
+
   // 签名类型
-  signatureType: mysqlEnum("signatureType", ["inspector", "reviewer", "approver"]).notNull(), // 签名角色
+  signatureType: mysqlEnum("signatureType", [
+    "inspector",
+    "reviewer",
+    "approver",
+  ]).notNull(), // 签名角色
   signatureAction: varchar("signatureAction", { length: 100 }).notNull(), // 签名动作描述
-  
+
   // 签名者信息 (Part 11要求：唯一标识签名者)
   signerId: int("signerId").notNull(), // 签名人ID
   signerName: varchar("signerName", { length: 100 }).notNull(), // 签名人姓名
   signerTitle: varchar("signerTitle", { length: 100 }), // 签名人职位
   signerDepartment: varchar("signerDepartment", { length: 100 }), // 签名人部门
-  
+
   // 签名验证 (Part 11要求：签名需要身份验证)
-  signatureMethod: mysqlEnum("signatureMethod", ["password", "pin", "biometric"]).default("password").notNull(),
+  signatureMethod: mysqlEnum("signatureMethod", [
+    "password",
+    "pin",
+    "biometric",
+  ])
+    .default("password")
+    .notNull(),
   verificationHash: varchar("verificationHash", { length: 256 }), // 验证哈希值
-  
+
   // 签名时间 (Part 11要求：精确时间戳)
   signedAt: timestamp("signedAt").notNull(),
-  
+
   // 签名含义声明 (Part 11要求：签名含义)
   signatureMeaning: text("signatureMeaning").notNull(), // 签名含义声明
-  
+
   // 签名状态
   status: mysqlEnum("status", ["valid", "revoked"]).default("valid").notNull(),
   revokedAt: timestamp("revokedAt"),
   revokedReason: text("revokedReason"),
-  
+
   // IP和设备信息 (Part 11要求：审计追踪)
   ipAddress: varchar("ipAddress", { length: 50 }),
   userAgent: text("userAgent"),
-  
+
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 export type ElectronicSignature = typeof electronicSignatures.$inferSelect;
-export type InsertElectronicSignature = typeof electronicSignatures.$inferInsert;
+export type InsertElectronicSignature =
+  typeof electronicSignatures.$inferInsert;
 
 /**
  * 签名审计日志表 - Part 11审计追踪要求
@@ -645,39 +1118,38 @@ export const signatureAuditLog = mysqlTable("signature_audit_log", {
   documentType: varchar("documentType", { length: 50 }).notNull(),
   documentId: int("documentId").notNull(),
   documentNo: varchar("documentNo", { length: 50 }).notNull(),
-  
+
   // 操作信息
   action: mysqlEnum("action", [
     "signature_requested",
-    "signature_completed", 
+    "signature_completed",
     "signature_rejected",
     "signature_revoked",
     "document_modified",
     "verification_failed",
-    "access_denied"
+    "access_denied",
   ]).notNull(),
-  
+
   // 操作者信息
   userId: int("userId"),
   userName: varchar("userName", { length: 100 }),
   userRole: varchar("userRole", { length: 50 }),
-  
+
   // 操作详情
   details: text("details"), // JSON格式的详细信息
   previousValue: text("previousValue"), // 修改前的值
   newValue: text("newValue"), // 修改后的值
-  
+
   // 环境信息
   ipAddress: varchar("ipAddress", { length: 50 }),
   userAgent: text("userAgent"),
-  
+
   // 时间戳 (不可修改)
   timestamp: timestamp("timestamp").defaultNow().notNull(),
 });
 
 export type SignatureAuditLog = typeof signatureAuditLog.$inferSelect;
 export type InsertSignatureAuditLog = typeof signatureAuditLog.$inferInsert;
-
 
 // ==================== 操作日志管理 ====================
 
@@ -687,69 +1159,71 @@ export type InsertSignatureAuditLog = typeof signatureAuditLog.$inferInsert;
  */
 export const operationLogs = mysqlTable("operation_logs", {
   id: int("id").autoincrement().primaryKey(),
-  
+
   // 操作模块信息
   module: mysqlEnum("module", [
-    "department",    // 部门设置
-    "code_rule",     // 编码设置
-    "user",          // 用户设置
-    "language",      // 语言设置
-    "system",        // 系统设置
-    "product",       // 产品管理
-    "customer",      // 客户管理
-    "supplier",      // 供应商管理
-    "inventory",     // 库存管理
-    "order",         // 订单管理
-    "quality",       // 质量管理
-    "production",    // 生产管理
-    "finance",       // 财务部
-    "document"       // 文档管理
+    "department", // 部门设置
+    "code_rule", // 编码设置
+    "user", // 用户设置
+    "language", // 语言设置
+    "system", // 系统设置
+    "product", // 产品管理
+    "customer", // 客户管理
+    "supplier", // 供应商管理
+    "inventory", // 库存管理
+    "order", // 订单管理
+    "quality", // 质量管理
+    "production", // 生产管理
+    "finance", // 财务部
+    "document", // 文档管理
   ]).notNull(),
-  
+
   // 操作类型
   action: mysqlEnum("action", [
-    "create",        // 新增
-    "update",        // 编辑
-    "delete",        // 删除
+    "create", // 新增
+    "update", // 编辑
+    "delete", // 删除
     "status_change", // 状态变更
-    "role_change",   // 角色变更
+    "role_change", // 角色变更
     "permission_change", // 权限变更
-    "import",        // 导入
-    "export",        // 导出
-    "login",         // 登录
-    "logout",        // 登出
-    "reset",         // 重置
-    "approve",       // 审批
-    "reject"         // 拒绝
+    "import", // 导入
+    "export", // 导出
+    "login", // 登录
+    "logout", // 登出
+    "reset", // 重置
+    "approve", // 审批
+    "reject", // 拒绝
   ]).notNull(),
-  
+
   // 操作对象
   targetType: varchar("targetType", { length: 50 }).notNull(), // 操作对象类型
   targetId: varchar("targetId", { length: 50 }), // 操作对象ID
   targetName: varchar("targetName", { length: 200 }), // 操作对象名称
-  
+
   // 操作详情
   description: text("description").notNull(), // 操作描述
   previousData: text("previousData"), // 操作前数据 (JSON)
   newData: text("newData"), // 操作后数据 (JSON)
   changedFields: text("changedFields"), // 变更字段列表 (JSON)
-  
+
   // 操作人信息
   operatorId: int("operatorId").notNull(),
   operatorName: varchar("operatorName", { length: 100 }).notNull(),
   operatorRole: varchar("operatorRole", { length: 50 }),
   operatorDepartment: varchar("operatorDepartment", { length: 100 }),
-  
+
   // 环境信息
   ipAddress: varchar("ipAddress", { length: 50 }),
   userAgent: text("userAgent"),
   deviceType: varchar("deviceType", { length: 50 }), // PC/Mobile/Tablet
   browser: varchar("browser", { length: 50 }),
-  
+
   // 操作结果
-  result: mysqlEnum("result", ["success", "failure", "partial"]).default("success").notNull(),
+  result: mysqlEnum("result", ["success", "failure", "partial"])
+    .default("success")
+    .notNull(),
   errorMessage: text("errorMessage"), // 失败时的错误信息
-  
+
   // 时间戳
   operatedAt: timestamp("operatedAt").defaultNow().notNull(),
 });
@@ -764,15 +1238,21 @@ export type InsertOperationLog = typeof operationLogs.$inferInsert;
  */
 export const bankAccounts = mysqlTable("bank_accounts", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
   accountName: varchar("accountName", { length: 200 }).notNull(), // 账户名称/别名
   bankName: varchar("bankName", { length: 200 }).notNull(), // 开户行
+  bankAddress: varchar("bankAddress", { length: 300 }), // 银行地址
   accountNo: varchar("accountNo", { length: 100 }).notNull(), // 账号
   currency: varchar("currency", { length: 10 }).default("CNY").notNull(), // 账户币种
   swiftCode: varchar("swiftCode", { length: 20 }), // SWIFT代码
-  accountType: mysqlEnum("accountType", ["basic", "general", "special"]).default("basic").notNull(), // 账户类型
+  accountType: mysqlEnum("accountType", ["basic", "general", "special"])
+    .default("basic")
+    .notNull(), // 账户类型
   isDefault: boolean("isDefault").default(false), // 是否默认账户
   balance: decimal("balance", { precision: 14, scale: 2 }).default("0"), // 账户余额
-  status: mysqlEnum("status", ["active", "frozen", "closed"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "frozen", "closed"])
+    .default("active")
+    .notNull(),
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -788,6 +1268,7 @@ export type InsertBankAccount = typeof bankAccounts.$inferInsert;
  */
 export const exchangeRates = mysqlTable("exchange_rates", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
   fromCurrency: varchar("fromCurrency", { length: 10 }).notNull(), // 原币种
   toCurrency: varchar("toCurrency", { length: 10 }).default("CNY").notNull(), // 目标币种(本位币)
   rate: decimal("rate", { precision: 10, scale: 6 }).notNull(), // 汇率
@@ -808,7 +1289,12 @@ export type InsertExchangeRate = typeof exchangeRates.$inferInsert;
 export const paymentTerms = mysqlTable("payment_terms", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 100 }).notNull(), // 条款名称，如"现款现结"、"30%定金"、"月结30天"
-  type: mysqlEnum("type", ["cash", "deposit", "monthly", "quarterly"]).notNull(), // 类型
+  type: mysqlEnum("type", [
+    "cash",
+    "deposit",
+    "monthly",
+    "quarterly",
+  ]).notNull(), // 类型
   depositPercent: decimal("depositPercent", { precision: 5, scale: 2 }), // 定金比例，如 30.00 表示 30%
   creditDays: int("creditDays").default(0), // 账期天数，如月结30天=30
   description: text("description"),
@@ -831,10 +1317,22 @@ export const materialRequests = mysqlTable("material_requests", {
   department: varchar("department", { length: 64 }).notNull(), // 申请部门
   requesterId: int("requesterId").notNull(), // 申请人
   requestDate: date("requestDate").notNull(),
-  urgency: mysqlEnum("urgency", ["normal", "urgent", "critical"]).default("normal").notNull(),
+  urgency: mysqlEnum("urgency", ["normal", "urgent", "critical"])
+    .default("normal")
+    .notNull(),
   reason: text("reason"), // 申请理由
   totalAmount: decimal("totalAmount", { precision: 14, scale: 2 }),
-  status: mysqlEnum("status", ["draft", "pending_approval", "approved", "rejected", "purchasing", "completed", "cancelled"]).default("draft").notNull(),
+  status: mysqlEnum("status", [
+    "draft",
+    "pending_approval",
+    "approved",
+    "rejected",
+    "purchasing",
+    "completed",
+    "cancelled",
+  ])
+    .default("draft")
+    .notNull(),
   approvedBy: int("approvedBy"),
   approvedAt: timestamp("approvedAt"),
   remark: text("remark"),
@@ -862,7 +1360,8 @@ export const materialRequestItems = mysqlTable("material_request_items", {
 });
 
 export type MaterialRequestItem = typeof materialRequestItems.$inferSelect;
-export type InsertMaterialRequestItem = typeof materialRequestItems.$inferInsert;
+export type InsertMaterialRequestItem =
+  typeof materialRequestItems.$inferInsert;
 
 // ==================== 费用报销管理 ====================
 
@@ -871,15 +1370,34 @@ export type InsertMaterialRequestItem = typeof materialRequestItems.$inferInsert
  */
 export const expenseReimbursements = mysqlTable("expense_reimbursements", {
   id: int("id").autoincrement().primaryKey(),
-  reimbursementNo: varchar("reimbursementNo", { length: 50 }).notNull().unique(),
+  companyId: int("companyId").default(3).notNull(),
+  reimbursementNo: varchar("reimbursementNo", { length: 50 })
+    .notNull()
+    .unique(),
   applicantId: int("applicantId").notNull(), // 申请人
   department: varchar("department", { length: 64 }).notNull(),
   applyDate: date("applyDate").notNull(),
   totalAmount: decimal("totalAmount", { precision: 14, scale: 2 }).notNull(),
   currency: varchar("currency", { length: 10 }).default("CNY"),
-  category: mysqlEnum("category", ["travel", "office", "entertainment", "transport", "communication", "other"]).notNull(), // 报销类型
+  category: mysqlEnum("category", [
+    "travel",
+    "office",
+    "entertainment",
+    "transport",
+    "communication",
+    "other",
+  ]).notNull(), // 报销类型
   description: text("description"),
-  status: mysqlEnum("status", ["draft", "pending_approval", "approved", "rejected", "paid", "cancelled"]).default("draft").notNull(),
+  status: mysqlEnum("status", [
+    "draft",
+    "pending_approval",
+    "approved",
+    "rejected",
+    "paid",
+    "cancelled",
+  ])
+    .default("draft")
+    .notNull(),
   approvedBy: int("approvedBy"),
   approvedAt: timestamp("approvedAt"),
   paidAt: timestamp("paidAt"),
@@ -890,7 +1408,8 @@ export const expenseReimbursements = mysqlTable("expense_reimbursements", {
 });
 
 export type ExpenseReimbursement = typeof expenseReimbursements.$inferSelect;
-export type InsertExpenseReimbursement = typeof expenseReimbursements.$inferInsert;
+export type InsertExpenseReimbursement =
+  typeof expenseReimbursements.$inferInsert;
 
 // ==================== 收付款记录 ====================
 
@@ -899,9 +1418,15 @@ export type InsertExpenseReimbursement = typeof expenseReimbursements.$inferInse
  */
 export const paymentRecords = mysqlTable("payment_records", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
   recordNo: varchar("recordNo", { length: 50 }).notNull().unique(),
   type: mysqlEnum("type", ["receipt", "payment"]).notNull(), // 收款/付款
-  relatedType: mysqlEnum("relatedType", ["sales_order", "purchase_order", "expense", "other"]).notNull(), // 关联单据类型
+  relatedType: mysqlEnum("relatedType", [
+    "sales_order",
+    "purchase_order",
+    "expense",
+    "other",
+  ]).notNull(), // 关联单据类型
   relatedId: int("relatedId"), // 关联单据ID
   relatedNo: varchar("relatedNo", { length: 50 }), // 关联单据号
   customerId: int("customerId"), // 客户ID(收款时)
@@ -909,7 +1434,9 @@ export const paymentRecords = mysqlTable("payment_records", {
   amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
   currency: varchar("currency", { length: 10 }).default("CNY"),
   amountBase: decimal("amountBase", { precision: 14, scale: 2 }), // 本位币金额
-  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default("1"),
+  exchangeRate: decimal("exchangeRate", { precision: 10, scale: 6 }).default(
+    "1"
+  ),
   bankAccountId: int("bankAccountId").notNull(), // 我方银行账户
   paymentDate: date("paymentDate").notNull(),
   paymentMethod: varchar("paymentMethod", { length: 50 }), // 银行转账/现金/支票等
@@ -928,6 +1455,7 @@ export type InsertPaymentRecord = typeof paymentRecords.$inferInsert;
  */
 export const customsDeclarations = mysqlTable("customs_declarations", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId").default(3).notNull(),
   declarationNo: varchar("declarationNo", { length: 50 }).notNull().unique(),
   salesOrderId: int("salesOrderId").notNull(), // 关联销售订单
   customerId: int("customerId").notNull(),
@@ -939,9 +1467,16 @@ export const customsDeclarations = mysqlTable("customs_declarations", {
   destination: varchar("destination", { length: 100 }), // 目的地
   portOfLoading: varchar("portOfLoading", { length: 100 }),
   portOfDischarge: varchar("portOfDischarge", { length: 100 }),
-  shippingMethod: mysqlEnum("shippingMethod", ["sea", "air", "land", "express"]).default("sea"),
+  shippingMethod: mysqlEnum("shippingMethod", [
+    "sea",
+    "air",
+    "land",
+    "express",
+  ]).default("sea"),
   hsCode: varchar("hsCode", { length: 20 }), // 海关编码
-  status: mysqlEnum("status", ["preparing", "submitted", "cleared", "shipped"]).default("preparing").notNull(),
+  status: mysqlEnum("status", ["preparing", "submitted", "cleared", "shipped"])
+    .default("preparing")
+    .notNull(),
   declarationDate: date("declarationDate"),
   clearanceDate: date("clearanceDate"),
   shippingDate: date("shippingDate"),
@@ -954,6 +1489,30 @@ export const customsDeclarations = mysqlTable("customs_declarations", {
 
 export type CustomsDeclaration = typeof customsDeclarations.$inferSelect;
 export type InsertCustomsDeclaration = typeof customsDeclarations.$inferInsert;
+
+/**
+ * HS 编码库
+ */
+export const hsCodeLibrary = mysqlTable("hs_code_library", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 20 }).notNull().unique(),
+  category: varchar("category", { length: 50 }),
+  productName: varchar("productName", { length: 200 }),
+  productId: int("productId"),
+  productAlias: varchar("productAlias", { length: 200 }),
+  declarationElements: text("declarationElements"),
+  unit: varchar("unit", { length: 20 }),
+  remark: text("remark"),
+  status: mysqlEnum("status", ["active", "inactive"])
+    .default("active")
+    .notNull(),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type HsCodeLibrary = typeof hsCodeLibrary.$inferSelect;
+export type InsertHsCodeLibrary = typeof hsCodeLibrary.$inferInsert;
 
 // ==================== 部门管理 ====================
 
@@ -969,7 +1528,9 @@ export const departments = mysqlTable("departments", {
   phone: varchar("phone", { length: 50 }),
   description: text("description"),
   sortOrder: int("sortOrder").default(0),
-  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "inactive"])
+    .default("active")
+    .notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -1005,6 +1566,7 @@ export type InsertCodeRule = typeof codeRules.$inferInsert;
  */
 export const companyInfo = mysqlTable("company_info", {
   id: int("id").autoincrement().primaryKey(),
+  companyId: int("companyId"),
   logoUrl: varchar("logoUrl", { length: 500 }),
   companyNameCn: varchar("companyNameCn", { length: 200 }),
   companyNameEn: varchar("companyNameEn", { length: 200 }),
@@ -1016,12 +1578,31 @@ export const companyInfo = mysqlTable("company_info", {
   contactNameEn: varchar("contactNameEn", { length: 100 }),
   phone: varchar("phone", { length: 50 }),
   whatsapp: varchar("whatsapp", { length: 50 }),
+  languageSettings: text("languageSettings"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type CompanyInfo = typeof companyInfo.$inferSelect;
 export type InsertCompanyInfo = typeof companyInfo.$inferInsert;
+
+export const printTemplates = mysqlTable("print_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  templateId: varchar("templateId", { length: 100 }).notNull().unique(),
+  module: varchar("module", { length: 50 }),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  editorType: varchar("editorType", { length: 50 }),
+  editorConfig: text("editorConfig"),
+  css: text("css").notNull(),
+  html: text("html").notNull(),
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PrintTemplate = typeof printTemplates.$inferSelect;
+export type InsertPrintTemplate = typeof printTemplates.$inferInsert;
 
 // ==================== 审批流程模板 ====================
 
@@ -1032,7 +1613,9 @@ export const workflowFormCatalog = mysqlTable("workflow_form_catalog", {
   formName: varchar("formName", { length: 100 }).notNull(),
   path: varchar("path", { length: 200 }),
   sortOrder: int("sortOrder").default(0).notNull(),
-  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "inactive"])
+    .default("active")
+    .notNull(),
   approvalEnabled: boolean("approvalEnabled").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -1047,12 +1630,17 @@ export const workflowTemplates = mysqlTable("workflow_templates", {
   name: varchar("name", { length: 100 }).notNull(),
   module: varchar("module", { length: 64 }).notNull(),
   formType: varchar("formType", { length: 100 }).notNull(),
+  flowMode: mysqlEnum("flowMode", ["approval", "notice"])
+    .default("approval")
+    .notNull(),
   initiators: text("initiators"),
   approvalSteps: text("approvalSteps"),
   handlers: text("handlers"),
   ccRecipients: text("ccRecipients"),
   description: text("description"),
-  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "inactive"])
+    .default("active")
+    .notNull(),
   createdBy: int("createdBy"),
   updatedBy: int("updatedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1061,6 +1649,69 @@ export const workflowTemplates = mysqlTable("workflow_templates", {
 
 export type WorkflowTemplate = typeof workflowTemplates.$inferSelect;
 export type InsertWorkflowTemplate = typeof workflowTemplates.$inferInsert;
+
+export const workflowRuns = mysqlTable("workflow_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  templateId: int("templateId"),
+  module: varchar("module", { length: 64 }).notNull(),
+  formType: varchar("formType", { length: 100 }).notNull(),
+  formName: varchar("formName", { length: 100 }).notNull(),
+  flowMode: mysqlEnum("flowMode", ["approval", "notice"])
+    .default("approval")
+    .notNull(),
+  sourceTable: varchar("sourceTable", { length: 64 }).notNull(),
+  sourceId: int("sourceId").notNull(),
+  sourceNo: varchar("sourceNo", { length: 100 }),
+  title: varchar("title", { length: 200 }),
+  routePath: varchar("routePath", { length: 255 }),
+  targetName: varchar("targetName", { length: 200 }),
+  applicantId: int("applicantId"),
+  applicantName: varchar("applicantName", { length: 100 }),
+  status: mysqlEnum("status", [
+    "pending",
+    "approved",
+    "rejected",
+    "cancelled",
+    "completed",
+  ])
+    .default("pending")
+    .notNull(),
+  currentStepIndex: int("currentStepIndex").default(0).notNull(),
+  totalSteps: int("totalSteps").default(0).notNull(),
+  currentApproverId: int("currentApproverId"),
+  currentApproverName: varchar("currentApproverName", { length: 100 }),
+  initiators: text("initiators"),
+  approvalSteps: text("approvalSteps"),
+  handlers: text("handlers"),
+  ccRecipients: text("ccRecipients"),
+  submittedAt: timestamp("submittedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type WorkflowRun = typeof workflowRuns.$inferSelect;
+export type InsertWorkflowRun = typeof workflowRuns.$inferInsert;
+
+export const workflowRunLogs = mysqlTable("workflow_run_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  runId: int("runId").notNull(),
+  action: mysqlEnum("action", [
+    "submit",
+    "approve",
+    "reject",
+    "cancel",
+    "complete",
+  ]).notNull(),
+  stepIndex: int("stepIndex").default(0).notNull(),
+  actorId: int("actorId"),
+  actorName: varchar("actorName", { length: 100 }),
+  comment: text("comment"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type WorkflowRunLog = typeof workflowRunLogs.$inferSelect;
+export type InsertWorkflowRunLog = typeof workflowRunLogs.$inferInsert;
 
 // ==================== 人事管理 ====================
 
@@ -1081,10 +1732,16 @@ export const personnel = mysqlTable("personnel", {
   contractExpiry: date("contractExpiry"), // 合同到期日
   education: varchar("education", { length: 50 }), // 学历
   major: varchar("major", { length: 100 }), // 专业
+  healthStatus: varchar("healthStatus", { length: 50 }), // 健康状况
   emergencyContact: varchar("emergencyContact", { length: 50 }),
   emergencyPhone: varchar("emergencyPhone", { length: 20 }),
-  status: mysqlEnum("status", ["active", "probation", "resigned", "terminated"]).default("active").notNull(),
+  address: varchar("address", { length: 255 }), // 家庭住址
+  status: mysqlEnum("status", ["active", "probation", "resigned", "terminated"])
+    .default("active")
+    .notNull(),
   userId: int("userId"), // 关联系统用户
+  signatureImageUrl: text("signatureImageUrl"), // 透明电子签名图
+  signatureImageName: varchar("signatureImageName", { length: 255 }), // 原始签名文件名
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -1093,6 +1750,135 @@ export const personnel = mysqlTable("personnel", {
 export type Personnel = typeof personnel.$inferSelect;
 export type InsertPersonnel = typeof personnel.$inferInsert;
 
+/**
+ * 人员工资设置表
+ */
+export const personnelSalarySettings = mysqlTable("personnel_salary_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  personnelId: int("personnelId").notNull().unique(),
+  payrollType: mysqlEnum("payrollType", ["monthly", "daily"])
+    .default("monthly")
+    .notNull(),
+  baseSalary: decimal("baseSalary", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  fullAttendanceDays: decimal("fullAttendanceDays", { precision: 8, scale: 2 })
+    .default("21.75")
+    .notNull(),
+  overtimeHourlyRate: decimal("overtimeHourlyRate", { precision: 10, scale: 2 })
+    .default("0")
+    .notNull(),
+  allowance: decimal("allowance", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  performanceBonus: decimal("performanceBonus", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  socialSecurity: decimal("socialSecurity", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  housingFund: decimal("housingFund", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  otherDeduction: decimal("otherDeduction", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  commissionEnabled: boolean("commissionEnabled").default(false).notNull(),
+  commissionRate: decimal("commissionRate", { precision: 5, scale: 2 })
+    .default("0")
+    .notNull(),
+  status: mysqlEnum("status", ["active", "inactive"])
+    .default("active")
+    .notNull(),
+  remark: text("remark"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PersonnelSalarySetting =
+  typeof personnelSalarySettings.$inferSelect;
+export type InsertPersonnelSalarySetting =
+  typeof personnelSalarySettings.$inferInsert;
+
+/**
+ * 人员工资核算记录表
+ */
+export const personnelPayrollRecords = mysqlTable("personnel_payroll_records", {
+  id: int("id").autoincrement().primaryKey(),
+  payrollNo: varchar("payrollNo", { length: 50 }).notNull().unique(),
+  periodMonth: varchar("periodMonth", { length: 7 }).notNull(),
+  personnelId: int("personnelId").notNull(),
+  employeeNo: varchar("employeeNo", { length: 50 }),
+  personnelName: varchar("personnelName", { length: 100 }).notNull(),
+  departmentName: varchar("departmentName", { length: 64 }),
+  attendanceDays: decimal("attendanceDays", { precision: 8, scale: 2 })
+    .default("0")
+    .notNull(),
+  overtimeHours: decimal("overtimeHours", { precision: 8, scale: 2 })
+    .default("0")
+    .notNull(),
+  leaveHours: decimal("leaveHours", { precision: 8, scale: 2 })
+    .default("0")
+    .notNull(),
+  absenteeismDays: decimal("absenteeismDays", { precision: 8, scale: 2 })
+    .default("0")
+    .notNull(),
+  salesAmount: decimal("salesAmount", { precision: 14, scale: 2 })
+    .default("0")
+    .notNull(),
+  baseSalary: decimal("baseSalary", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  attendanceSalary: decimal("attendanceSalary", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  overtimePay: decimal("overtimePay", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  allowance: decimal("allowance", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  performanceBonus: decimal("performanceBonus", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  commissionRate: decimal("commissionRate", { precision: 5, scale: 2 })
+    .default("0")
+    .notNull(),
+  commissionAmount: decimal("commissionAmount", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  socialSecurity: decimal("socialSecurity", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  housingFund: decimal("housingFund", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  otherDeduction: decimal("otherDeduction", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  grossSalary: decimal("grossSalary", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  netSalary: decimal("netSalary", { precision: 12, scale: 2 })
+    .default("0")
+    .notNull(),
+  attendanceFileName: varchar("attendanceFileName", { length: 255 }),
+  attendanceSnapshot: json("attendanceSnapshot"),
+  status: mysqlEnum("status", ["draft", "confirmed", "paid"])
+    .default("draft")
+    .notNull(),
+  remark: text("remark"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PersonnelPayrollRecord =
+  typeof personnelPayrollRecords.$inferSelect;
+export type InsertPersonnelPayrollRecord =
+  typeof personnelPayrollRecords.$inferInsert;
+
 // ==================== 培训管理 ====================
 
 /**
@@ -1100,8 +1886,15 @@ export type InsertPersonnel = typeof personnel.$inferInsert;
  */
 export const trainings = mysqlTable("trainings", {
   id: int("id").autoincrement().primaryKey(),
+  trainingNo: varchar("trainingNo", { length: 50 }).unique(),
   title: varchar("title", { length: 200 }).notNull(), // 培训主题
-  type: mysqlEnum("type", ["onboarding", "skill", "compliance", "safety", "other"]).notNull(),
+  type: mysqlEnum("type", [
+    "onboarding",
+    "skill",
+    "compliance",
+    "safety",
+    "other",
+  ]).notNull(),
   trainerId: int("trainerId"), // 培训师
   departmentId: int("departmentId"), // 目标部门
   startDate: date("startDate"),
@@ -1109,7 +1902,14 @@ export const trainings = mysqlTable("trainings", {
   location: varchar("location", { length: 100 }),
   participants: int("participants"), // 参加人数
   content: text("content"), // 培训内容
-  status: mysqlEnum("status", ["planned", "in_progress", "completed", "cancelled"]).default("planned").notNull(),
+  status: mysqlEnum("status", [
+    "planned",
+    "in_progress",
+    "completed",
+    "cancelled",
+  ])
+    .default("planned")
+    .notNull(),
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1128,13 +1928,20 @@ export const audits = mysqlTable("audits", {
   id: int("id").autoincrement().primaryKey(),
   auditNo: varchar("auditNo", { length: 50 }).notNull().unique(),
   title: varchar("title", { length: 200 }).notNull(),
-  type: mysqlEnum("type", ["internal", "external", "supplier", "process"]).notNull(),
+  type: mysqlEnum("type", [
+    "internal",
+    "external",
+    "supplier",
+    "process",
+  ]).notNull(),
   departmentId: int("departmentId"), // 被审部门
   auditorId: int("auditorId"), // 审核员
   auditDate: date("auditDate"),
   findings: text("findings"), // 审核发现
   correctiveActions: text("correctiveActions"), // 纠正措施
-  status: mysqlEnum("status", ["planned", "in_progress", "completed", "closed"]).default("planned").notNull(),
+  status: mysqlEnum("status", ["planned", "in_progress", "completed", "closed"])
+    .default("planned")
+    .notNull(),
   result: mysqlEnum("result", ["pass", "conditional", "fail"]),
   remark: text("remark"),
   createdBy: int("createdBy"),
@@ -1154,14 +1961,42 @@ export const rdProjects = mysqlTable("rd_projects", {
   id: int("id").autoincrement().primaryKey(),
   projectNo: varchar("projectNo", { length: 50 }).notNull().unique(),
   name: varchar("name", { length: 200 }).notNull(),
-  type: mysqlEnum("type", ["new_product", "improvement", "customization", "research"]).notNull(),
+  type: mysqlEnum("type", [
+    "new_product",
+    "improvement",
+    "customization",
+    "research",
+  ]).notNull(),
   productId: int("productId"), // 关联产品
   leaderId: int("leaderId"), // 项目负责人
+  raOwnerId: int("raOwnerId"), // 法规负责人
+  qaOwnerId: int("qaOwnerId"), // 质量负责人
+  productionOwnerId: int("productionOwnerId"), // 生产负责人
+  clinicalOwnerId: int("clinicalOwnerId"), // 临床/医学负责人
+  projectCategory: varchar("projectCategory", { length: 50 }), // 项目类别
+  developmentType: varchar("developmentType", { length: 50 }), // 开发类型
+  priority: varchar("priority", { length: 20 }), // 优先级
+  currentStage: varchar("currentStage", { length: 100 }), // 当前阶段
+  releaseStatus: varchar("releaseStatus", { length: 50 }), // 上市放行状态
   startDate: date("startDate"),
   endDate: date("endDate"),
+  targetFinishDate: date("targetFinishDate"),
+  actualFinishDate: date("actualFinishDate"),
+  launchDate: date("launchDate"),
   budget: decimal("budget", { precision: 14, scale: 2 }),
   progress: int("progress").default(0), // 进度 0-100
-  status: mysqlEnum("status", ["planning", "in_progress", "testing", "completed", "suspended", "cancelled"]).default("planning").notNull(),
+  status: mysqlEnum("status", [
+    "planning",
+    "in_progress",
+    "testing",
+    "completed",
+    "suspended",
+    "cancelled",
+  ])
+    .default("planning")
+    .notNull(),
+  targetMarkets: json("targetMarkets"), // 目标市场轨道
+  projectData: json("projectData"), // 项目工作台结构化数据
   description: text("description"),
   remark: text("remark"),
   createdBy: int("createdBy"),
@@ -1187,7 +2022,14 @@ export const stocktakes = mysqlTable("stocktakes", {
   systemQty: decimal("systemQty", { precision: 12, scale: 4 }), // 系统数量
   actualQty: decimal("actualQty", { precision: 12, scale: 4 }), // 实盘数量
   diffQty: decimal("diffQty", { precision: 12, scale: 4 }), // 差异数量
-  status: mysqlEnum("status", ["planned", "in_progress", "completed", "approved"]).default("planned").notNull(),
+  status: mysqlEnum("status", [
+    "planned",
+    "in_progress",
+    "completed",
+    "approved",
+  ])
+    .default("planned")
+    .notNull(),
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1206,8 +2048,16 @@ export const qualityIncidents = mysqlTable("quality_incidents", {
   id: int("id").autoincrement().primaryKey(),
   incidentNo: varchar("incidentNo", { length: 50 }).notNull().unique(),
   title: varchar("title", { length: 200 }).notNull(),
-  type: mysqlEnum("type", ["complaint", "nonconformance", "capa", "recall", "deviation"]).notNull(),
-  severity: mysqlEnum("severity", ["low", "medium", "high", "critical"]).default("medium").notNull(),
+  type: mysqlEnum("type", [
+    "complaint",
+    "nonconformance",
+    "capa",
+    "recall",
+    "deviation",
+  ]).notNull(),
+  severity: mysqlEnum("severity", ["low", "medium", "high", "critical"])
+    .default("medium")
+    .notNull(),
   productId: int("productId"),
   batchNo: varchar("batchNo", { length: 50 }),
   description: text("description"),
@@ -1218,7 +2068,15 @@ export const qualityIncidents = mysqlTable("quality_incidents", {
   assigneeId: int("assigneeId"),
   reportDate: date("reportDate"),
   closeDate: date("closeDate"),
-  status: mysqlEnum("status", ["open", "investigating", "correcting", "verifying", "closed"]).default("open").notNull(),
+  status: mysqlEnum("status", [
+    "open",
+    "investigating",
+    "correcting",
+    "verifying",
+    "closed",
+  ])
+    .default("open")
+    .notNull(),
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -1237,7 +2095,13 @@ export const samples = mysqlTable("samples", {
   sampleNo: varchar("sampleNo", { length: 50 }).notNull().unique(),
   productId: int("productId"),
   batchNo: varchar("batchNo", { length: 50 }),
-  sampleType: mysqlEnum("sampleType", ["raw_material", "semi_finished", "finished", "stability", "retention"]).notNull(),
+  sampleType: mysqlEnum("sampleType", [
+    "raw_material",
+    "semi_finished",
+    "finished",
+    "stability",
+    "retention",
+  ]).notNull(),
   quantity: decimal("quantity", { precision: 12, scale: 4 }),
   unit: varchar("unit", { length: 20 }),
   storageLocation: varchar("storageLocation", { length: 100 }),
@@ -1245,7 +2109,15 @@ export const samples = mysqlTable("samples", {
   samplingDate: date("samplingDate"),
   expiryDate: date("expiryDate"),
   samplerId: int("samplerId"),
-  status: mysqlEnum("status", ["stored", "testing", "used", "expired", "destroyed"]).default("stored").notNull(),
+  status: mysqlEnum("status", [
+    "stored",
+    "testing",
+    "used",
+    "expired",
+    "destroyed",
+  ])
+    .default("stored")
+    .notNull(),
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -1262,18 +2134,28 @@ export type InsertSample = typeof samples.$inferInsert;
 export const labRecords = mysqlTable("lab_records", {
   id: int("id").autoincrement().primaryKey(),
   recordNo: varchar("recordNo", { length: 50 }).notNull().unique(),
+  formId: varchar("formId", { length: 100 }),
+  formTitle: varchar("formTitle", { length: 200 }),
+  formType: varchar("formType", { length: 50 }),
   sampleId: int("sampleId"), // 关联样品
   testType: varchar("testType", { length: 100 }).notNull(), // 检测项目
   testMethod: varchar("testMethod", { length: 200 }), // 检测方法
   specification: text("specification"), // 标准要求
   result: text("result"), // 检测结果
-  conclusion: mysqlEnum("conclusion", ["pass", "fail", "pending"]).default("pending"),
+  formData: json("formData"),
+  conclusion: mysqlEnum("conclusion", ["pass", "fail", "pending"]).default(
+    "pending"
+  ),
   equipmentId: int("equipmentId"), // 使用设备
   testerId: int("testerId"),
+  testerName: varchar("testerName", { length: 100 }),
   testDate: date("testDate"),
   reviewerId: int("reviewerId"),
+  reviewerName: varchar("reviewerName", { length: 100 }),
   reviewDate: date("reviewDate"),
-  status: mysqlEnum("status", ["pending", "testing", "completed", "reviewed"]).default("pending").notNull(),
+  status: mysqlEnum("status", ["pending", "testing", "completed", "reviewed"])
+    .default("pending")
+    .notNull(),
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -1291,18 +2173,33 @@ export type InsertLabRecord = typeof labRecords.$inferInsert;
 export const productionPlans = mysqlTable("production_plans", {
   id: int("id").autoincrement().primaryKey(),
   planNo: varchar("planNo", { length: 50 }).notNull().unique(),
-  planType: mysqlEnum("planType", ["sales_driven", "internal"]).notNull().default("sales_driven"), // 销售计划/内部计划
-  salesOrderId: int("salesOrderId"),       // 关联销售订单（销售计划时必填）
+  planType: mysqlEnum("planType", ["sales_driven", "internal"])
+    .notNull()
+    .default("sales_driven"), // 销售计划/内部计划
+  salesOrderId: int("salesOrderId"), // 关联销售订单（销售计划时必填）
   salesOrderNo: varchar("salesOrderNo", { length: 50 }), // 冗余存储销售订单号
   productId: int("productId").notNull(),
   productName: varchar("productName", { length: 200 }), // 冗余存储产品名称
+  supplierId: int("supplierId"),
+  supplierName: varchar("supplierName", { length: 200 }),
   plannedQty: decimal("plannedQty", { precision: 12, scale: 4 }).notNull(),
   unit: varchar("unit", { length: 20 }),
   batchNo: varchar("batchNo", { length: 50 }),
   plannedStartDate: date("plannedStartDate"),
-  plannedEndDate: date("plannedEndDate"),   // 交期
-  priority: mysqlEnum("priority", ["low", "normal", "high", "urgent"]).default("normal"),
-  status: mysqlEnum("status", ["pending", "scheduled", "in_progress", "completed", "cancelled"]).default("pending").notNull(),
+  plannedEndDate: date("plannedEndDate"), // 交期
+  priority: mysqlEnum("priority", ["low", "normal", "high", "urgent"]).default(
+    "normal"
+  ),
+  status: mysqlEnum("status", [
+    "pending",
+    "scheduled",
+    "purchase_submitted",
+    "in_progress",
+    "completed",
+    "cancelled",
+  ])
+    .default("pending")
+    .notNull(),
   productionOrderId: int("productionOrderId"), // 关联生产任务
   remark: text("remark"),
   createdBy: int("createdBy"),
@@ -1316,25 +2213,38 @@ export type InsertProductionPlan = typeof productionPlans.$inferInsert;
  * 领料单表
  * 生产任务开始时，向仓库申请领取原材料
  */
-export const materialRequisitionOrders = mysqlTable("material_requisition_orders", {
-  id: int("id").autoincrement().primaryKey(),
-  requisitionNo: varchar("requisitionNo", { length: 50 }).notNull().unique(),
-  productionOrderId: int("productionOrderId"), // 关联生产任务
-  productionOrderNo: varchar("productionOrderNo", { length: 50 }),
-  productionPlanId: int("productionPlanId"),   // 关联生产计划
-  warehouseId: int("warehouseId"),             // 领料仓库
-  requisitionDate: date("requisitionDate"),    // 领料日期
-  requiredDate: date("requiredDate"),          // 需求日期
-  applicantId: int("applicantId"),             // 申请人
-  status: mysqlEnum("status", ["draft", "pending", "approved", "issued", "rejected"]).default("draft").notNull(),
-  items: text("items"),                        // JSON存储物料明细行
-  remark: text("remark"),                      // 备注
-  createdBy: int("createdBy"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-export type MaterialRequisitionOrder = typeof materialRequisitionOrders.$inferSelect;
-export type InsertMaterialRequisitionOrder = typeof materialRequisitionOrders.$inferInsert;
+export const materialRequisitionOrders = mysqlTable(
+  "material_requisition_orders",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    requisitionNo: varchar("requisitionNo", { length: 50 }).notNull().unique(),
+    productionOrderId: int("productionOrderId"), // 关联生产任务
+    productionOrderNo: varchar("productionOrderNo", { length: 50 }),
+    productionPlanId: int("productionPlanId"), // 关联生产计划
+    warehouseId: int("warehouseId"), // 领料仓库
+    requisitionDate: date("requisitionDate"), // 领料日期
+    requiredDate: date("requiredDate"), // 需求日期
+    applicantId: int("applicantId"), // 申请人
+    status: mysqlEnum("status", [
+      "draft",
+      "pending",
+      "approved",
+      "issued",
+      "rejected",
+    ])
+      .default("draft")
+      .notNull(),
+    items: text("items"), // JSON存储物料明细行
+    remark: text("remark"), // 备注
+    createdBy: int("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
+export type MaterialRequisitionOrder =
+  typeof materialRequisitionOrders.$inferSelect;
+export type InsertMaterialRequisitionOrder =
+  typeof materialRequisitionOrders.$inferInsert;
 
 /**
  * 生产记录单表
@@ -1343,16 +2253,25 @@ export type InsertMaterialRequisitionOrder = typeof materialRequisitionOrders.$i
 export const productionRecords = mysqlTable("production_records", {
   id: int("id").autoincrement().primaryKey(),
   recordNo: varchar("recordNo", { length: 50 }).notNull().unique(),
-  recordType: mysqlEnum("recordType", ["general", "temperature_humidity", "material_usage", "clean_room", "first_piece"]).default("general").notNull(), // 记录类型：通用/温湿度/材料使用/清场/首件检验
+  recordType: mysqlEnum("recordType", [
+    "general",
+    "temperature_humidity",
+    "material_usage",
+    "clean_room",
+    "first_piece",
+  ])
+    .default("general")
+    .notNull(), // 记录类型：通用/温湿度/材料使用/清场/首件检验
   productionOrderId: int("productionOrderId"), // 关联生产任务
   productionOrderNo: varchar("productionOrderNo", { length: 50 }),
   productId: int("productId"),
   productName: varchar("productName", { length: 200 }),
   batchNo: varchar("batchNo", { length: 50 }),
-  workstationId: int("workstationId"),         // 工位/工序
+  workstationId: int("workstationId"), // 工位/工序
   workstationName: varchar("workstationName", { length: 100 }),
   operatorId: int("operatorId"),
   recordDate: date("recordDate"),
+  recordTime: varchar("recordTime", { length: 10 }),
   plannedQty: decimal("plannedQty", { precision: 12, scale: 4 }),
   actualQty: decimal("actualQty", { precision: 12, scale: 4 }),
   scrapQty: decimal("scrapQty", { precision: 12, scale: 4 }).default("0"),
@@ -1384,6 +2303,7 @@ export const productionRecords = mysqlTable("production_records", {
   workshopName: varchar("workshopName", { length: 100 }), // 车间名称
   productionTeam: varchar("productionTeam", { length: 50 }), // 生产班组
   operator: varchar("operator", { length: 50 }), // 操作人
+  operatorName: varchar("operatorName", { length: 100 }), // 操作人姓名（用于追溯）
   inspector: varchar("inspector", { length: 50 }), // 检验人/审核人
   // 温湿度补充字段
   cleanlinessLevel: varchar("cleanlinessLevel", { length: 50 }), // 洁净级别（如：十万级）
@@ -1394,10 +2314,13 @@ export const productionRecords = mysqlTable("production_records", {
   qualifiedQty: decimal("qualifiedQty", { precision: 12, scale: 4 }), // 合格数量
   // 工序质控点/明细数据（JSON）
   detailItems: text("detailItems"), // JSON: 清场5项/首件检验项/质控参数明细
+  materialItems: text("materialItems"), // JSON: 材料使用明细
   equipmentItems: text("equipmentItems"), // JSON: 设备记录
   moldItems: text("moldItems"), // JSON: 模具记录
   documentVersion: varchar("documentVersion", { length: 20 }), // 作业指导书版本
-  status: mysqlEnum("status", ["in_progress", "completed", "abnormal"]).default("in_progress").notNull(),
+  status: mysqlEnum("status", ["in_progress", "completed", "abnormal"])
+    .default("in_progress")
+    .notNull(),
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1405,6 +2328,45 @@ export const productionRecords = mysqlTable("production_records", {
 });
 export type ProductionRecord = typeof productionRecords.$inferSelect;
 export type InsertProductionRecord = typeof productionRecords.$inferInsert;
+
+/**
+ * 生产环境记录表
+ * 记录手工环境记录以及从生产记录同步的环境/清场/设备/质控记录
+ */
+export const environmentRecords = mysqlTable("environment_records", {
+  id: int("id").autoincrement().primaryKey(),
+  sourceType: mysqlEnum("sourceType", ["manual", "production"])
+    .default("manual")
+    .notNull(),
+  recordNo: varchar("recordNo", { length: 50 }).notNull().unique(),
+  moduleType: varchar("moduleType", { length: 50 }),
+  roomName: varchar("roomName", { length: 100 }),
+  roomCode: varchar("roomCode", { length: 100 }),
+  recordDate: date("recordDate"),
+  recordTime: varchar("recordTime", { length: 10 }),
+  temperature: decimal("temperature", { precision: 6, scale: 2 }),
+  humidity: decimal("humidity", { precision: 6, scale: 2 }),
+  tempMin: decimal("tempMin", { precision: 6, scale: 2 }),
+  tempMax: decimal("tempMax", { precision: 6, scale: 2 }),
+  humidityMin: decimal("humidityMin", { precision: 6, scale: 2 }),
+  humidityMax: decimal("humidityMax", { precision: 6, scale: 2 }),
+  isNormal: boolean("isNormal").default(true).notNull(),
+  abnormalDesc: text("abnormalDesc"),
+  correctionAction: text("correctionAction"),
+  recorder: varchar("recorder", { length: 50 }),
+  productionOrderNo: varchar("productionOrderNo", { length: 50 }),
+  productName: varchar("productName", { length: 200 }),
+  batchNo: varchar("batchNo", { length: 50 }),
+  processName: varchar("processName", { length: 100 }),
+  productionTeam: varchar("productionTeam", { length: 50 }),
+  detailItems: text("detailItems"),
+  equipmentItems: text("equipmentItems"),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EnvironmentRecord = typeof environmentRecords.$inferSelect;
+export type InsertEnvironmentRecord = typeof environmentRecords.$inferInsert;
 
 /**
  * 生产流转单表
@@ -1421,16 +2383,56 @@ export const productionRoutingCards = mysqlTable("production_routing_cards", {
   quantity: decimal("quantity", { precision: 12, scale: 4 }),
   unit: varchar("unit", { length: 20 }),
   currentProcess: varchar("currentProcess", { length: 100 }), // 当前工序
-  nextProcess: varchar("nextProcess", { length: 100 }),        // 下一工序
+  nextProcess: varchar("nextProcess", { length: 100 }), // 下一工序
   needsSterilization: boolean("needsSterilization").default(false), // 是否需要委外灭菌
-  status: mysqlEnum("status", ["in_process", "pending_sterilization", "sterilizing", "completed"]).default("in_process").notNull(),
-  remark: text("remark"),                      // JSON存储流转工序历史
+  status: mysqlEnum("status", [
+    "in_process",
+    "pending_sterilization",
+    "sterilizing",
+    "completed",
+  ])
+    .default("in_process")
+    .notNull(),
+  remark: text("remark"), // JSON存储流转工序历史
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type ProductionRoutingCard = typeof productionRoutingCards.$inferSelect;
-export type InsertProductionRoutingCard = typeof productionRoutingCards.$inferInsert;
+export type InsertProductionRoutingCard =
+  typeof productionRoutingCards.$inferInsert;
+
+/**
+ * 生产报废处理单表
+ * 由生产流转单按批号汇总生成，后续成本核算直接复用
+ */
+export const productionScrapDisposals = mysqlTable(
+  "production_scrap_disposals",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    disposalNo: varchar("disposalNo", { length: 50 }).notNull().unique(),
+    batchNo: varchar("batchNo", { length: 50 }).notNull(),
+    productionOrderId: int("productionOrderId"),
+    productionOrderNo: varchar("productionOrderNo", { length: 50 }),
+    productId: int("productId"),
+    productName: varchar("productName", { length: 200 }),
+    totalScrapQty: decimal("totalScrapQty", { precision: 12, scale: 4 }),
+    costQty: decimal("costQty", { precision: 12, scale: 4 }),
+    unit: varchar("unit", { length: 20 }),
+    detailItems: text("detailItems"),
+    status: mysqlEnum("status", ["generated", "processed"])
+      .default("generated")
+      .notNull(),
+    remark: text("remark"),
+    createdBy: int("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
+export type ProductionScrapDisposal =
+  typeof productionScrapDisposals.$inferSelect;
+export type InsertProductionScrapDisposal =
+  typeof productionScrapDisposals.$inferInsert;
 
 /**
  * 委外灭菌单表
@@ -1439,7 +2441,7 @@ export type InsertProductionRoutingCard = typeof productionRoutingCards.$inferIn
 export const sterilizationOrders = mysqlTable("sterilization_orders", {
   id: int("id").autoincrement().primaryKey(),
   orderNo: varchar("orderNo", { length: 50 }).notNull().unique(),
-  routingCardId: int("routingCardId"),         // 关联生产流转单
+  routingCardId: int("routingCardId"), // 关联生产流转单
   routingCardNo: varchar("routingCardNo", { length: 50 }),
   productionOrderId: int("productionOrderId"),
   productionOrderNo: varchar("productionOrderNo", { length: 50 }),
@@ -1449,13 +2451,23 @@ export const sterilizationOrders = mysqlTable("sterilization_orders", {
   quantity: decimal("quantity", { precision: 12, scale: 4 }),
   unit: varchar("unit", { length: 20 }),
   sterilizationMethod: varchar("sterilizationMethod", { length: 100 }), // 灭菌方式（EO/辐照/高压蒸汽等）
-  supplierId: int("supplierId"),               // 委外供应商
+  supplierId: int("supplierId"), // 委外供应商
   supplierName: varchar("supplierName", { length: 200 }),
-  sendDate: date("sendDate"),                  // 发出日期
+  sendDate: date("sendDate"), // 发出日期
   expectedReturnDate: date("expectedReturnDate"), // 预计返回日期
-  actualReturnDate: date("actualReturnDate"),  // 实际返回日期
+  actualReturnDate: date("actualReturnDate"), // 实际返回日期
   sterilizationBatchNo: varchar("sterilizationBatchNo", { length: 50 }), // 灭菌批号（唯一，灭菌完成后补录）
-  status: mysqlEnum("status", ["draft", "sent", "processing", "arrived", "returned", "qualified", "unqualified"]).default("draft").notNull(),
+  status: mysqlEnum("status", [
+    "draft",
+    "sent",
+    "processing",
+    "arrived",
+    "returned",
+    "qualified",
+    "unqualified",
+  ])
+    .default("draft")
+    .notNull(),
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1468,34 +2480,167 @@ export type InsertSterilizationOrder = typeof sterilizationOrders.$inferInsert;
  * 生产入库申请表
  * 生产完成（含灭菌）后，申请将成品入库
  */
-export const productionWarehouseEntries = mysqlTable("production_warehouse_entries", {
+export const productionWarehouseEntries = mysqlTable(
+  "production_warehouse_entries",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    entryNo: varchar("entryNo", { length: 50 }).notNull().unique(),
+    productionOrderId: int("productionOrderId"),
+    productionOrderNo: varchar("productionOrderNo", { length: 50 }),
+    sterilizationOrderId: int("sterilizationOrderId"), // 关联委外灭菌单（如有）
+    sterilizationOrderNo: varchar("sterilizationOrderNo", { length: 50 }),
+    productId: int("productId"),
+    productName: varchar("productName", { length: 200 }),
+    batchNo: varchar("batchNo", { length: 50 }),
+    sterilizationBatchNo: varchar("sterilizationBatchNo", { length: 50 }), // 灭菌批号
+    sterilizedQty: decimal("sterilizedQty", { precision: 12, scale: 4 }), // 灭菌后数量
+    inspectionRejectQty: decimal("inspectionRejectQty", {
+      precision: 12,
+      scale: 4,
+    }).default("0"), // 检验报废数量
+    sampleQty: decimal("sampleQty", { precision: 12, scale: 4 }).default("0"), // 留样数量
+    quantity: decimal("quantity", { precision: 12, scale: 4 }),
+    quantityModifyReason: text("quantityModifyReason"), // 入库数量手动修改原因
+    unit: varchar("unit", { length: 20 }),
+    targetWarehouseId: int("targetWarehouseId"), // 目标入库仓库
+    applicantId: int("applicantId"),
+    applicationDate: date("applicationDate"),
+    status: mysqlEnum("status", [
+      "draft",
+      "pending",
+      "approved",
+      "completed",
+      "rejected",
+    ])
+      .default("draft")
+      .notNull(),
+    remark: text("remark"),
+    createdBy: int("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
+export type ProductionWarehouseEntry =
+  typeof productionWarehouseEntries.$inferSelect;
+export type InsertProductionWarehouseEntry =
+  typeof productionWarehouseEntries.$inferInsert;
+
+/**
+ * 大包装记录表
+ * 灭菌前标签打印完成后，对外箱/托盘包装过程留痕
+ */
+export const largePackagingRecords = mysqlTable("large_packaging_records", {
   id: int("id").autoincrement().primaryKey(),
-  entryNo: varchar("entryNo", { length: 50 }).notNull().unique(),
+  recordNo: varchar("recordNo", { length: 50 }).notNull().unique(),
   productionOrderId: int("productionOrderId"),
   productionOrderNo: varchar("productionOrderNo", { length: 50 }),
-  sterilizationOrderId: int("sterilizationOrderId"), // 关联委外灭菌单（如有）
-  sterilizationOrderNo: varchar("sterilizationOrderNo", { length: 50 }),
   productId: int("productId"),
   productName: varchar("productName", { length: 200 }),
+  specification: varchar("specification", { length: 200 }),
   batchNo: varchar("batchNo", { length: 50 }),
-  sterilizationBatchNo: varchar("sterilizationBatchNo", { length: 50 }), // 灭菌批号
-  sterilizedQty: decimal("sterilizedQty", { precision: 12, scale: 4 }), // 灭菌后数量
-  inspectionRejectQty: decimal("inspectionRejectQty", { precision: 12, scale: 4 }).default("0"), // 检验报废数量
-  sampleQty: decimal("sampleQty", { precision: 12, scale: 4 }).default("0"), // 留样数量
+  packagingDate: date("packagingDate"),
+  packagingType: mysqlEnum("packagingType", [
+    "box",
+    "carton",
+    "pallet",
+    "other",
+  ])
+    .default("carton")
+    .notNull(),
+  packageSpec: varchar("packageSpec", { length: 200 }),
+  workshopName: varchar("workshopName", { length: 100 }),
+  packagingTeam: varchar("packagingTeam", { length: 50 }),
   quantity: decimal("quantity", { precision: 12, scale: 4 }),
-  quantityModifyReason: text("quantityModifyReason"), // 入库数量手动修改原因
   unit: varchar("unit", { length: 20 }),
-  targetWarehouseId: int("targetWarehouseId"), // 目标入库仓库
-  applicantId: int("applicantId"),
-  applicationDate: date("applicationDate"),
-  status: mysqlEnum("status", ["draft", "pending", "approved", "completed", "rejected"]).default("draft").notNull(),
+  operator: varchar("operator", { length: 100 }),
+  reviewer: varchar("reviewer", { length: 100 }),
+  status: mysqlEnum("status", ["draft", "completed"])
+    .default("draft")
+    .notNull(),
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
-export type ProductionWarehouseEntry = typeof productionWarehouseEntries.$inferSelect;
-export type InsertProductionWarehouseEntry = typeof productionWarehouseEntries.$inferInsert;
+export type LargePackagingRecord = typeof largePackagingRecords.$inferSelect;
+export type InsertLargePackagingRecord =
+  typeof largePackagingRecords.$inferInsert;
+
+/**
+ * 批记录审核记录表
+ * 对批次资料完整性进行审核确认，供批记录和法规放行链路复用
+ */
+export const batchRecordReviewRecords = mysqlTable(
+  "batch_record_review_records",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    reviewNo: varchar("reviewNo", { length: 50 }).notNull().unique(),
+    productionOrderId: int("productionOrderId"),
+    productionOrderNo: varchar("productionOrderNo", { length: 50 }),
+    productId: int("productId"),
+    productName: varchar("productName", { length: 200 }),
+    specification: varchar("specification", { length: 200 }),
+    batchNo: varchar("batchNo", { length: 50 }).notNull(),
+    reviewDate: date("reviewDate"),
+    reviewer: varchar("reviewer", { length: 100 }),
+    completenessStatus: mysqlEnum("completenessStatus", [
+      "complete",
+      "incomplete",
+    ])
+      .default("complete")
+      .notNull(),
+    status: mysqlEnum("status", ["draft", "pending", "approved", "rejected"])
+      .default("draft")
+      .notNull(),
+    missingItems: text("missingItems"),
+    reviewOpinion: text("reviewOpinion"),
+    remark: text("remark"),
+    createdBy: int("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
+export type BatchRecordReviewRecord =
+  typeof batchRecordReviewRecords.$inferSelect;
+export type InsertBatchRecordReviewRecord =
+  typeof batchRecordReviewRecords.$inferInsert;
+
+/**
+ * 法规放行记录表
+ * 批记录审核、成品放行、灭菌资料齐备后，由法规负责人进行最终放行
+ */
+export const regulatoryReleaseRecords = mysqlTable(
+  "regulatory_release_records",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    releaseNo: varchar("releaseNo", { length: 50 }).notNull().unique(),
+    productionOrderId: int("productionOrderId"),
+    productionOrderNo: varchar("productionOrderNo", { length: 50 }),
+    productId: int("productId"),
+    productName: varchar("productName", { length: 200 }),
+    specification: varchar("specification", { length: 200 }),
+    batchNo: varchar("batchNo", { length: 50 }).notNull(),
+    sterilizationBatchNo: varchar("sterilizationBatchNo", { length: 50 }),
+    releaseDate: date("releaseDate"),
+    approver: varchar("approver", { length: 100 }),
+    decision: mysqlEnum("decision", ["approved", "conditional", "rejected"])
+      .default("approved")
+      .notNull(),
+    status: mysqlEnum("status", ["draft", "released", "rejected"])
+      .default("draft")
+      .notNull(),
+    basisSummary: text("basisSummary"),
+    relatedReviewNo: varchar("relatedReviewNo", { length: 50 }),
+    remark: text("remark"),
+    createdBy: int("createdBy"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  }
+);
+export type RegulatoryReleaseRecord =
+  typeof regulatoryReleaseRecords.$inferSelect;
+export type InsertRegulatoryReleaseRecord =
+  typeof regulatoryReleaseRecords.$inferInsert;
 
 // ==================== 行政表单 ====================
 
@@ -1512,9 +2657,19 @@ export const overtimeRequests = mysqlTable("overtime_requests", {
   startTime: varchar("startTime", { length: 10 }).notNull(), // HH:mm
   endTime: varchar("endTime", { length: 10 }).notNull(),
   hours: decimal("hours", { precision: 5, scale: 1 }).notNull(),
-  overtimeType: mysqlEnum("overtimeType", ["weekday", "weekend", "holiday"]).default("weekday").notNull(),
+  overtimeType: mysqlEnum("overtimeType", ["weekday", "weekend", "holiday"])
+    .default("weekday")
+    .notNull(),
   reason: text("reason").notNull(),
-  status: mysqlEnum("status", ["draft", "pending", "approved", "rejected", "cancelled"]).default("draft").notNull(),
+  status: mysqlEnum("status", [
+    "draft",
+    "pending",
+    "approved",
+    "rejected",
+    "cancelled",
+  ])
+    .default("draft")
+    .notNull(),
   approvedBy: int("approvedBy"),
   approvedAt: timestamp("approvedAt"),
   remark: text("remark"),
@@ -1533,12 +2688,31 @@ export const leaveRequests = mysqlTable("leave_requests", {
   applicantId: int("applicantId").notNull(),
   applicantName: varchar("applicantName", { length: 64 }).notNull(),
   department: varchar("department", { length: 64 }).notNull(),
-  leaveType: mysqlEnum("leaveType", ["annual", "sick", "personal", "maternity", "paternity", "marriage", "bereavement", "other"]).default("annual").notNull(),
+  leaveType: mysqlEnum("leaveType", [
+    "annual",
+    "sick",
+    "personal",
+    "maternity",
+    "paternity",
+    "marriage",
+    "bereavement",
+    "other",
+  ])
+    .default("annual")
+    .notNull(),
   startDate: date("startDate").notNull(),
   endDate: date("endDate").notNull(),
   days: decimal("days", { precision: 5, scale: 1 }).notNull(),
   reason: text("reason").notNull(),
-  status: mysqlEnum("status", ["draft", "pending", "approved", "rejected", "cancelled"]).default("draft").notNull(),
+  status: mysqlEnum("status", [
+    "draft",
+    "pending",
+    "approved",
+    "rejected",
+    "cancelled",
+  ])
+    .default("draft")
+    .notNull(),
   approvedBy: int("approvedBy"),
   approvedAt: timestamp("approvedAt"),
   remark: text("remark"),
@@ -1563,7 +2737,15 @@ export const outingRequests = mysqlTable("outing_requests", {
   destination: varchar("destination", { length: 200 }).notNull(),
   purpose: text("purpose").notNull(),
   contactPhone: varchar("contactPhone", { length: 20 }),
-  status: mysqlEnum("status", ["draft", "pending", "approved", "rejected", "cancelled"]).default("draft").notNull(),
+  status: mysqlEnum("status", [
+    "draft",
+    "pending",
+    "approved",
+    "rejected",
+    "cancelled",
+  ])
+    .default("draft")
+    .notNull(),
   approvedBy: int("approvedBy"),
   approvedAt: timestamp("approvedAt"),
   remark: text("remark"),
@@ -1572,7 +2754,6 @@ export const outingRequests = mysqlTable("outing_requests", {
 });
 export type OutingRequest = typeof outingRequests.$inferSelect;
 export type InsertOutingRequest = typeof outingRequests.$inferInsert;
-
 
 // ==================== UDI 标签管理 ====================
 export const udiLabels = mysqlTable("udi_labels", {
@@ -1585,16 +2766,36 @@ export const udiLabels = mysqlTable("udi_labels", {
   registrationNo: varchar("registrationNo", { length: 100 }),
   riskLevel: mysqlEnum("riskLevel", ["I", "II", "III"]),
   udiDi: varchar("udiDi", { length: 100 }).notNull(),
-  issuer: mysqlEnum("issuer", ["GS1", "HIBC", "ICCBBA", "OTHER"]).default("GS1"),
+  issuer: mysqlEnum("issuer", ["GS1", "HIBC", "ICCBBA", "OTHER"]).default(
+    "GS1"
+  ),
   batchNo: varchar("batchNo", { length: 50 }),
   serialNo: varchar("serialNo", { length: 50 }),
   productionDate: date("productionDate"),
   expiryDate: date("expiryDate"),
-  carrierType: mysqlEnum("carrierType", ["datamatrix", "gs1_128", "qr_code", "rfid"]).default("datamatrix"),
-  labelTemplate: mysqlEnum("labelTemplate", ["single", "double", "box", "pallet"]).default("single"),
+  carrierType: mysqlEnum("carrierType", [
+    "datamatrix",
+    "gs1_128",
+    "qr_code",
+    "rfid",
+  ]).default("datamatrix"),
+  labelTemplate: mysqlEnum("labelTemplate", [
+    "single",
+    "double",
+    "box",
+    "pallet",
+  ]).default("single"),
   printQty: int("printQty").default(1).notNull(),
   printedQty: int("printedQty").default(0).notNull(),
-  status: mysqlEnum("status", ["pending", "printing", "printed", "used", "recalled"]).default("pending").notNull(),
+  status: mysqlEnum("status", [
+    "pending",
+    "printing",
+    "printed",
+    "used",
+    "recalled",
+  ])
+    .default("pending")
+    .notNull(),
   printDate: timestamp("printDate"),
   printedBy: int("printedBy"),
   nmpaSubmitted: boolean("nmpaSubmitted").default(false),
@@ -1621,11 +2822,23 @@ export const goodsReceipts = mysqlTable("goods_receipts", {
   supplierName: varchar("supplierName", { length: 200 }),
   warehouseId: int("warehouseId").notNull(),
   receiptDate: date("receiptDate").notNull(),
-  status: mysqlEnum("status", ["pending_inspection", "inspecting", "passed", "failed", "warehoused"]).default("pending_inspection").notNull(),
+  status: mysqlEnum("status", [
+    "pending_inspection",
+    "inspecting",
+    "passed",
+    "failed",
+    "warehoused",
+  ])
+    .default("pending_inspection")
+    .notNull(),
   inspectorId: int("inspectorId"),
   inspectorName: varchar("inspectorName", { length: 64 }),
   inspectionDate: date("inspectionDate"),
-  inspectionResult: mysqlEnum("inspectionResult", ["pass", "fail", "conditional_pass"]),
+  inspectionResult: mysqlEnum("inspectionResult", [
+    "pass",
+    "fail",
+    "conditional_pass",
+  ]),
   inspectionRemark: text("inspectionRemark"),
   inboundDocumentNo: varchar("inboundDocumentNo", { length: 50 }),
   inboundAt: timestamp("inboundAt"),
@@ -1669,7 +2882,9 @@ export type InsertGoodsReceiptItem = typeof goodsReceiptItems.$inferInsert;
 export const emails = mysqlTable("emails", {
   id: int("id").autoincrement().primaryKey(),
   messageId: varchar("messageId", { length: 512 }),
-  folder: mysqlEnum("folder", ["inbox", "sent", "draft", "trash"]).default("inbox").notNull(),
+  folder: mysqlEnum("folder", ["inbox", "sent", "draft", "trash"])
+    .default("inbox")
+    .notNull(),
   subject: varchar("subject", { length: 500 }),
   fromAddress: varchar("fromAddress", { length: 320 }),
   fromName: varchar("fromName", { length: 200 }),
@@ -1733,34 +2948,46 @@ export const inspectionRequirements = mysqlTable("inspection_requirements", {
   productCode: varchar("productCode", { length: 50 }),
   productName: varchar("productName", { length: 200 }).notNull(),
   version: varchar("version", { length: 20 }).default("1.0"),
-  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "inactive"])
+    .default("active")
+    .notNull(),
   remark: text("remark"),
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type InspectionRequirement = typeof inspectionRequirements.$inferSelect;
-export type InsertInspectionRequirement = typeof inspectionRequirements.$inferInsert;
+export type InsertInspectionRequirement =
+  typeof inspectionRequirements.$inferInsert;
 
 /**
  * 检验要求明细表：每条检验项目（定性/定量）
  */
-export const inspectionRequirementItems = mysqlTable("inspection_requirement_items", {
-  id: int("id").autoincrement().primaryKey(),
-  requirementId: int("requirementId").notNull(),
-  itemName: varchar("itemName", { length: 200 }).notNull(),
-  itemType: mysqlEnum("itemType", ["qualitative", "quantitative"]).notNull(),
-  standard: varchar("standard", { length: 500 }),
-  minVal: decimal("minVal", { precision: 12, scale: 4 }),
-  maxVal: decimal("maxVal", { precision: 12, scale: 4 }),
-  unit: varchar("unit", { length: 20 }),
-  acceptedValues: varchar("acceptedValues", { length: 500 }),
-  sortOrder: int("sortOrder").default(0),
-  remark: text("remark"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-export type InspectionRequirementItem = typeof inspectionRequirementItems.$inferSelect;
-export type InsertInspectionRequirementItem = typeof inspectionRequirementItems.$inferInsert;
+export const inspectionRequirementItems = mysqlTable(
+  "inspection_requirement_items",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    requirementId: int("requirementId").notNull(),
+    sourceDataId: varchar("sourceDataId", { length: 64 }),
+    itemName: varchar("itemName", { length: 200 }).notNull(),
+    itemType: mysqlEnum("itemType", ["qualitative", "quantitative"]).notNull(),
+    standard: varchar("standard", { length: 500 }),
+    standardRequirement: text("standardRequirement"),
+    standardBasis: text("standardBasis"),
+    inspectionRequirement: text("inspectionRequirement"),
+    minVal: decimal("minVal", { precision: 12, scale: 4 }),
+    maxVal: decimal("maxVal", { precision: 12, scale: 4 }),
+    unit: varchar("unit", { length: 20 }),
+    acceptedValues: varchar("acceptedValues", { length: 500 }),
+    sortOrder: int("sortOrder").default(0),
+    remark: text("remark"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  }
+);
+export type InspectionRequirementItem =
+  typeof inspectionRequirementItems.$inferSelect;
+export type InsertInspectionRequirementItem =
+  typeof inspectionRequirementItems.$inferInsert;
 
 // ==================== 来料检验单（IQC 记录） ====================
 
@@ -1770,7 +2997,9 @@ export type InsertInspectionRequirementItem = typeof inspectionRequirementItems.
 export const iqcInspections = mysqlTable("iqc_inspections", {
   id: int("id").autoincrement().primaryKey(),
   inspectionNo: varchar("inspectionNo", { length: 50 }).notNull().unique(),
-  reportMode: mysqlEnum("reportMode", ["online", "offline"]).default("online").notNull(),
+  reportMode: mysqlEnum("reportMode", ["online", "offline"])
+    .default("online")
+    .notNull(),
   goodsReceiptId: int("goodsReceiptId"),
   goodsReceiptNo: varchar("goodsReceiptNo", { length: 50 }),
   goodsReceiptItemId: int("goodsReceiptItemId"),
@@ -1791,7 +3020,14 @@ export const iqcInspections = mysqlTable("iqc_inspections", {
   inspectionDate: date("inspectionDate"),
   inspectorId: int("inspectorId"),
   inspectorName: varchar("inspectorName", { length: 64 }),
-  result: mysqlEnum("result", ["pending", "passed", "failed", "conditional_pass"]).default("pending").notNull(),
+  result: mysqlEnum("result", [
+    "pending",
+    "passed",
+    "failed",
+    "conditional_pass",
+  ])
+    .default("pending")
+    .notNull(),
   remark: text("remark"),
   attachments: text("attachments"),
   signatures: text("signatures"),
@@ -1819,7 +3055,9 @@ export const iqcInspectionItems = mysqlTable("iqc_inspection_items", {
   sampleValues: text("sampleValues"),
   acceptedValues: varchar("acceptedValues", { length: 500 }),
   actualValue: varchar("actualValue", { length: 200 }),
-  conclusion: mysqlEnum("conclusion", ["pass", "fail", "pending"]).default("pending").notNull(),
+  conclusion: mysqlEnum("conclusion", ["pass", "fail", "pending"])
+    .default("pending")
+    .notNull(),
   sortOrder: int("sortOrder").default(0),
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1834,7 +3072,9 @@ export type InsertIqcInspectionItem = typeof iqcInspectionItems.$inferInsert;
 export const marketingLeads = mysqlTable("marketing_leads", {
   id: int("id").autoincrement().primaryKey(),
   leadNo: varchar("leadNo", { length: 50 }).unique(),
-  market: mysqlEnum("market", ["domestic", "overseas"]).notNull().default("overseas"),
+  market: mysqlEnum("market", ["domestic", "overseas"])
+    .notNull()
+    .default("overseas"),
   company: varchar("company", { length: 200 }).notNull(),
   contact: varchar("contact", { length: 100 }).notNull(),
   title: varchar("title", { length: 100 }),
@@ -1846,7 +3086,16 @@ export const marketingLeads = mysqlTable("marketing_leads", {
   province: varchar("province", { length: 50 }),
   region: varchar("region", { length: 50 }),
   customerType: varchar("customerType", { length: 50 }),
-  status: mysqlEnum("status", ["new", "contacted", "interested", "quoted", "won", "lost"]).default("new").notNull(),
+  status: mysqlEnum("status", [
+    "new",
+    "contacted",
+    "interested",
+    "quoted",
+    "won",
+    "lost",
+  ])
+    .default("new")
+    .notNull(),
   grade: mysqlEnum("grade", ["A", "B", "C"]).default("B").notNull(),
   source: varchar("source", { length: 100 }),
   notes: text("notes"),
@@ -1866,7 +3115,16 @@ export type InsertMarketingLead = typeof marketingLeads.$inferInsert;
 export const leadFollowUps = mysqlTable("lead_follow_ups", {
   id: int("id").autoincrement().primaryKey(),
   leadId: int("leadId").notNull(),
-  type: mysqlEnum("type", ["call", "wechat", "whatsapp", "email", "meeting", "other"]).notNull().default("call"),
+  type: mysqlEnum("type", [
+    "call",
+    "wechat",
+    "whatsapp",
+    "email",
+    "meeting",
+    "other",
+  ])
+    .notNull()
+    .default("call"),
   content: text("content").notNull(),
   result: varchar("result", { length: 200 }),
   nextAction: varchar("nextAction", { length: 200 }),
@@ -1884,13 +3142,15 @@ export type InsertLeadFollowUp = typeof leadFollowUps.$inferInsert;
  */
 export const wechatBindings = mysqlTable("wechat_bindings", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().unique(),          // ERP 用户 ID（唯一，一人一绑）
+  userId: int("userId").notNull().unique(), // ERP 用户 ID（唯一，一人一绑）
   wxOpenid: varchar("wxOpenid", { length: 64 }).notNull().unique(), // 微信公众号 openid
   wxNickname: varchar("wxNickname", { length: 100 }), // 微信昵称（可选，用于展示）
-  wxAvatarUrl: text("wxAvatarUrl"),                  // 微信头像 URL（可选）
-  bindCode: varchar("bindCode", { length: 32 }),     // 绑定验证码（扫码时生成）
+  wxAvatarUrl: text("wxAvatarUrl"), // 微信头像 URL（可选）
+  bindCode: varchar("bindCode", { length: 32 }), // 绑定验证码（扫码时生成）
   bindCodeExpiredAt: timestamp("bindCodeExpiredAt"), // 验证码过期时间
-  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  status: mysqlEnum("status", ["active", "inactive"])
+    .default("active")
+    .notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -1907,14 +3167,13 @@ export const wechatNotifyLogs = mysqlTable("wechat_notify_logs", {
   templateId: varchar("templateId", { length: 64 }).notNull(),
   title: varchar("title", { length: 200 }),
   content: text("content"),
-  bizType: varchar("bizType", { length: 50 }),       // 业务类型：workflow_todo / approval_result 等
-  bizId: varchar("bizId", { length: 50 }),           // 业务单号
+  bizType: varchar("bizType", { length: 50 }), // 业务类型：workflow_todo / approval_result 等
+  bizId: varchar("bizId", { length: 50 }), // 业务单号
   status: mysqlEnum("status", ["success", "failed", "skipped"]).notNull(),
   errMsg: text("errMsg"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type WechatNotifyLog = typeof wechatNotifyLogs.$inferSelect;
-
 
 // ==================== 法规事务模块 (Regulatory Affairs - RA) ====================
 
@@ -1926,8 +3185,18 @@ export const raProjects = mysqlTable("ra_projects", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   productId: int("productId"),
-  market: mysqlEnum("market", ["EU_MDR", "US_FDA", "CN_NMPA"]).notNull().default("EU_MDR"),
-  status: mysqlEnum("status", ["planning", "in_progress", "submitted", "approved", "archived"]).default("planning").notNull(),
+  market: mysqlEnum("market", ["EU_MDR", "US_FDA", "CN_NMPA"])
+    .notNull()
+    .default("EU_MDR"),
+  status: mysqlEnum("status", [
+    "planning",
+    "in_progress",
+    "submitted",
+    "approved",
+    "archived",
+  ])
+    .default("planning")
+    .notNull(),
   currentStep: int("currentStep").default(1).notNull(),
   classification: json("classification"),
   technicalChars: json("technicalChars"),
@@ -1950,11 +3219,15 @@ export const companies = mysqlTable("companies", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 200 }).notNull(),
   shortName: varchar("shortName", { length: 50 }),
-  type: mysqlEnum("type", ["sales", "supplier", "other"]).notNull().default("sales"),
+  type: mysqlEnum("type", ["sales", "supplier", "other"])
+    .notNull()
+    .default("sales"),
   modules: text("modules"),
   description: text("description"),
   color: varchar("color", { length: 20 }),
-  status: mysqlEnum("status", ["active", "inactive"]).notNull().default("active"),
+  status: mysqlEnum("status", ["active", "inactive"])
+    .notNull()
+    .default("active"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -1964,6 +3237,16 @@ export const companyUserAccess = mysqlTable("company_user_access", {
   id: int("id").autoincrement().primaryKey(),
   companyId: int("companyId").notNull(),
   userId: int("userId").notNull(),
+  role: mysqlEnum("role", ["user", "admin"]).default("admin"),
+  dataScope: mysqlEnum("dataScope", ["self", "department", "all"]).default(
+    "self"
+  ),
+  department: varchar("department", { length: 255 }),
+  position: varchar("position", { length: 64 }),
+  emailSignature: text("emailSignature"),
+  visibleApps: text("visibleApps"),
+  visibleForms: text("visibleForms"),
+  dashboardPermissions: text("dashboardPermissions"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type CompanyUserAccess = typeof companyUserAccess.$inferSelect;

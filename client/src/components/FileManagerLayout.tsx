@@ -6,10 +6,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Settings } from "lucide-react";
+import { ArrowLeft, Settings } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import shenyunLogo from "@/assets/2ac420a999cddd5f145a62155f78b13e.png";
+import { useCompanyBranding } from "@/hooks/useCompanyBranding";
 
 interface FileManagerLayoutProps {
   children: React.ReactNode;
@@ -18,6 +19,7 @@ interface FileManagerLayoutProps {
 export default function FileManagerLayout({ children }: FileManagerLayoutProps) {
   const [, navigate] = useLocation();
   const { user } = useAuth();
+  const { companyShortName } = useCompanyBranding();
 
   const userName = String((user as any)?.name ?? "U");
   const userEmail = String((user as any)?.email ?? "");
@@ -36,10 +38,18 @@ export default function FileManagerLayout({ children }: FileManagerLayoutProps) 
         }}
       >
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors mr-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            返回 ERP
+          </button>
           <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
-          <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
+          <span className="text-sm font-semibold text-slate-700 hidden sm:block">{companyShortName}</span>
           <span className="text-slate-300 hidden sm:block">·</span>
-          <span className="text-sm text-slate-500 hidden sm:block">知识库</span>
+          <span className="text-sm text-slate-500 hidden sm:block">文件管理</span>
         </div>
         <div className="flex items-center gap-1">
           <DropdownMenu>

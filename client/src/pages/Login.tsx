@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { LOCAL_AUTH_USER_KEY } from "@/const";
 import { trpc } from "@/lib/trpc";
@@ -14,13 +14,40 @@ const DEFAULT_PASSWORD = "666-11";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
-  const { data: companies = [] } = trpc.companies.list.useQuery();
+  const trpcUtils = trpc.useUtils();
+  const { data: companies = [], isLoading: companiesLoading } = trpc.companies.list.useQuery();
   const loginMutation = trpc.auth.login.useMutation();
+  const [companyOptions, setCompanyOptions] = useState<any[]>([]);
   
   const [selectedCompany, setSelectedCompany] = useState<any>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if ((companies as any[]).length > 0) {
+      setCompanyOptions(companies as any[]);
+      return;
+    }
+    if (companiesLoading) return;
+
+    let cancelled = false;
+    fetch("/api/trpc/companies.list?batch=1&input=%7B%7D", { credentials: "include" })
+      .then((res) => res.json())
+      .then((payload) => {
+        const rows = payload?.[0]?.result?.data?.json;
+        if (!cancelled && Array.isArray(rows)) {
+          setCompanyOptions(rows);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load companies:", error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companies, companiesLoading]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -51,9 +78,16 @@ export default function LoginPage() {
         localStorage.setItem(LOCAL_AUTH_USER_KEY, JSON.stringify(result.user));
         localStorage.setItem("erp-active-company-id", String(selectedCompany.id));
         localStorage.setItem("erp-active-company", JSON.stringify(selectedCompany));
-        
+        trpcUtils.auth.me.setData(undefined, result.user as any);
+        await Promise.allSettled([
+          trpcUtils.auth.me.invalidate(),
+          trpcUtils.workflowCenter.list.invalidate(),
+          trpcUtils.dashboard.stats.invalidate(),
+          trpcUtils.companies.myCompanies.invalidate(),
+        ]);
+
         toast.success("登录成功");
-        setLocation("/");
+        window.location.href = "/";
       }
     } catch (error: any) {
       console.error("Login error:", error);
@@ -81,7 +115,7 @@ export default function LoginPage() {
           {!selectedCompany ? (
             /* ========== 第一步：选择公司 ========== */
             <div className="space-y-3">
-              {(companies as any[]).map((company: any) => (
+              {companyOptions.map((company: any) => (
                 <button
                   key={company.id}
                   type="button"

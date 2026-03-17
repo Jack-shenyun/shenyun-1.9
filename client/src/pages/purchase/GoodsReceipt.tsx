@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import {
   PackageCheck, Plus, Search, Eye, Trash2, MoreHorizontal, CheckCircle, XCircle, ClipboardCheck,
@@ -15,15 +15,17 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { formatDate } from "@/lib/formatters";
+import { formatDate, roundToDigits } from "@/lib/formatters";
 
 // ==================== 类型 ====================
 type ReceiptLine = {
@@ -56,6 +58,7 @@ type FormData = {
 };
 
 const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+  pending_receipt:   { label: "待到货", variant: "outline" },
   pending_inspection: { label: "待质检", variant: "secondary" },
   inspecting:        { label: "质检中", variant: "default" },
   passed:            { label: "质检合格", variant: "default" },
@@ -65,8 +68,11 @@ const STATUS_MAP: Record<string, { label: string; variant: "default" | "secondar
 
 // ==================== 主组件 ====================
 export default function GoodsReceiptPage() {
+  const PAGE_SIZE = 10;
+  const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
 
   // 新建弹窗
   const [showCreate, setShowCreate] = useState(false);
@@ -95,16 +101,20 @@ export default function GoodsReceiptPage() {
     inspectionRemark: "",
     items: [] as Array<{ qualifiedQty: string; unqualifiedQty: string }>,
   });
+  const receiptStatusFilter = ["pending_inspection", "inspecting", "passed", "failed", "warehoused"].includes(statusFilter)
+    ? statusFilter
+    : undefined;
 
   // ==================== 数据查询 ====================
-  const { data: receiptList = [], refetch } = trpc.goodsReceipts.list.useQuery({
-    status: statusFilter === "all" ? undefined : statusFilter,
+  const { data: receiptList = [] } = trpc.goodsReceipts.list.useQuery({
+    status: receiptStatusFilter,
     search: search || undefined,
     limit: 200,
   });
   const { data: warehouseList = [] } = trpc.warehouses.list.useQuery({ status: "active" });
   const { data: productList = [] } = trpc.products.list.useQuery({ limit: 1000 });
   const { data: poApproved = [] } = trpc.purchaseOrders.list.useQuery({ status: "approved", limit: 200 });
+  const { data: poIssued = [] } = trpc.purchaseOrders.list.useQuery({ status: "issued", limit: 200 });
   const { data: poOrdered = [] } = trpc.purchaseOrders.list.useQuery({ status: "ordered", limit: 200 });
   const { data: poPartial = [] } = trpc.purchaseOrders.list.useQuery({ status: "partial_received", limit: 200 });
   const { data: poDetail } = trpc.purchaseOrders.getById.useQuery(
@@ -115,6 +125,34 @@ export default function GoodsReceiptPage() {
     { id: detailId! },
     { enabled: !!detailId && showDetail }
   );
+  const goodsReceiptPrintData = useMemo(() => {
+    if (!detailData) return null;
+    return {
+      receiptNo: String((detailData as any).receiptNo || ""),
+      purchaseOrderNo: String((detailData as any).purchaseOrderNo || ""),
+      supplierName: String((detailData as any).supplierName || ""),
+      receiptDate: String((detailData as any).receiptDate || ""),
+      status: STATUS_MAP[(detailData as any).status]?.label || String((detailData as any).status || ""),
+      inspectorName: String((detailData as any).inspectorName || ""),
+      inspectionDate: String((detailData as any).inspectionDate || ""),
+      inspectionResult:
+        (detailData as any).inspectionResult === "pass"
+          ? "合格"
+          : (detailData as any).inspectionResult === "fail"
+            ? "不合格"
+            : "-",
+      remark: String((detailData as any).remark || (detailData as any).inspectionRemark || ""),
+      items: (((detailData as any).items ?? []) as any[]).map((item: any) => ({
+        materialName: item.materialName || "",
+        specification: item.specification || "",
+        orderedQty: Number(item.orderedQty || 0),
+        receivedQty: Number(item.receivedQty || 0),
+        qualifiedQty: Number(item.qualifiedQty || 0),
+        batchNo: item.batchNo || "",
+        unit: item.unit || "",
+      })),
+    };
+  }, [detailData]);
   const { data: inspectData } = trpc.goodsReceipts.getById.useQuery(
     { id: inspectId! },
     { enabled: !!inspectId && showInspect }
@@ -126,7 +164,10 @@ export default function GoodsReceiptPage() {
   const createMutation = trpc.goodsReceipts.create.useMutation({
     onSuccess: () => {
       toast.success("到货单创建成功，已通知质量部检验");
-      refetch();
+      utils.goodsReceipts.list.invalidate();
+      utils.purchaseOrders.list.invalidate();
+      utils.workflowCenter.list.invalidate();
+      utils.dashboard.stats.invalidate();
       resetForm();
       setShowCreate(false);
       setSubmitting(false);
@@ -134,16 +175,34 @@ export default function GoodsReceiptPage() {
     onError: (e) => { toast.error("创建失败：" + e.message); setSubmitting(false); },
   });
   const updateMutation = trpc.goodsReceipts.update.useMutation({
-    onSuccess: () => { toast.success("质检登记成功"); refetch(); setShowInspect(false); },
+    onSuccess: () => {
+      toast.success("质检登记成功");
+      utils.goodsReceipts.list.invalidate();
+      utils.purchaseOrders.list.invalidate();
+      utils.workflowCenter.list.invalidate();
+      utils.dashboard.stats.invalidate();
+      setShowInspect(false);
+    },
     onError: (e) => toast.error("操作失败：" + e.message),
   });
   const deleteMutation = trpc.goodsReceipts.delete.useMutation({
-    onSuccess: () => { toast.success("已删除"); refetch(); },
+    onSuccess: () => {
+      toast.success("已删除");
+      utils.goodsReceipts.list.invalidate();
+      utils.purchaseOrders.list.invalidate();
+      utils.workflowCenter.list.invalidate();
+      utils.dashboard.stats.invalidate();
+    },
     onError: (e) => toast.error("删除失败：" + e.message),
   });
 
   // ==================== 采购订单列表 ====================
-  const allPOs = [...(poApproved as any[]), ...(poOrdered as any[]), ...(poPartial as any[])];
+  const allPOs = Array.from(
+    new Map(
+      [...(poApproved as any[]), ...(poIssued as any[]), ...(poOrdered as any[]), ...(poPartial as any[])]
+        .map((po: any) => [Number(po.id), po])
+    ).values()
+  );
   const filteredPOs = allPOs.filter((po) => {
     if (!poSearch) return true;
     const s = poSearch.toLowerCase();
@@ -163,6 +222,19 @@ export default function GoodsReceiptPage() {
     setLines([]); // 清空旧明细，等 poDetail 加载后自动填充
     setShowPoDialog(false);
     setPoSearch("");
+  }
+
+  function openCreateFromOrder(po: any) {
+    resetForm();
+    setFormData((prev) => ({
+      ...prev,
+      purchaseOrderId: po.id,
+      purchaseOrderNo: po.orderNo,
+      supplierId: po.supplierId ?? null,
+      supplierName: po.supplierName ?? "",
+    }));
+    setLines([]);
+    setShowCreate(true);
   }
 
   // 当 poDetail 加载后自动填充明细行
@@ -200,7 +272,7 @@ export default function GoodsReceiptPage() {
     const y = now.getFullYear();
     const m = String(now.getMonth() + 1).padStart(2, "0");
     const d = String(now.getDate()).padStart(2, "0");
-    const seq = String((receiptList as any[]).length + 1).padStart(4, "0");
+    const seq = String(Date.now()).slice(-4);
     setFormData({
       receiptNo: `GR-${y}${m}${d}-${seq}`,
       purchaseOrderId: null, purchaseOrderNo: "",
@@ -224,8 +296,9 @@ export default function GoodsReceiptPage() {
     const validLines = lines.filter((l) => Number(l.thisReceiptQty) > 0);
     if (validLines.length === 0) return toast.error("请填写本次到货数量");
     for (const l of validLines) {
-      if (l.isMedicalDevice && l.isSterilized && !l.sterilizationBatchNo) {
-        return toast.error(`${l.materialName} 需填写灭菌批号`);
+      const maxReceiptQty = roundToDigits(Number(l.pendingQty) * 1.1, 4);
+      if (Number(l.thisReceiptQty) > maxReceiptQty) {
+        return toast.error(`${l.materialName} 的本次到货数量不能超过待收货数量的110%`);
       }
     }
     setSubmitting(true);
@@ -248,7 +321,6 @@ export default function GoodsReceiptPage() {
         orderedQty: String(l.orderedQty),
         receivedQty: l.thisReceiptQty,
         batchNo: l.batchNo || undefined,
-        sterilizationBatchNo: l.sterilizationBatchNo || undefined,
       })),
     });
   }
@@ -293,14 +365,63 @@ export default function GoodsReceiptPage() {
     });
   }
 
-  // ==================== 统计 ====================
+  // ==================== 统计 / 列表 ====================
   const rl = receiptList as any[];
+  const pendingOrderRows = allPOs
+    .filter((po: any) => {
+      const statusMatch = statusFilter === "all" || statusFilter === "pending_receipt";
+      const searchMatch = !search || [po.orderNo, po.supplierName]
+        .map((value) => String(value || "").toLowerCase())
+        .some((value) => value.includes(search.toLowerCase()));
+      return statusMatch && searchMatch;
+    })
+    .map((po: any) => ({
+      rowType: "order" as const,
+      id: `po-${po.id}`,
+      purchaseOrderId: po.id,
+      receiptNo: "-",
+      purchaseOrderNo: po.orderNo,
+      supplierName: po.supplierName ?? "-",
+      receiptDate: po.expectedDate || po.orderDate,
+      warehouseName: "-",
+      status: "pending_receipt",
+      inspectorName: "-",
+      inspectionDate: null,
+      source: po,
+    }));
+  const receiptRows = statusFilter === "pending_receipt"
+    ? []
+    : rl.map((receipt: any) => {
+        const wh = (warehouseList as any[]).find((w: any) => w.id === receipt.warehouseId);
+        return {
+          rowType: "receipt" as const,
+          id: `gr-${receipt.id}`,
+          warehouseName: wh?.name ?? "-",
+          source: receipt,
+          ...receipt,
+        };
+      });
+  const allRows = [...pendingOrderRows, ...receiptRows].sort((a: any, b: any) => {
+    const aTime = new Date(String(a.receiptDate || "")).getTime() || 0;
+    const bTime = new Date(String(b.receiptDate || "")).getTime() || 0;
+    return bTime - aTime;
+  });
+  const totalPages = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE));
+  const pagedRows = allRows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const stats = {
-    total: rl.length,
-    pending: rl.filter((r) => r.status === "pending_inspection").length,
-    passed: rl.filter((r) => r.status === "passed").length,
+    total: allRows.length,
+    pendingReceipt: pendingOrderRows.length,
+    pendingInspection: rl.filter((r) => r.status === "pending_inspection" || r.status === "inspecting").length,
     warehoused: rl.filter((r) => r.status === "warehoused").length,
   };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter, allRows.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   // ==================== 渲染 ====================
   return (
@@ -311,21 +432,21 @@ export default function GoodsReceiptPage() {
           <div className="flex items-center gap-3">
             <PackageCheck className="w-6 h-6 text-blue-600" />
             <div>
-              <h1 className="text-xl font-semibold">采购到货管理</h1>
-              <p className="text-sm text-gray-500">记录采购到货，通知质量部检验，合格后方可入库</p>
+              <h1 className="text-xl font-semibold">到货管理</h1>
+              <p className="text-sm text-gray-500">已审批采购订单进入到货列表，到货后提交质检，合格后方可入库</p>
             </div>
           </div>
           <Button onClick={openCreate} className="gap-2">
-            <Plus className="w-4 h-4" /> 新建到货单
+            <Plus className="w-4 h-4" /> 新建到货
           </Button>
         </div>
 
         {/* 统计卡片 */}
         <div className="grid grid-cols-4 gap-4">
           {[
-            { label: "到货单总数", value: stats.total, color: "text-gray-700" },
-            { label: "待质检", value: stats.pending, color: "text-yellow-600" },
-            { label: "质检合格", value: stats.passed, color: "text-green-600" },
+            { label: "到货总数", value: stats.total, color: "text-gray-700" },
+            { label: "待到货", value: stats.pendingReceipt, color: "text-amber-600" },
+            { label: "待质检", value: stats.pendingInspection, color: "text-green-600" },
             { label: "已入库", value: stats.warehoused, color: "text-blue-600" },
           ].map((s) => (
             <div key={s.label} className="bg-white rounded-lg border p-4">
@@ -339,7 +460,7 @@ export default function GoodsReceiptPage() {
         <div className="flex gap-3">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <Input className="pl-9" placeholder="搜索到货单号、采购订单号、供应商..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input className="pl-9" placeholder="搜索单号、采购订单号、供应商..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-36">
@@ -347,6 +468,7 @@ export default function GoodsReceiptPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部状态</SelectItem>
+              <SelectItem value="pending_receipt">待到货</SelectItem>
               <SelectItem value="pending_inspection">待质检</SelectItem>
               <SelectItem value="inspecting">质检中</SelectItem>
               <SelectItem value="passed">质检合格</SelectItem>
@@ -373,44 +495,51 @@ export default function GoodsReceiptPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rl.length === 0 ? (
+              {allRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-gray-400 py-12">暂无到货记录</TableCell>
+                  <TableCell colSpan={9} className="text-center text-gray-400 py-12">暂无到货数据</TableCell>
                 </TableRow>
-              ) : rl.map((r) => {
-                const wh = (warehouseList as any[]).find((w: any) => w.id === r.warehouseId);
-                const st = STATUS_MAP[r.status] ?? { label: r.status, variant: "outline" as const };
+              ) : pagedRows.map((row) => {
+                const st = STATUS_MAP[row.status] ?? { label: row.status, variant: "outline" as const };
                 return (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-mono text-sm">{r.receiptNo}</TableCell>
-                    <TableCell className="font-mono text-sm">{r.purchaseOrderNo}</TableCell>
-                    <TableCell>{r.supplierName ?? "-"}</TableCell>
-                    <TableCell>{formatDate(r.receiptDate)}</TableCell>
-                    <TableCell>{wh?.name ?? "-"}</TableCell>
+                  <TableRow key={row.id}>
+                    <TableCell className="font-mono text-sm">{row.receiptNo || "-"}</TableCell>
+                    <TableCell className="font-mono text-sm">{row.purchaseOrderNo}</TableCell>
+                    <TableCell>{row.supplierName ?? "-"}</TableCell>
+                    <TableCell>{row.receiptDate ? formatDate(row.receiptDate) : "-"}</TableCell>
+                    <TableCell>{row.warehouseName ?? "-"}</TableCell>
                     <TableCell><Badge variant={st.variant}>{st.label}</Badge></TableCell>
-                    <TableCell>{r.inspectorName ?? "-"}</TableCell>
-                    <TableCell>{r.inspectionDate ? formatDate(r.inspectionDate) : "-"}</TableCell>
+                    <TableCell>{row.inspectorName ?? "-"}</TableCell>
+                    <TableCell>{row.inspectionDate ? formatDate(row.inspectionDate) : "-"}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm"><MoreHorizontal className="w-4 h-4" /></Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => { setDetailId(r.id); setShowDetail(true); }}>
-                            <Eye className="w-4 h-4 mr-2" /> 查看详情
-                          </DropdownMenuItem>
-                          {(r.status === "pending_inspection" || r.status === "inspecting") && (
-                            <DropdownMenuItem onClick={() => openInspect(r.id)}>
-                              <ClipboardCheck className="w-4 h-4 mr-2" /> 质检登记
+                          {row.rowType === "order" ? (
+                            <DropdownMenuItem onClick={() => openCreateFromOrder(row.source)}>
+                              <PackageCheck className="w-4 h-4 mr-2" /> 到货
                             </DropdownMenuItem>
-                          )}
-                          {r.status === "pending_inspection" && (
-                            <DropdownMenuItem
-                              className="text-red-600"
-                              onClick={() => { if (confirm("确认删除此到货单？")) deleteMutation.mutate({ id: r.id }); }}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" /> 删除
-                            </DropdownMenuItem>
+                          ) : (
+                            <>
+                              <DropdownMenuItem onClick={() => { setDetailId(row.source.id); setShowDetail(true); }}>
+                                <Eye className="w-4 h-4 mr-2" /> 查看详情
+                              </DropdownMenuItem>
+                              {(row.status === "pending_inspection" || row.status === "inspecting") && (
+                                <DropdownMenuItem onClick={() => openInspect(row.source.id)}>
+                                  <ClipboardCheck className="w-4 h-4 mr-2" /> 质检登记
+                                </DropdownMenuItem>
+                              )}
+                              {row.status !== "warehoused" && (
+                                <DropdownMenuItem
+                                  className="text-red-600"
+                                  onClick={() => { if (confirm("确认删除此到货单？")) deleteMutation.mutate({ id: row.source.id }); }}
+                                >
+                                  <Trash2 className="w-4 h-4 mr-2" /> 删除
+                                </DropdownMenuItem>
+                              )}
+                            </>
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -421,11 +550,12 @@ export default function GoodsReceiptPage() {
             </TableBody>
           </Table>
         </div>
+        <TablePaginationFooter total={allRows.length} page={currentPage} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
       </div>
 
       {/* ==================== 新建到货单弹窗 ==================== */}
       <DraggableDialog open={showCreate} onOpenChange={setShowCreate} defaultWidth={920} defaultHeight={700}>
-        <DraggableDialogContent title="新建到货单">
+        <DraggableDialogContent title="到货登记">
           <div className="flex flex-col h-full">
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {/* 基本信息 */}
@@ -487,7 +617,6 @@ export default function GoodsReceiptPage() {
                           <TableHead className="text-right">待收货</TableHead>
                           <TableHead className="w-28">本次到货 <span className="text-red-500">*</span></TableHead>
                           <TableHead>批次号</TableHead>
-                          <TableHead>灭菌批号</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -503,7 +632,14 @@ export default function GoodsReceiptPage() {
                                 type="number" min="0"
                                 className="w-24 text-right"
                                 value={line.thisReceiptQty}
-                                onChange={(e) => setLines((prev) => prev.map((l, i) => i === idx ? { ...l, thisReceiptQty: e.target.value } : l))}
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  const maxReceiptQty = roundToDigits(Number(line.pendingQty) * 1.1, 4);
+                                  const nextQty = raw === ""
+                                    ? ""
+                                    : String(Math.min(Math.max(0, Number(raw)), maxReceiptQty));
+                                  setLines((prev) => prev.map((l, i) => i === idx ? { ...l, thisReceiptQty: nextQty } : l));
+                                }}
                               />
                             </TableCell>
                             <TableCell>
@@ -513,18 +649,6 @@ export default function GoodsReceiptPage() {
                                 value={line.batchNo}
                                 onChange={(e) => setLines((prev) => prev.map((l, i) => i === idx ? { ...l, batchNo: e.target.value } : l))}
                               />
-                            </TableCell>
-                            <TableCell>
-                              {line.isMedicalDevice && line.isSterilized ? (
-                                <Input
-                                  className="w-28 border-amber-300 focus:border-amber-500"
-                                  placeholder="必填 *"
-                                  value={line.sterilizationBatchNo}
-                                  onChange={(e) => setLines((prev) => prev.map((l, i) => i === idx ? { ...l, sterilizationBatchNo: e.target.value } : l))}
-                                />
-                              ) : (
-                                <span className="text-xs text-muted-foreground">-</span>
-                              )}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -548,7 +672,7 @@ export default function GoodsReceiptPage() {
 
             <div className="border-t p-4 flex justify-end gap-3">
               <Button variant="outline" onClick={() => setShowCreate(false)}>取消</Button>
-              <Button onClick={handleSubmit} disabled={submitting}>创建到货单</Button>
+              <Button onClick={handleSubmit} disabled={submitting}>提交到货</Button>
             </div>
           </div>
         </DraggableDialogContent>
@@ -556,7 +680,7 @@ export default function GoodsReceiptPage() {
 
       {/* ==================== 选择采购订单弹窗 ==================== */}
       <DraggableDialog open={showPoDialog} onOpenChange={setShowPoDialog} defaultWidth={700} defaultHeight={500}>
-        <DraggableDialogContent title="选择采购订单">
+        <DraggableDialogContent title="选择可到货采购订单">
           <div className="flex flex-col h-full">
             <div className="p-4 border-b">
               <div className="relative">
@@ -581,10 +705,16 @@ export default function GoodsReceiptPage() {
                       <TableCell className="font-mono text-sm">{po.orderNo}</TableCell>
                       <TableCell>{(po as any).supplierName ?? "-"}</TableCell>
                       <TableCell>{formatDate(po.orderDate)}</TableCell>
-                      <TableCell>{po.expectedDeliveryDate ? formatDate(po.expectedDeliveryDate) : "-"}</TableCell>
+                      <TableCell>{po.expectedDate ? formatDate(po.expectedDate) : "-"}</TableCell>
                       <TableCell>
                         <Badge variant="outline">
-                          {po.status === "approved" ? "已审批" : po.status === "ordered" ? "已下单" : "部分收货"}
+                          {po.status === "approved"
+                            ? "已审批"
+                            : po.status === "issued"
+                              ? "已下达"
+                              : po.status === "ordered"
+                                ? "已下单"
+                                : "部分收货"}
                         </Badge>
                       </TableCell>
                     </TableRow>
@@ -600,10 +730,19 @@ export default function GoodsReceiptPage() {
       </DraggableDialog>
 
       {/* ==================== 详情弹窗 ==================== */}
-      <DraggableDialog open={showDetail} onOpenChange={setShowDetail} defaultWidth={800} defaultHeight={600}>
-        <DraggableDialogContent title={`到货单详情 - ${(detailData as any)?.receiptNo ?? ""}`}>
+      <DraggableDialog
+        open={showDetail}
+        onOpenChange={setShowDetail}
+        defaultWidth={800}
+        defaultHeight={600}
+        printable={false}
+      >
+        <DraggableDialogContent title={`到货详情 - ${(detailData as any)?.receiptNo ?? ""}`}>
           {detailData && (
             <div className="p-4 space-y-4 overflow-y-auto h-full">
+              {(() => {
+                return (
+                  <>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><span className="text-gray-500">到货单号：</span>{(detailData as any).receiptNo}</div>
                 <div><span className="text-gray-500">采购订单：</span>{(detailData as any).purchaseOrderNo}</div>
@@ -659,6 +798,20 @@ export default function GoodsReceiptPage() {
                   </TableBody>
                 </Table>
               </div>
+              <div className="flex justify-end gap-2 border-t pt-3">
+                <TemplatePrintPreviewButton
+                  templateKey="goods_receipt"
+                  data={goodsReceiptPrintData}
+                  title={detailData ? `到货单打印预览 - ${String((detailData as any).receiptNo || "")}` : "到货单打印预览"}
+                  disabled={!goodsReceiptPrintData}
+                >
+                  打印预览
+                </TemplatePrintPreviewButton>
+                <Button variant="outline" onClick={() => setShowDetail(false)}>关闭</Button>
+              </div>
+                  </>
+                );
+              })()}
             </div>
           )}
         </DraggableDialogContent>

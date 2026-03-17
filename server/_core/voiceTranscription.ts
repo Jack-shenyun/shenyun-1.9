@@ -26,6 +26,7 @@
  * ```
  */
 import { ENV } from "./env";
+import { formatDisplayNumber } from "./formatting";
 
 export type TranscribeOptions = {
   audioUrl: string; // URL to the audio file (e.g., S3 URL)
@@ -112,7 +113,7 @@ export async function transcribeAudio(
         return {
           error: "Audio file exceeds maximum size limit",
           code: "FILE_TOO_LARGE",
-          details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB`
+          details: `File size is ${formatDisplayNumber(sizeMB, { maximumFractionDigits: 2, locale: "en-US" })}MB, maximum allowed is 16MB`
         };
       }
     } catch (error) {

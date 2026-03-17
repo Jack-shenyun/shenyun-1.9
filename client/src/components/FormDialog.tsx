@@ -436,6 +436,8 @@ export default function FormDialog({
         onOpenChange={handleClose}
         isMaximized={isMaximized}
         onMaximizedChange={setIsMaximized}
+        printable
+        printTitle={title}
       >
         <DraggableDialogContent isMaximized={isMaximized}>
           <DialogHeader>
@@ -462,7 +464,7 @@ export default function FormDialog({
             {fields.filter(f => !(f.hidden && f.hidden(formData))).map(renderField)}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="no-print">
             <Button variant="outline" onClick={() => handleClose(false)} disabled={isLoading}>
               {cancelText}
             </Button>
@@ -542,6 +544,8 @@ export function DetailDialog({
       onOpenChange={onOpenChange}
       isMaximized={isMaximized}
       onMaximizedChange={setIsMaximized}
+      printable
+      printTitle={title}
     >
       <DraggableDialogContent isMaximized={isMaximized}>
         <DialogHeader>
@@ -570,7 +574,7 @@ export function DetailDialog({
           ))}
         </div>
 
-        {actions && <DialogFooter>{actions}</DialogFooter>}
+        {actions && <DialogFooter className="no-print">{actions}</DialogFooter>}
       </DraggableDialogContent>
     </DraggableDialog>
   );

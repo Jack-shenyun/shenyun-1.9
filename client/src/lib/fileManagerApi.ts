@@ -3,6 +3,8 @@
  * 对应后端 /api/file-manager/* 接口
  */
 
+import { formatDateTime as formatSystemDateTime } from "./formatters";
+
 export type FileItem = {
   name: string;
   type: "folder" | "file";
@@ -39,13 +41,13 @@ export async function uploadFiles(
   virtualDir: string,
   files: File[],
   onProgress?: (percent: number) => void
-): Promise<void> {
+): Promise<Array<{ name: string; path: string; size: number }>> {
   const formData = new FormData();
   formData.append("path", virtualDir);
   for (const file of files) {
     formData.append("files", file);
   }
-  await new Promise<void>((resolve, reject) => {
+  return await new Promise<Array<{ name: string; path: string; size: number }>>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${BASE}/upload`);
     if (onProgress) {
@@ -55,12 +57,20 @@ export async function uploadFiles(
     }
     xhr.onload = () => {
       const data = JSON.parse(xhr.responseText);
-      if (data.success) resolve();
+      if (data.success) resolve(Array.isArray(data.files) ? data.files : []);
       else reject(new Error(data.error || "上传失败"));
     };
     xhr.onerror = () => reject(new Error("网络错误"));
     xhr.send(formData);
   });
+}
+
+/** 获取在线预览地址（用于 PDF / CAD / 3D 预览） */
+export async function requestPreviewUrl(virtualPath: string): Promise<string> {
+  const res = await fetch(`${BASE}/preview-url?path=${encodeURIComponent(virtualPath)}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || "获取预览地址失败");
+  return String(data.url || "");
 }
 
 /** 下载文件 */
@@ -105,19 +115,13 @@ export async function initERPFolders(): Promise<void> {
 export function formatFileSize(bytes?: number): string {
   if (bytes === undefined) return "";
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${Math.round(bytes / 1024 / 1024)} MB`;
+  return `${Math.round(bytes / 1024 / 1024 / 1024)} GB`;
 }
 
 /** 格式化时间 */
 export function formatDateTime(iso?: string): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatSystemDateTime(iso);
 }

@@ -1,0 +1,41 @@
+<svg width="500" height="500" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="250" cy="250" r="200" stroke="red" stroke-width="8" fill="none"/>
+
+  <defs>
+    <path id="topArc" d="M 92 250 A 158 158 0 0 1 408 250" />
+  </defs>
+
+  <text font-size="38"
+        fill="red"
+        font-family="SimSun, Songti SC, STFangsong, serif"
+        letter-spacing="1">
+    <textPath href="#topArc" startOffset="50%" text-anchor="middle">
+     苏州神韵医疗器械有限公司
+    </textPath>
+  </text>
+
+  <text x="250" y="248"
+        font-size="82"
+        text-anchor="middle"
+        fill="red"
+        font-family="SimSun, serif">★</text>
+
+  <text x="250" y="338"
+        font-size="36"
+        text-anchor="middle"
+        fill="red"
+        font-family="SimSun, Songti SC, STFangsong, serif"
+        letter-spacing="2">
+    合同专用章
+  </text>
+
+  <text x="250" y="255"
+        font-size="28"
+        text-anchor="middle"
+        fill="red"
+        opacity="0.08"
+        transform="rotate(-20 250 255)"
+        font-family="SimHei, Arial, sans-serif">
+    示意
+  </text>
+</svg>

@@ -42,8 +42,10 @@ import {
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { usePermission } from "@/hooks/usePermission";
+import { formatDateValue, formatDateTime, formatDisplayNumber } from "@/lib/formatters";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DeliveryNotePrint } from "@/components/print";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 
 // ==================== 常量 ====================
 const typeMap: Record<string, string> = {
@@ -283,12 +285,9 @@ export default function OutboundPage() {
   };
 
   // ==================== 表单操作 ====================
-  const buildDefaultDocumentNo = () =>
-    `OUT-${new Date().getFullYear()}-${String(data.length + 1).padStart(4, "0")}`;
-
   const resetForm = () => {
     setFormData({
-      documentNo: buildDefaultDocumentNo(),
+      documentNo: "",
       type: "sales_out",
       relatedOrderId: "",
       warehouseId: "",
@@ -478,16 +477,12 @@ export default function OutboundPage() {
       let errorCount = 0;
       const total = validLines.length;
 
-      validLines.forEach((line, idx) => {
-        const docNo = total > 1
-          ? `${formData.documentNo || buildDefaultDocumentNo()}-${String(idx + 1).padStart(2, "0")}`
-          : formData.documentNo || buildDefaultDocumentNo();
-
+      validLines.forEach((line) => {
         createMutation.mutate({
           productId: line.productId,
           warehouseId: Number(formData.warehouseId),
           type: formData.type as any,
-          documentNo: docNo,
+          documentNo: formData.documentNo || undefined,
           itemName: line.productName,
           batchNo: line.batchNo || undefined,
           sterilizationBatchNo: line.sterilizationBatchNo || undefined,
@@ -647,7 +642,7 @@ export default function OutboundPage() {
                   <TableCell className="text-sm text-muted-foreground">{record.batchNo || "-"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{record.sterilizationBatchNo || "-"}</TableCell>
                   <TableCell className="text-right text-sm">
-                    {parseFloat(String(record.quantity || 0)).toLocaleString()} {record.unit || ""}
+                    {formatDisplayNumber(record.quantity)} {record.unit || ""}
                   </TableCell>
                   <TableCell className="text-sm">{getWarehouseName(record.warehouseId)}</TableCell>
                   <TableCell>
@@ -658,7 +653,7 @@ export default function OutboundPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {record.createdAt ? new Date(record.createdAt).toLocaleDateString("zh-CN") : "-"}
+                    {formatDateValue(record.createdAt)}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
@@ -719,7 +714,8 @@ export default function OutboundPage() {
                   <Input
                     value={formData.documentNo}
                     onChange={(e) => setFormData((p) => ({ ...p, documentNo: e.target.value }))}
-                    placeholder="系统自动生成或手动输入"
+                    placeholder="保存后系统生成"
+                    readOnly
                   />
                 </div>
                 <div className="space-y-2">
@@ -1033,7 +1029,7 @@ export default function OutboundPage() {
                                     {batchOptions.map((inv: any) => (
                                       <SelectItem key={inv.id} value={inv.batchNo || `inv-${inv.id}`}>
                                         {inv.batchNo || `批次${inv.id}`}
-                                        {` (库存: ${parseFloat(inv.quantity).toLocaleString()})`}
+                                        {` (库存: ${formatDisplayNumber(inv.quantity)})`}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>
@@ -1254,6 +1250,30 @@ export default function OutboundPage() {
         {viewingRecord &&
           (() => {
             const relatedOrder = getRelatedOrder(viewingRecord.relatedOrderId);
+            const outboundPrintData = {
+              outboundNo: viewingRecord.documentNo || `OUT-${viewingRecord.id}`,
+              outboundDate: viewingRecord.createdAt ? formatDateTime(viewingRecord.createdAt).slice(0, 10) : "",
+              sourceNo: getRelatedOrderNo(viewingRecord.relatedOrderId),
+              outboundType: typeMap[viewingRecord.type] || viewingRecord.type,
+              recipientName:
+                relatedOrder?.customerName
+                || (viewingRecord.type === "production_out" ? "生产部" : "")
+                || (viewingRecord.type === "return_out" ? "采购部" : "")
+                || "",
+              handlerName: "",
+              warehouseName: getWarehouseName(viewingRecord.warehouseId),
+              items: [
+                {
+                  materialCode: viewingRecord.productId ? productsById.get(Number(viewingRecord.productId))?.code || "" : "",
+                  materialName: viewingRecord.itemName || "",
+                  specification: viewingRecord.productId ? productsById.get(Number(viewingRecord.productId))?.specification || "" : "",
+                  quantity: Number(viewingRecord.quantity || 0) || 0,
+                  unit: viewingRecord.unit || "",
+                  batchNo: viewingRecord.batchNo || "",
+                  location: getWarehouseName(viewingRecord.warehouseId),
+                },
+              ],
+            };
             const FieldRow = ({
               label,
               children,
@@ -1307,17 +1327,17 @@ export default function OutboundPage() {
                       </div>
                       <div>
                         <FieldRow label="出库数量">
-                          {parseFloat(String(viewingRecord.quantity || 0)).toLocaleString()}{" "}
+                          {formatDisplayNumber(viewingRecord.quantity)}{" "}
                           {viewingRecord.unit || ""}
                         </FieldRow>
                         <FieldRow label="变动前库存">
                           {viewingRecord.beforeQty
-                            ? `${parseFloat(viewingRecord.beforeQty).toLocaleString()} ${viewingRecord.unit || ""}`
+                            ? `${formatDisplayNumber(viewingRecord.beforeQty)} ${viewingRecord.unit || ""}`
                             : "-"}
                         </FieldRow>
                         <FieldRow label="变动后库存">
                           {viewingRecord.afterQty
-                            ? `${parseFloat(viewingRecord.afterQty).toLocaleString()} ${viewingRecord.unit || ""}`
+                            ? `${formatDisplayNumber(viewingRecord.afterQty)} ${viewingRecord.unit || ""}`
                             : "-"}
                         </FieldRow>
                       </div>
@@ -1382,15 +1402,18 @@ export default function OutboundPage() {
                   {/* 出库时间 */}
                   <div>
                     <FieldRow label="出库时间">
-                      {viewingRecord.createdAt
-                        ? new Date(viewingRecord.createdAt).toLocaleString("zh-CN")
-                        : "-"}
+                      {viewingRecord.createdAt ? formatDateTime(viewingRecord.createdAt) : "-"}
                     </FieldRow>
                   </div>
 
                   {/* 操作按钮区 */}
                   <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
                     <div className="flex gap-2 flex-wrap">
+                      <TemplatePrintPreviewButton
+                        templateKey="warehouse_out"
+                        data={outboundPrintData}
+                        title={`出库单打印预览 - ${viewingRecord.documentNo || `#${viewingRecord.id}`}`}
+                      />
                       <Button
                         variant="outline"
                         size="sm"

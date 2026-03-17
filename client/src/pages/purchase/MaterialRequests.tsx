@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import { formatDateTime, formatDateValue } from "@/lib/formatters";
+import { formatDateTime, formatDateValue, formatDisplayNumber, toRoundedString } from "@/lib/formatters";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { ClipboardList, Plus, Search, Eye, Trash2, CheckCircle, XCircle, Send, MoreHorizontal } from "lucide-react";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -24,6 +25,8 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
+import { DEPARTMENT_OPTIONS } from "@/constants/departments";
+import { useLocation } from "wouter";
 
 // ── 类型定义 ──────────────────────────────────────────────
 interface MaterialRequestItem {
@@ -119,12 +122,15 @@ function EmptyRow({ item, index, onChange, onRemove }: {
 
 // ── 主组件 ────────────────────────────────────────────────
 export default function MaterialRequestsPage() {
+  const PAGE_SIZE = 10;
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [formOpen, setFormOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [selected, setSelected] = useState<MaterialRequest | null>(null);
   const { canDelete, isAdmin, isGM } = usePermission();
+  const [, setLocation] = useLocation();
+  const [currentPage, setCurrentPage] = useState(1);
 
   // 表单状态
   const today = new Date().toISOString().split("T")[0];
@@ -147,6 +153,11 @@ export default function MaterialRequestsPage() {
     limit: 100,
   });
   const { data: productsData = [] } = trpc.products.list.useQuery();
+  const { data: departmentsData = [] } = trpc.departments.list.useQuery({ status: "active" });
+  const { data: detailData } = trpc.materialRequests.getById.useQuery(
+    { id: selected?.id || 0 },
+    { enabled: viewOpen && !!selected?.id }
+  );
 
   const createMutation = trpc.materialRequests.create.useMutation({
     onSuccess: () => { toast.success("采购申请已创建"); setFormOpen(false); resetForm(); utils.materialRequests.list.invalidate(); },
@@ -160,12 +171,6 @@ export default function MaterialRequestsPage() {
     onSuccess: () => { toast.success("已删除"); utils.materialRequests.list.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
-
-  // 生成申请单号
-  const genNo = () => {
-    const d = new Date(); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0");
-    return `MR-${y}${m}-${String(Math.floor(Math.random()*9000)+1000)}`;
-  };
 
   function resetForm() {
     setForm({ department: "", requestDate: today, urgency: "normal", reason: "", remark: "" });
@@ -252,14 +257,15 @@ export default function MaterialRequestsPage() {
     }, 0);
 
     createMutation.mutate({
-      requestNo: genNo(),
+      requestNo: undefined,
       department: form.department,
       requestDate: form.requestDate,
       urgency: form.urgency,
       reason: form.reason || undefined,
       remark: form.remark || undefined,
-      totalAmount: totalAmount > 0 ? String(totalAmount.toFixed(2)) : undefined,
+      totalAmount: totalAmount > 0 ? toRoundedString(totalAmount, 2) : undefined,
       items: validItems.map(i => ({
+        productId: i.productId || undefined,
         materialName: i.materialName,
         specification: i.specification || undefined,
         quantity: i.quantity,
@@ -274,11 +280,47 @@ export default function MaterialRequestsPage() {
     updateMutation.mutate({ id, data: { status } });
   }
 
+  async function handleEnterPurchasePlan(record: MaterialRequest) {
+    try {
+      const result = await updateMutation.mutateAsync({ id: record.id, data: { status: "purchasing" } });
+      setViewOpen(false);
+      if ((result as any)?.createdPlanNos?.length > 0) {
+        toast.success(`已生成 ${(result as any).createdPlanNos.length} 条采购计划`);
+      }
+      if ((result as any)?.skippedItems?.length > 0) {
+        toast.warning("部分明细未进入采购计划", {
+          description: `${(result as any).skippedItems.length} 条明细未匹配到可采购产品`,
+        });
+      }
+      setLocation("/purchase/plan");
+    } catch {
+      // 错误由 mutation onError 统一提示
+    }
+  }
+
   function handleView(record: MaterialRequest) {
     setSelected(record); setViewOpen(true);
   }
 
   const records: MaterialRequest[] = (listData as any) ?? [];
+  const departmentOptions = (() => {
+    const dynamicOptions = (departmentsData as any[])
+      .map((item) => String(item?.name || "").trim())
+      .filter(Boolean);
+    return dynamicOptions.length > 0 ? dynamicOptions : DEPARTMENT_OPTIONS.map((item) => item.value);
+  })();
+  const selectedDetail: MaterialRequest | null = ((detailData as any)?.request as MaterialRequest | undefined) ?? selected;
+  const selectedItems: MaterialRequestItem[] = ((detailData as any)?.items as MaterialRequestItem[] | undefined) ?? selected?.items ?? [];
+  const totalPages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
+  const pagedRecords = records.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, records.length]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   // 统计
   const totalCount = records.length;
@@ -358,7 +400,7 @@ export default function MaterialRequestsPage() {
                 <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">加载中...</TableCell></TableRow>
               ) : records.length === 0 ? (
                 <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">暂无采购申请数据</TableCell></TableRow>
-              ) : records.map(r => (
+              ) : pagedRecords.map(r => (
                 <TableRow key={r.id} className="hover:bg-muted/30">
                   <TableCell className="font-mono text-sm font-medium">{r.requestNo}</TableCell>
                   <TableCell>{r.department}</TableCell>
@@ -369,7 +411,7 @@ export default function MaterialRequestsPage() {
                     </span>
                   </TableCell>
                   <TableCell className="text-sm">
-                    {r.totalAmount ? `¥${parseFloat(r.totalAmount).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}` : "-"}
+                    {r.totalAmount ? `¥${formatDisplayNumber(r.totalAmount)}` : "-"}
                   </TableCell>
                   <TableCell>
                     <Badge variant={statusMap[r.status]?.variant ?? "outline"} className={getStatusSemanticClass(r.status, statusMap[r.status]?.label)}>
@@ -397,8 +439,8 @@ export default function MaterialRequestsPage() {
                           </DropdownMenuItem>
                         </>)}
                         {r.status === "approved" && (
-                          <DropdownMenuItem onClick={() => handleStatusChange(r.id, "purchasing")}>
-                            <ClipboardList className="w-4 h-4 mr-2" />开始采购
+                          <DropdownMenuItem onClick={() => void handleEnterPurchasePlan(r)}>
+                            <ClipboardList className="w-4 h-4 mr-2" />进入采购计划
                           </DropdownMenuItem>
                         )}
                         {r.status === "purchasing" && (
@@ -419,24 +461,34 @@ export default function MaterialRequestsPage() {
             </TableBody>
           </Table>
         </div>
+        <TablePaginationFooter total={records.length} page={currentPage} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
       </div>
 
       {/* ── 新建弹窗 ── */}
-      <DraggableDialog open={formOpen} onOpenChange={setFormOpen}>
-        <DraggableDialogContent className="max-w-4xl">
+      <DraggableDialog open={formOpen} onOpenChange={setFormOpen} defaultWidth={1160} defaultHeight={760}>
+        <DraggableDialogContent className="max-w-6xl">
           <DialogHeader><DialogTitle>新建采购申请</DialogTitle></DialogHeader>
-          <div className="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
+          <div className="space-y-6 max-h-[72vh] overflow-y-auto pr-2">
             {/* 基本信息 */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+              <div className="space-y-1.5 xl:col-span-2">
                 <Label>申请部门 <span className="text-red-500">*</span></Label>
-                <Input value={form.department} onChange={e => setForm(p => ({ ...p, department: e.target.value }))} placeholder="如：生产部" />
+                <Select value={form.department} onValueChange={(value) => setForm((p) => ({ ...p, department: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="请选择申请部门" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {departmentOptions.map((dept) => (
+                      <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 xl:col-span-2">
                 <Label>申请日期 <span className="text-red-500">*</span></Label>
                 <Input type="date" value={form.requestDate} onChange={e => setForm(p => ({ ...p, requestDate: e.target.value }))} />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 xl:col-span-1">
                 <Label>紧急程度</Label>
                 <Select value={form.urgency} onValueChange={v => setForm(p => ({ ...p, urgency: v as any }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
@@ -447,7 +499,7 @@ export default function MaterialRequestsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 xl:col-span-3">
                 <Label>申请理由</Label>
                 <Input value={form.reason} onChange={e => setForm(p => ({ ...p, reason: e.target.value }))} placeholder="简述申请原因" />
               </div>
@@ -488,13 +540,15 @@ export default function MaterialRequestsPage() {
                 </Table>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                预估总金额：¥{items.reduce((s, i) => s + (parseFloat(i.quantity)||0)*(parseFloat(i.estimatedPrice||"0")||0), 0).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}
+                预估总金额：¥{formatDisplayNumber(
+                  items.reduce((s, i) => s + (parseFloat(i.quantity) || 0) * (parseFloat(i.estimatedPrice || "0") || 0), 0),
+                )}
               </p>
             </div>
 
             <div className="space-y-1.5">
               <Label>备注</Label>
-              <Textarea value={form.remark} onChange={e => setForm(p => ({ ...p, remark: e.target.value }))} placeholder="其他说明" rows={2} />
+              <Textarea value={form.remark} onChange={e => setForm(p => ({ ...p, remark: e.target.value }))} placeholder="其他说明" rows={3} />
             </div>
           </div>
           <DialogFooter>
@@ -567,21 +621,21 @@ export default function MaterialRequestsPage() {
       </Dialog>
 
       {/* ── 详情弹窗 ── */}
-      <DraggableDialog open={viewOpen} onOpenChange={setViewOpen}>
+      <DraggableDialog open={viewOpen} onOpenChange={setViewOpen} defaultWidth={1040} defaultHeight={720}>
         <DraggableDialogContent className="max-w-3xl">
-          {selected && (
+          {selectedDetail && (
             <div className="space-y-4">
               {/* 标准头部 */}
               <div className="border-b pb-3">
                 <h2 className="text-lg font-semibold">采购申请详情</h2>
                 <p className="text-sm text-muted-foreground">
-                  {selected.requestNo}
+                  {selectedDetail.requestNo}
                   {" · "}
-                  <Badge variant={statusMap[selected.status]?.variant ?? "outline"} className={getStatusSemanticClass(selected.status, statusMap[selected.status]?.label)}>
-                    {statusMap[selected.status]?.label ?? selected.status}
+                  <Badge variant={statusMap[selectedDetail.status]?.variant ?? "outline"} className={getStatusSemanticClass(selectedDetail.status, statusMap[selectedDetail.status]?.label)}>
+                    {statusMap[selectedDetail.status]?.label ?? selectedDetail.status}
                   </Badge>
                   {" · "}
-                  <span className={`font-medium ${urgencyMap[selected.urgency]?.color}`}>{urgencyMap[selected.urgency]?.label}</span>
+                  <span className={`font-medium ${urgencyMap[selectedDetail.urgency]?.color}`}>{urgencyMap[selectedDetail.urgency]?.label}</span>
                 </p>
               </div>
 
@@ -591,34 +645,34 @@ export default function MaterialRequestsPage() {
                   <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">基本信息</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
                     <div>
-                      <FieldRow label="申请单号">{selected.requestNo}</FieldRow>
-                      <FieldRow label="申请部门">{selected.department}</FieldRow>
-                      <FieldRow label="申请日期">{formatDateValue(selected.requestDate)}</FieldRow>
+                      <FieldRow label="申请单号">{selectedDetail.requestNo}</FieldRow>
+                      <FieldRow label="申请部门">{selectedDetail.department}</FieldRow>
+                      <FieldRow label="申请日期">{formatDateValue(selectedDetail.requestDate)}</FieldRow>
                     </div>
                     <div>
                       <FieldRow label="紧急程度">
-                        <span className={urgencyMap[selected.urgency]?.color}>{urgencyMap[selected.urgency]?.label}</span>
+                        <span className={urgencyMap[selectedDetail.urgency]?.color}>{urgencyMap[selectedDetail.urgency]?.label}</span>
                       </FieldRow>
                       <FieldRow label="预估总额">
-                        {selected.totalAmount ? `¥${parseFloat(selected.totalAmount).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}` : "-"}
+                        {selectedDetail.totalAmount ? `¥${formatDisplayNumber(selectedDetail.totalAmount)}` : "-"}
                       </FieldRow>
-                      <FieldRow label="创建时间">{formatDateTime(selected.createdAt)}</FieldRow>
+                      <FieldRow label="创建时间">{formatDateTime(selectedDetail.createdAt)}</FieldRow>
                     </div>
                   </div>
                 </div>
 
                 {/* 申请理由 */}
-                {selected.reason && (
+                {selectedDetail.reason && (
                   <div>
                     <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">申请理由</h3>
-                    <p className="text-sm bg-muted/40 rounded-lg px-4 py-3">{selected.reason}</p>
+                    <p className="text-sm bg-muted/40 rounded-lg px-4 py-3">{selectedDetail.reason}</p>
                   </div>
                 )}
 
                 {/* 明细表格 */}
                 <div>
                   <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">申请明细</h3>
-                  {selected.items && selected.items.length > 0 ? (
+                  {selectedItems.length > 0 ? (
                     <div className="border rounded-md overflow-x-auto" style={{WebkitOverflowScrolling:"touch"}}>
                       <Table>
                         <TableHeader>
@@ -633,7 +687,7 @@ export default function MaterialRequestsPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {selected.items.map((item, i) => {
+                          {selectedItems.map((item, i) => {
                             const qty = parseFloat(item.quantity) || 0;
                             const price = parseFloat(item.estimatedPrice ?? "0") || 0;
                             return (
@@ -641,10 +695,10 @@ export default function MaterialRequestsPage() {
                                 <TableCell className="text-center text-muted-foreground text-xs">{i + 1}</TableCell>
                                 <TableCell className="font-medium">{item.materialName}</TableCell>
                                 <TableCell className="text-muted-foreground text-sm">{item.specification ?? "-"}</TableCell>
-                                <TableCell className="text-right">{qty}</TableCell>
+                                <TableCell className="text-right">{formatDisplayNumber(qty)}</TableCell>
                                 <TableCell>{item.unit ?? "-"}</TableCell>
-                                <TableCell className="text-right">{price > 0 ? `¥${price.toFixed(2)}` : "-"}</TableCell>
-                                <TableCell className="text-right font-medium">{qty > 0 && price > 0 ? `¥${(qty * price).toFixed(2)}` : "-"}</TableCell>
+                                <TableCell className="text-right">{price > 0 ? `¥${formatDisplayNumber(price)}` : "-"}</TableCell>
+                                <TableCell className="text-right font-medium">{qty > 0 && price > 0 ? `¥${formatDisplayNumber(qty * price)}` : "-"}</TableCell>
                               </TableRow>
                             );
                           })}
@@ -657,19 +711,19 @@ export default function MaterialRequestsPage() {
                 </div>
 
                 {/* 审批信息 */}
-                {(selected.approvedBy || selected.approvedAt) && (
+                {(selectedDetail.approvedBy || selectedDetail.approvedAt) && (
                   <div>
                     <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">审批信息</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-                      <FieldRow label="审批时间">{formatDateValue(selected.approvedAt, true)}</FieldRow>
+                      <FieldRow label="审批时间">{formatDateValue(selectedDetail.approvedAt, true)}</FieldRow>
                     </div>
                   </div>
                 )}
 
-                {selected.remark && (
+                {selectedDetail.remark && (
                   <div>
                     <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">备注</h3>
-                    <p className="text-sm bg-muted/40 rounded-lg px-4 py-3">{selected.remark}</p>
+                    <p className="text-sm bg-muted/40 rounded-lg px-4 py-3">{selectedDetail.remark}</p>
                   </div>
                 )}
               </div>
@@ -677,21 +731,26 @@ export default function MaterialRequestsPage() {
               {/* 操作按钮 */}
               <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
                 <div className="flex gap-2 flex-wrap">
-                  {selected.status === "draft" && (
-                    <Button size="sm" variant="outline" onClick={() => { handleStatusChange(selected.id, "pending_approval"); setViewOpen(false); }}>
+                  {selectedDetail.status === "draft" && (
+                    <Button size="sm" variant="outline" onClick={() => { handleStatusChange(selectedDetail.id, "pending_approval"); setViewOpen(false); }}>
                       <Send className="w-4 h-4 mr-1" /> 提交审批
                     </Button>
                   )}
-                  {selected.status === "pending_approval" && (isAdmin || isGM) && (<>
+                  {selectedDetail.status === "pending_approval" && (isAdmin || isGM) && (<>
                     <Button size="sm" variant="outline" className="text-green-600 border-green-300"
-                      onClick={() => { handleStatusChange(selected.id, "approved"); setViewOpen(false); }}>
+                      onClick={() => { handleStatusChange(selectedDetail.id, "approved"); setViewOpen(false); }}>
                       <CheckCircle className="w-4 h-4 mr-1" /> 审批通过
                     </Button>
                     <Button size="sm" variant="outline" className="text-red-600 border-red-300"
-                      onClick={() => { handleStatusChange(selected.id, "rejected"); setViewOpen(false); }}>
+                      onClick={() => { handleStatusChange(selectedDetail.id, "rejected"); setViewOpen(false); }}>
                       <XCircle className="w-4 h-4 mr-1" /> 驳回
                     </Button>
                   </>)}
+                  {selectedDetail.status === "approved" && (
+                    <Button size="sm" variant="outline" onClick={() => void handleEnterPurchasePlan(selectedDetail)}>
+                      <ClipboardList className="w-4 h-4 mr-1" /> 进入采购计划
+                    </Button>
+                  )}
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setViewOpen(false)}>关闭</Button>
               </div>

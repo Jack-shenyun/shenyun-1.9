@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
@@ -45,6 +45,7 @@ import {
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
 import { formatDateValue, formatNumber, safeLower, toSafeNumber } from "@/lib/formatters";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 
 interface VoucherEntry {
   accountCode: string;
@@ -60,6 +61,7 @@ interface LedgerRecord {
   date: string;
   type: "receipt" | "payment" | "transfer" | "general";
   summary: string;
+  currency: string;
   debitAmount: number;
   creditAmount: number;
   status: "draft" | "pending" | "approved" | "posted";
@@ -90,19 +92,75 @@ function getTypeLabel(type: unknown) {
   return typeMap[String(type ?? "")] ?? "记账凭证";
 }
 
+function getCurrencySymbol(currency: unknown) {
+  switch (String(currency || "").toUpperCase()) {
+    case "USD":
+      return "$";
+    case "EUR":
+      return "€";
+    case "GBP":
+      return "£";
+    case "HKD":
+      return "HK$";
+    case "JPY":
+      return "¥";
+    case "CNY":
+    default:
+      return "¥";
+  }
+}
+
+function formatLedgerMoney(currency: unknown, amount: unknown) {
+  const code = String(currency || "CNY").toUpperCase();
+  return `${code} ${getCurrencySymbol(code)}${formatNumber(amount)}`;
+}
+
 function normalizeVoucher(raw: any): LedgerRecord {
+  const normalizedType =
+    (raw?.type as LedgerRecord["type"]) ??
+    (String(raw?.recordNo || "").startsWith("REC-") ? "receipt" : "general");
+  const normalizedAmount = toSafeNumber(
+    raw?.debitAmount ?? raw?.creditAmount ?? raw?.amount
+  );
+  const normalizedStatus =
+    (raw?.status as LedgerRecord["status"]) ??
+    (raw?.recordNo || raw?.paymentDate ? "posted" : "draft");
   return {
     id: Number(raw?.id ?? 0),
     voucherNo: String(raw?.voucherNo ?? raw?.recordNo ?? ""),
     date: String(raw?.date ?? raw?.paymentDate ?? ""),
-    type: (raw?.type as LedgerRecord["type"]) ?? "general",
+    type: normalizedType,
     summary: String(raw?.summary ?? raw?.remark ?? ""),
-    debitAmount: toSafeNumber(raw?.debitAmount ?? raw?.amount),
-    creditAmount: toSafeNumber(raw?.creditAmount ?? raw?.amount),
-    status: (raw?.status as LedgerRecord["status"]) ?? "draft",
+    currency: String(raw?.currency || "CNY").toUpperCase(),
+    debitAmount: normalizedAmount,
+    creditAmount: normalizedAmount,
+    status: normalizedStatus,
     preparedBy: String(raw?.preparedBy ?? raw?.operatorName ?? ""),
     approvedBy: String(raw?.approvedBy ?? ""),
     entries: Array.isArray(raw?.entries) ? raw.entries : [],
+  };
+}
+
+function buildVoucherPrintData(voucher: LedgerRecord) {
+  return {
+    voucherNo: voucher.voucherNo,
+    voucherDate: voucher.date,
+    voucherType: getTypeLabel(voucher.type),
+    statusLabel: getStatusMeta(voucher.status).label,
+    preparedBy: voucher.preparedBy || "-",
+    approvedBy: voucher.approvedBy || "-",
+    summary: voucher.summary || "-",
+    debitAmount: toSafeNumber(voucher.debitAmount),
+    creditAmount: toSafeNumber(voucher.creditAmount),
+    entries: (voucher.entries ?? []).map((entry) => ({
+      accountCode: entry.accountCode || "-",
+      accountName: entry.accountName || "-",
+      debitText:
+        toSafeNumber(entry.debit) > 0 ? `¥${formatNumber(entry.debit)}` : "-",
+      creditText:
+        toSafeNumber(entry.credit) > 0 ? `¥${formatNumber(entry.credit)}` : "-",
+      summary: entry.summary || "-",
+    })),
   };
 }
 
@@ -111,7 +169,10 @@ function normalizeVoucher(raw: any): LedgerRecord {
 export default function LedgerPage() {
   const { data: _dbData = [], isLoading, refetch } = trpc.paymentRecords.list.useQuery();
   const deleteMutation = trpc.paymentRecords.delete.useMutation({ onSuccess: () => { refetch(); toast.success("删除成功"); } });
-  const vouchers = _dbData as any[];
+  const vouchers = useMemo(
+    () => (_dbData as any[]).map((row: any) => normalizeVoucher(row)),
+    [_dbData]
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -373,8 +434,8 @@ export default function LedgerPage() {
                       <Badge variant="outline">{getTypeLabel(voucher.type)}</Badge>
                     </TableCell>
                     <TableCell className="text-center max-w-[200px] truncate">{voucher.summary}</TableCell>
-                    <TableCell className="text-center">¥{formatNumber(voucher.debitAmount)}</TableCell>
-                    <TableCell className="text-center">¥{formatNumber(voucher.creditAmount)}</TableCell>
+                    <TableCell className="text-center">{formatLedgerMoney(voucher.currency, voucher.debitAmount)}</TableCell>
+                    <TableCell className="text-center">{formatLedgerMoney(voucher.currency, voucher.creditAmount)}</TableCell>
                     <TableCell className="text-center">
                       <Badge variant={getStatusMeta(voucher.status).variant} className={getStatusSemanticClass(voucher.status, getStatusMeta(voucher.status).label)}>
                         {getStatusMeta(voucher.status).label}
@@ -580,7 +641,11 @@ export default function LedgerPage() {
 
         {/* 查看详情对话框 */}
 {viewingVoucher && (
-  <DraggableDialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+  <DraggableDialog
+    open={viewDialogOpen}
+    onOpenChange={setViewDialogOpen}
+    printable={false}
+  >
     <DraggableDialogContent>
               <div className="space-y-6 p-6">
         {/* 标准头部 */}
@@ -645,19 +710,27 @@ export default function LedgerPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(viewingVoucher.entries ?? []).map((entry, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell className="text-center">{entry.accountCode}</TableCell>
-                    <TableCell className="text-center">{entry.accountName}</TableCell>
-                    <TableCell className="text-center">
-                      {toSafeNumber(entry.debit) > 0 ? `¥${formatNumber(entry.debit)}` : "-"}
+                {(viewingVoucher.entries ?? []).length > 0 ? (
+                  (viewingVoucher.entries ?? []).map((entry, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell className="text-center">{entry.accountCode}</TableCell>
+                      <TableCell className="text-center">{entry.accountName}</TableCell>
+                      <TableCell className="text-center">
+                        {toSafeNumber(entry.debit) > 0 ? `¥${formatNumber(entry.debit)}` : "-"}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {toSafeNumber(entry.credit) > 0 ? `¥${formatNumber(entry.credit)}` : "-"}
+                      </TableCell>
+                      <TableCell className="text-center">{entry.summary}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
+                      暂无分录明细
                     </TableCell>
-                    <TableCell className="text-center">
-                      {toSafeNumber(entry.credit) > 0 ? `¥${formatNumber(entry.credit)}` : "-"}
-                    </TableCell>
-                    <TableCell className="text-center">{entry.summary}</TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </div>
@@ -667,6 +740,13 @@ export default function LedgerPage() {
         <div className="flex justify-between flex-wrap gap-2 pt-3 border-t">
           <div className="flex gap-2 flex-wrap">{/* 左侧功能按钮 */ }</div>
           <div className="flex gap-2 flex-wrap justify-end">
+            <TemplatePrintPreviewButton
+              templateKey="finance_voucher"
+              data={buildVoucherPrintData(viewingVoucher)}
+              title={`凭证详情 - ${viewingVoucher.voucherNo}`}
+            >
+              打印预览
+            </TemplatePrintPreviewButton>
             <Button variant="outline" size="sm" onClick={() => setViewDialogOpen(false)}>关闭</Button>
             {viewingVoucher.status !== "posted" && (
               <Button variant="outline" size="sm" onClick={() => {

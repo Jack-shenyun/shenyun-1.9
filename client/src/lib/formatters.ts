@@ -1,3 +1,25 @@
+import {
+  formatDateBySettings,
+  formatTimeBySettings,
+  getIntlLocale,
+  loadLanguageSettingsFromStorage,
+} from "./languageSettings";
+
+function formatPlainDateText(value: string) {
+  const normalized = value.replace(/\//g, "-");
+  const [year, month, day] = normalized.split("-");
+  return `${year}-${month}-${day}`;
+}
+
+function getUnifiedDateSettings() {
+  const settings = loadLanguageSettingsFromStorage();
+  return {
+    ...settings,
+    dateFormat: "YYYY-MM-DD",
+    timeFormat: "24h" as const,
+  };
+}
+
 export function toSafeNumber(value: unknown): number {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   if (typeof value === "string") {
@@ -7,8 +29,77 @@ export function toSafeNumber(value: unknown): number {
   return 0;
 }
 
+export function roundToDigits(value: unknown, digits = 2): number {
+  const number = toSafeNumber(value);
+  if (!Number.isFinite(number)) return 0;
+  const factor = 10 ** digits;
+  return Math.round(number * factor) / factor;
+}
+
+export function toRoundedString(value: unknown, digits = 2): string {
+  return String(roundToDigits(value, digits));
+}
+
 export function formatNumber(value: unknown): string {
-  return toSafeNumber(value).toLocaleString("zh-CN");
+  return formatDisplayNumber(value);
+}
+
+export function formatDisplayNumber(
+  value: unknown,
+  options?: {
+    minimumFractionDigits?: number;
+    maximumFractionDigits?: number;
+    locale?: string;
+  },
+): string {
+  const number = toSafeNumber(value);
+  const settings = loadLanguageSettingsFromStorage();
+  const formatter = new Intl.NumberFormat(options?.locale || getIntlLocale(settings), {
+    minimumFractionDigits: options?.minimumFractionDigits ?? 0,
+    maximumFractionDigits: options?.maximumFractionDigits ?? 2,
+  });
+  return formatter.format(number);
+}
+
+export function formatCurrencyValue(
+  value: unknown,
+  currencySymbol = "¥",
+  options?: {
+    minimumFractionDigits?: number;
+    maximumFractionDigits?: number;
+    locale?: string;
+  },
+): string {
+  return `${currencySymbol}${formatDisplayNumber(value, options)}`;
+}
+
+export function formatPercentValue(
+  value: unknown,
+  options?: {
+    minimumFractionDigits?: number;
+    maximumFractionDigits?: number;
+    locale?: string;
+  },
+): string {
+  return `${formatDisplayNumber(value, options)}%`;
+}
+
+export function splitRoundedValue(
+  value: unknown,
+  digits = 2,
+): {
+  integerPart: string;
+  fractionPart: string;
+} {
+  const number = roundToDigits(value, digits);
+  const factor = 10 ** digits;
+  const rounded = Math.abs(Math.round(number * factor));
+  const integerPart = Math.floor(rounded / factor).toString();
+  const fractionPart = String(rounded % factor).padStart(digits, "0");
+  return {
+    integerPart: number < 0 ? `-${integerPart}` : integerPart,
+    fractionPart,
+  };
 }
 
 export function safeLower(value: unknown): string {
@@ -21,16 +112,16 @@ export function formatDate(date: Date | string | number | null | undefined): str
   if (typeof date === "string") {
     const trimmed = date.trim();
     if (!trimmed) return "-";
-    // 纯日期字符串直接返回，避免时区导致前后偏移
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-    if (/^\d{4}\/\d{2}\/\d{2}$/.test(trimmed)) return trimmed.replace(/\//g, "-");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return formatPlainDateText(trimmed);
+    }
+    if (/^\d{4}\/\d{2}\/\d{2}$/.test(trimmed)) {
+      return formatPlainDateText(trimmed);
+    }
   }
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return "-";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return formatDateBySettings(d, getUnifiedDateSettings());
 }
 
 /** 格式化为 YYYY-MM-DD HH:mm */
@@ -39,19 +130,18 @@ export function formatDateTime(date: Date | string | number | null | undefined):
   if (typeof date === "string") {
     const trimmed = date.trim();
     if (!trimmed) return "-";
-    // 已是标准时间文本时保持统一风格
     if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(trimmed)) {
-      return trimmed.replace("T", " ").slice(0, 16);
+      const parsed = new Date(trimmed.replace(" ", "T"));
+      if (!Number.isNaN(parsed.getTime())) {
+        const settings = getUnifiedDateSettings();
+        return `${formatDateBySettings(parsed, settings)} ${formatTimeBySettings(parsed, settings)}`;
+      }
     }
   }
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return "-";
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  return `${y}-${mo}-${day} ${h}:${min}`;
+  const settings = getUnifiedDateSettings();
+  return `${formatDateBySettings(d, settings)} ${formatTimeBySettings(d, settings)}`;
 }
 
 /** 格式化为 YYYY-MM-DD HH:mm:ss */
@@ -59,13 +149,8 @@ export function formatDateTimeFull(date: Date | string | number | null | undefin
   if (date == null) return "-";
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return "-";
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const min = String(d.getMinutes()).padStart(2, "0");
-  const sec = String(d.getSeconds()).padStart(2, "0");
-  return `${y}-${mo}-${day} ${h}:${min}:${sec}`;
+  const settings = getUnifiedDateSettings();
+  return `${formatDateBySettings(d, settings)} ${formatTimeBySettings(d, settings, true)}`;
 }
 
 /**

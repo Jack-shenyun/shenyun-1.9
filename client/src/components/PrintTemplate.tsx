@@ -1,8 +1,9 @@
 import React, { useRef } from 'react';
 import { formatDate, formatDateTime } from "@/lib/formatters";
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Printer, X } from 'lucide-react';
+import { DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Printer } from 'lucide-react';
+import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 
 interface PrintTemplateProps {
   open: boolean;
@@ -10,6 +11,31 @@ interface PrintTemplateProps {
   title: string;
   children: React.ReactNode;
   showPrintButton?: boolean;
+  landscape?: boolean;
+  paperSize?: string;
+  orientation?: "portrait" | "landscape";
+  marginTop?: number;
+  marginRight?: number;
+  marginBottom?: number;
+  marginLeft?: number;
+}
+
+function getPaperMetrics(paperSize = "A4", orientation: "portrait" | "landscape" = "portrait") {
+  const base = (() => {
+    switch (paperSize) {
+      case "A5":
+        return { widthMm: 148, heightMm: 210 };
+      case "Letter":
+        return { widthMm: 216, heightMm: 279 };
+      case "A4":
+      default:
+        return { widthMm: 210, heightMm: 297 };
+    }
+  })();
+
+  return orientation === "landscape"
+    ? { widthMm: base.heightMm, heightMm: base.widthMm }
+    : base;
 }
 
 export function PrintTemplate({
@@ -18,8 +44,17 @@ export function PrintTemplate({
   title,
   children,
   showPrintButton = true,
+  landscape = false,
+  paperSize = "A4",
+  orientation,
+  marginTop = 12,
+  marginRight = 14,
+  marginBottom = 12,
+  marginLeft = 14,
 }: PrintTemplateProps) {
   const printRef = useRef<HTMLDivElement>(null);
+  const resolvedOrientation = orientation || (landscape ? "landscape" : "portrait");
+  const paperMetrics = getPaperMetrics(paperSize, resolvedOrientation);
 
   const handlePrint = () => {
     const printContent = printRef.current;
@@ -44,34 +79,71 @@ export function PrintTemplate({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>${title}</title>
+          <title></title>
           <style>
             ${styles}
+
+            :root {
+              --print-sheet-width: ${paperMetrics.widthMm}mm;
+              --print-sheet-min-height: ${paperMetrics.heightMm}mm;
+            }
+
+            @page {
+              size: ${paperSize} ${resolvedOrientation};
+              margin: ${marginTop}px ${marginRight}px ${marginBottom}px ${marginLeft}px;
+            }
             
             @media print {
-              body { margin: 0; padding: 20px; }
+              body { margin: 0; padding: 0; background: #fff; }
               .no-print { display: none !important; }
-              .print-container { max-width: 100%; margin: 0 auto; }
+              .print-preview-shell {
+                background: #fff !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+              }
+              .print-sheet {
+                width: auto;
+                min-height: auto;
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                box-shadow: none !important;
+                border: none !important;
+                font-size: 12.5px;
+                line-height: 1.5;
+              }
               .print-section { page-break-inside: avoid; }
               table { page-break-inside: auto; }
               tr { page-break-inside: avoid; page-break-after: auto; }
             }
             
             @media screen {
-              body { background: #f5f5f5; padding: 20px; }
-              .print-container {
-                background: white;
-                padding: 40px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-                max-width: 210mm;
-                margin: 0 auto;
+              body { background: #eef2f7; padding: 20px; }
+              .print-preview-shell {
+                display: flex;
+                justify-content: center;
+                background: #eef2f7;
+                padding: 16px 0;
+              }
+              .print-sheet {
+                width: var(--print-sheet-width);
+                min-height: var(--print-sheet-min-height);
+                box-sizing: border-box;
+                background: #fff;
+                padding: ${marginTop}px ${marginRight}px ${marginBottom}px ${marginLeft}px;
+                box-shadow: 0 12px 36px rgba(15,23,42,0.12);
+                border: 1px solid rgba(148,163,184,0.2);
+                font-size: 12.5px;
+                line-height: 1.5;
               }
             }
           </style>
         </head>
         <body>
-          <div class="print-container">
-            ${printContent.innerHTML}
+          <div class="print-preview-shell">
+            <div class="print-sheet">
+              ${printContent.innerHTML}
+            </div>
           </div>
         </body>
       </html>
@@ -86,9 +158,21 @@ export function PrintTemplate({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-[95vw] w-[900px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-4 border-b no-print">
+    <DraggableDialog
+      open={open}
+      onOpenChange={onClose}
+      printable={false}
+      defaultWidth={resolvedOrientation === "landscape" ? 1260 : 860}
+      defaultHeight={900}
+      minWidth={resolvedOrientation === "landscape" ? 1080 : 760}
+      minHeight={700}
+      maxWidth="96vw"
+      maxHeight="96vh"
+      enableSearch={false}
+      className="overflow-hidden p-0"
+    >
+      <DraggableDialogContent className="flex h-full flex-col p-0">
+        <DialogHeader className="flex shrink-0 flex-row items-center justify-between space-y-0 border-b px-6 py-4 no-print">
           <DialogTitle className="text-xl font-semibold">{title}</DialogTitle>
           <div className="flex items-center gap-2">
             {showPrintButton && (
@@ -97,16 +181,27 @@ export function PrintTemplate({
                 打印
               </Button>
             )}
-            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
-              <X className="h-4 w-4" />
-            </Button>
           </div>
         </DialogHeader>
-        <div ref={printRef} className="print-content py-6">
-          {children}
+        <div className="print-preview-shell flex-1 overflow-y-auto bg-slate-100 px-4 py-6">
+          <div
+            ref={printRef}
+            className="print-sheet mx-auto shrink-0 bg-white shadow-[0_12px_36px_rgba(15,23,42,0.12)]"
+            style={{
+              width: `${paperMetrics.widthMm}mm`,
+              minHeight: `${paperMetrics.heightMm}mm`,
+              paddingTop: marginTop,
+              paddingRight: marginRight,
+              paddingBottom: marginBottom,
+              paddingLeft: marginLeft,
+              boxSizing: "border-box",
+            }}
+          >
+            {children}
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </DraggableDialogContent>
+    </DraggableDialog>
   );
 }
 

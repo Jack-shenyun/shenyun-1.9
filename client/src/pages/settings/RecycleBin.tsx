@@ -37,7 +37,7 @@ const statusMap: Record<string, { label: string; className: string }> = {
 
 export default function RecycleBinPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || Boolean((user as any)?.isCompanyAdmin);
 
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState<RecycleStatus>("active");

@@ -185,7 +185,7 @@ export default function DocumentsPage() {
     <>
       <ModulePage
         title="文件管理"
-        description="管理公司所有受控文件的全生命周期 (知识库)"
+        description="管理公司所有受控文件的全生命周期"
         icon={FileText}
         columns={columns}
         data={documents as any}

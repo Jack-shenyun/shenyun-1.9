@@ -19,6 +19,7 @@ import {
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import shenyunLogo from "@/assets/2ac420a999cddd5f145a62155f78b13e.png";
+import { useCompanyBranding } from "@/hooks/useCompanyBranding";
 
 const RA_MENUS = [
   {
@@ -60,6 +61,8 @@ interface RaLayoutProps {
 export default function RaLayout({ children }: RaLayoutProps) {
   const [location, navigate] = useLocation();
   const { user } = useAuth();
+  const { companyShortName } = useCompanyBranding();
+  const isWorkspacePage = location.startsWith("/ra/workspace/");
 
   const userName = String((user as any)?.name ?? "U");
   const userEmail = String((user as any)?.email ?? "");
@@ -81,7 +84,7 @@ export default function RaLayout({ children }: RaLayoutProps) {
       >
         <div className="flex items-center gap-2">
           <img src={shenyunLogo} alt="SHENYUN" className="h-6 w-auto object-contain" />
-          <span className="text-sm font-semibold text-slate-700 hidden sm:block">神韵医疗</span>
+          <span className="text-sm font-semibold text-slate-700 hidden sm:block">{companyShortName}</span>
           <span className="text-slate-300 hidden sm:block">·</span>
           <span className="text-sm text-slate-500 hidden sm:block">法规事务部</span>
         </div>
@@ -128,66 +131,63 @@ export default function RaLayout({ children }: RaLayoutProps) {
 
       {/* 下方：左侧菜单 + 右侧内容 */}
       <div className="flex flex-1 overflow-hidden">
-        {/* 左侧菜单 */}
-        <aside className="w-56 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
-          {/* Logo 区域 */}
-          <div className="px-4 py-4 border-b border-gray-100">
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center">
-                <ShieldCheck className="h-4 w-4 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-800 leading-tight">法规事务部</p>
-                <p className="text-[10px] text-gray-400 leading-tight">RA Management</p>
+        {!isWorkspacePage ? (
+          <aside className="w-56 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+            <div className="px-4 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center">
+                  <ShieldCheck className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800 leading-tight">法规事务部</p>
+                  <p className="text-[10px] text-gray-400 leading-tight">RA Management</p>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* 菜单列表 */}
-          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-            {RA_MENUS.map((menu) => {
-              const Icon = menu.icon;
-              const isActive = location.startsWith(menu.path);
-              return (
-                <button
-                  key={menu.id}
-                  onClick={() => navigate(menu.path)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3 py-3 rounded-lg border text-left transition-all",
-                    isActive
-                      ? `${menu.activeBg} border-opacity-100`
-                      : "border-transparent hover:bg-gray-50 hover:border-gray-100"
-                  )}
-                >
-                  <div className={cn("h-8 w-8 rounded-md flex items-center justify-center flex-shrink-0", menu.iconBg)}>
-                    <Icon className={cn("h-4 w-4", menu.color)} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className={cn("text-sm font-semibold leading-tight", isActive ? menu.color : "text-gray-700")}>
-                      {menu.label}
-                    </p>
-                    <p className="text-[10px] text-gray-400 leading-tight truncate">{menu.sublabel}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </nav>
+            <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+              {RA_MENUS.map((menu) => {
+                const Icon = menu.icon;
+                const isActive = location.startsWith(menu.path);
+                return (
+                  <button
+                    key={menu.id}
+                    onClick={() => navigate(menu.path)}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-3 rounded-lg border text-left transition-all",
+                      isActive
+                        ? `${menu.activeBg} border-opacity-100`
+                        : "border-transparent hover:bg-gray-50 hover:border-gray-100"
+                    )}
+                  >
+                    <div className={cn("h-8 w-8 rounded-md flex items-center justify-center flex-shrink-0", menu.iconBg)}>
+                      <Icon className={cn("h-4 w-4", menu.color)} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={cn("text-sm font-semibold leading-tight", isActive ? menu.color : "text-gray-700")}>
+                        {menu.label}
+                      </p>
+                      <p className="text-[10px] text-gray-400 leading-tight truncate">{menu.sublabel}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </nav>
 
-          {/* 返回主页按钮 */}
-          <div className="px-3 py-4 border-t border-gray-100">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start gap-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100"
-              onClick={() => navigate("/")}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              返回主页
-            </Button>
-          </div>
-        </aside>
+            <div className="px-3 py-4 border-t border-gray-100">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start gap-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                onClick={() => navigate("/")}
+              >
+                <ChevronLeft className="h-4 w-4" />
+                返回主页
+              </Button>
+            </div>
+          </aside>
+        ) : null}
 
-        {/* 右侧内容区 */}
         <main className="flex-1 overflow-y-auto">
           <div className="p-6">
             {children}

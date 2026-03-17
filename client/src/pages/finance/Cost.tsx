@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,6 +72,7 @@ function getStatusMeta(status: unknown) {
 
 
 export default function CostPage() {
+  const PAGE_SIZE = 10;
   const { data: _dbData = [], isLoading, refetch } = trpc.paymentRecords.list.useQuery();
   const createMutation = trpc.paymentRecords.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
   const updateMutation = trpc.paymentRecords.update.useMutation({ onSuccess: () => { refetch(); toast.success("更新成功"); } });
@@ -83,6 +85,7 @@ export default function CostPage() {
   const [editingCost, setEditingCost] = useState<CostRecord | null>(null);
   const [viewingCost, setViewingCost] = useState<CostRecord | null>(null);
   const { canDelete } = usePermission();
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [formData, setFormData] = useState({
     period: "",
@@ -101,6 +104,16 @@ export default function CostPage() {
     const matchesStatus = statusFilter === "all" || c.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+  const totalPages = Math.max(1, Math.ceil(filteredCosts.length / PAGE_SIZE));
+  const pagedCosts = filteredCosts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const handleAdd = () => {
     setEditingCost(null);
@@ -213,25 +226,25 @@ export default function CostPage() {
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">总成本</p>
-              <p className="text-2xl font-bold">¥{(totalCost / 10000).toFixed(1)}万</p>
+              <p className="text-2xl font-bold">¥{formatNumber(totalCost / 10000)}万</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">材料成本</p>
-              <p className="text-2xl font-bold text-blue-600">¥{(totalMaterialCost / 10000).toFixed(1)}万</p>
+              <p className="text-2xl font-bold text-blue-600">¥{formatNumber(totalMaterialCost / 10000)}万</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">人工成本</p>
-              <p className="text-2xl font-bold text-green-600">¥{(totalLaborCost / 10000).toFixed(1)}万</p>
+              <p className="text-2xl font-bold text-green-600">¥{formatNumber(totalLaborCost / 10000)}万</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <p className="text-sm text-muted-foreground">制造费用</p>
-              <p className="text-2xl font-bold text-amber-600">¥{(totalOverheadCost / 10000).toFixed(1)}万</p>
+              <p className="text-2xl font-bold text-amber-600">¥{formatNumber(totalOverheadCost / 10000)}万</p>
             </CardContent>
           </Card>
         </div>
@@ -282,7 +295,7 @@ export default function CostPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCosts.map((cost: any) => (
+                {pagedCosts.map((cost: any) => (
                   <TableRow key={cost.id}>
                     <TableCell className="text-center">{cost.period}</TableCell>
                     <TableCell className="text-center font-medium">{cost.productName}</TableCell>
@@ -336,6 +349,7 @@ export default function CostPage() {
             </Table>
           </CardContent>
         </Card>
+        <TablePaginationFooter total={filteredCosts.length} page={currentPage} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
 
         {/* 新建/编辑对话框 */}
         <DraggableDialog open={dialogOpen} onOpenChange={setDialogOpen}>

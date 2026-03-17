@@ -1,4 +1,4 @@
-import { formatDate, formatDateTime } from "@/lib/formatters";
+import { formatCurrencyValue, formatDate, formatDateTime } from "@/lib/formatters";
 import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { DraggableDialog } from "./DraggableDialog";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { TrendingUp, Calendar, DollarSign, ShoppingCart } from "lucide-react";
 import { useLocation } from "wouter";
 import { normalizePaymentCondition } from "@shared/paymentTerms";
+import { localizeStatusLabel } from "@/lib/statusStyle";
 
 interface Customer {
   id: number;
@@ -26,6 +27,7 @@ interface Customer {
   currency?: string;
   needInvoice?: boolean;
   taxNo?: string;
+  taxRate?: string | number;
   bankAccount?: string;
   bankName?: string;
   salesPersonId?: number;
@@ -115,9 +117,7 @@ export function CustomerDetailDialog({ open, onOpenChange, customer, onEdit }: C
 
   const formatAmount = (amount: string | number | null, currency?: string) => {
     const symbol = getCurrencySymbol(currency);
-    if (!amount) return `${symbol}0.00`;
-    const num = typeof amount === "string" ? parseFloat(amount) : amount;
-    return `${symbol}${num.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return formatCurrencyValue(amount, symbol);
   };
 
   return (
@@ -205,7 +205,7 @@ export function CustomerDetailDialog({ open, onOpenChange, customer, onEdit }: C
               </FieldRow>
               <FieldRow label="状态">
                 <Badge variant={statusMap[customer.status as keyof typeof statusMap]?.variant || "outline"}>
-                  {statusMap[customer.status as keyof typeof statusMap]?.label || customer.status}
+                  {localizeStatusLabel(statusMap[customer.status as keyof typeof statusMap]?.label || customer.status)}
                 </Badge>
               </FieldRow>
               <FieldRow label="销售负责人">{customer.salesPersonName || "-"}</FieldRow>
@@ -246,6 +246,7 @@ export function CustomerDetailDialog({ open, onOpenChange, customer, onEdit }: C
             <div>
               {customer.needInvoice && (
                 <>
+                  <FieldRow label="税率">{customer.taxRate ? `${customer.taxRate}%` : "13%"}</FieldRow>
                   <FieldRow label="税号">{customer.taxNo || "-"}</FieldRow>
                   <FieldRow label="开户银行">{customer.bankName || "-"}</FieldRow>
                   <FieldRow label="银行账号">{customer.bankAccount || "-"}</FieldRow>
@@ -274,7 +275,7 @@ export function CustomerDetailDialog({ open, onOpenChange, customer, onEdit }: C
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="font-medium text-sm truncate">{order.orderNo}</span>
                     <Badge variant={orderStatusMap[order.status]?.variant || "outline"} className="shrink-0">
-                      {orderStatusMap[order.status]?.label || order.status}
+                      {localizeStatusLabel(orderStatusMap[order.status]?.label || order.status)}
                     </Badge>
                     <span className="text-xs text-muted-foreground shrink-0">{formatDate(order.orderDate)}</span>
                   </div>

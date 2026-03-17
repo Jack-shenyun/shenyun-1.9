@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import ModulePage, { Column, StatusBadge } from "@/components/ModulePage";
+import { formatDisplayNumber, toRoundedString } from "@/lib/formatters";
 import { Receipt, Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -20,6 +21,15 @@ const statusMap: Record<string, any> = {
   paid: { label: "已支付", variant: "default" },
   cancelled: { label: "已取消", variant: "outline" },
 };
+
+function isEditableStatus(status: unknown) {
+  const value = String(status || "");
+  return value === "draft" || value === "rejected";
+}
+
+function isDeletableStatus(status: unknown) {
+  return String(status || "") === "draft";
+}
 
 const expenseTypeOptions = [
   "差旅费",
@@ -114,29 +124,32 @@ function buildAutoTitle(applicantName: string, applyDate: string) {
 
 export default function ExpensePage() {
   const { user } = useAuth();
-  const { data = [], isLoading, refetch } = trpc.expenseReimbursements.list.useQuery();
+  const { data = [], isLoading, refetch } = trpc.expenses.list.useQuery();
   const { data: usersData = [] } = trpc.users.list.useQuery();
-  const createMutation = trpc.expenseReimbursements.create.useMutation({
+  const createMutation = trpc.expenses.create.useMutation({
     onSuccess: () => {
       refetch();
       toast.success("提交成功");
     },
   });
-  const updateMutation = trpc.expenseReimbursements.update.useMutation({
+  const updateMutation = trpc.expenses.update.useMutation({
     onSuccess: () => {
       refetch();
       toast.success("更新成功");
     },
   });
-  const deleteMutation = trpc.expenseReimbursements.delete.useMutation({
+  const deleteMutation = trpc.expenses.delete.useMutation({
     onSuccess: () => {
       refetch();
       toast.success("删除成功");
     },
   });
+  const approveMutation = trpc.expenses.approve.useMutation();
+  const rejectMutation = trpc.expenses.reject.useMutation();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<any>(null);
+  const [viewMode, setViewMode] = useState(false);
   const [titleTouched, setTitleTouched] = useState(false);
   const [form, setForm] = useState<FormState>({
     reimbursementNo: "",
@@ -149,6 +162,10 @@ export default function ExpensePage() {
     status: "draft",
     lines: [],
   });
+  const { data: approvalState } = trpc.expenses.getApprovalState.useQuery(
+    { id: Number(editingRecord?.id || 0) },
+    { enabled: Boolean(viewMode && editingRecord?.id && String(editingRecord?.status || "") === "pending_approval") }
+  );
 
   const users = useMemo(
     () =>
@@ -184,10 +201,24 @@ export default function ExpensePage() {
       key: "totalAmount",
       title: "总金额",
       width: "120px",
-      render: (v, row) => `${row.currency || "CNY"} ${parseFloat(v || 0).toLocaleString()}`,
+      render: (v, row) => `${row.currency || "CNY"} ${formatDisplayNumber(v)}`,
     },
     { key: "status", title: "状态", width: "100px", render: (v) => <StatusBadge status={v} statusMap={statusMap} /> },
   ];
+
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("focusId");
+    const focusId = Number(raw);
+    if (!Number.isFinite(focusId) || focusId <= 0 || (data as any[]).length === 0) return;
+    const matched = (data as any[]).find((item: any) => Number(item?.id) === focusId);
+    if (!matched) return;
+    setEditingRecord(matched);
+    setViewMode(true);
+    setFormOpen(true);
+    const next = new URL(window.location.href);
+    next.searchParams.delete("focusId");
+    window.history.replaceState({}, "", `${next.pathname}${next.search}${next.hash}`);
+  }, [data]);
 
   useEffect(() => {
     if (!formOpen) return;
@@ -197,9 +228,9 @@ export default function ExpensePage() {
       const title = String(editingRecord.description || "").split("\n")[0] || "";
       setForm({
         reimbursementNo: editingRecord.reimbursementNo || "",
-        applicantId: user?.id ? String(user.id) : "",
-        applicantName: user?.name || "",
-        department: editingRecord.department || user?.department || "",
+        applicantId: editingRecord.applicantId ? String(editingRecord.applicantId) : "",
+        applicantName: editingRecord.applicantName || "",
+        department: editingRecord.department || splitMainDepartment(editingRecord.applicantDepartment || user?.department || ""),
         applyDate: editingRecord.applyDate ? String(editingRecord.applyDate).slice(0, 10) : "",
         title,
         note: parsed.note || "",
@@ -211,7 +242,7 @@ export default function ExpensePage() {
       const nextApplyDate = new Date().toISOString().slice(0, 10);
       const nextApplicantName = user?.name || "";
       setForm({
-        reimbursementNo: `EXP-${new Date().getFullYear()}-${String((data?.length || 0) + 1).padStart(4, "0")}`,
+        reimbursementNo: "",
         applicantId: user?.id ? String(user.id) : "",
         applicantName: nextApplicantName,
         department: splitMainDepartment(user?.department || ""),
@@ -265,7 +296,7 @@ export default function ExpensePage() {
     toast.info("批量上传发票入口已开启，下一步可接入OCR自动拆分明细。");
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.title.trim()) {
       toast.error("请填写报销标题");
       return;
@@ -275,29 +306,43 @@ export default function ExpensePage() {
       return;
     }
     const payload = {
-      reimbursementNo: form.reimbursementNo,
+      reimbursementNo: form.reimbursementNo || undefined,
+      applicantId: Number(form.applicantId || 0) || undefined,
       department: form.department || splitMainDepartment(user?.department || "管理部") || "管理部",
       applyDate: form.applyDate,
-      totalAmount: totalAmount.toFixed(2),
+      totalAmount: toRoundedString(totalAmount, 2),
       currency: "CNY",
       category: "other" as const,
+      status: editingRecord
+        ? ((String(editingRecord.status) === "rejected" ? "pending_approval" : form.status) as any)
+        : "pending_approval" as const,
       description: `${form.title}\n${form.note || ""}`.trim(),
       remark: `${REMARK_PREFIX}${JSON.stringify({ note: form.note, lines: form.lines })}`,
     };
-    if (editingRecord) {
-      updateMutation.mutate({
-        id: editingRecord.id,
-        data: {
-          totalAmount: payload.totalAmount,
-          description: payload.description,
-          remark: payload.remark,
-          status: form.status as any,
-        },
+    try {
+      if (editingRecord) {
+        await updateMutation.mutateAsync({
+          id: editingRecord.id,
+          data: {
+            applicantId: Number(form.applicantId || 0) || undefined,
+            department: payload.department,
+            applyDate: payload.applyDate,
+            category: payload.category,
+            totalAmount: payload.totalAmount,
+            description: payload.description,
+            remark: payload.remark,
+            status: payload.status as any,
+          },
+        });
+      } else {
+        await createMutation.mutateAsync(payload);
+      }
+      setFormOpen(false);
+    } catch (error: any) {
+      toast.error(editingRecord ? "保存失败" : "提交失败", {
+        description: String(error?.message || error || "请稍后重试"),
       });
-    } else {
-      createMutation.mutate(payload);
     }
-    setFormOpen(false);
   };
 
   return (
@@ -312,24 +357,49 @@ export default function ExpensePage() {
         compact
         onAdd={() => {
           setEditingRecord(null);
+          setViewMode(false);
+          setFormOpen(true);
+        }}
+        onView={(record) => {
+          setEditingRecord(record);
+          setViewMode(true);
           setFormOpen(true);
         }}
         onEdit={(record) => {
+          if (!isEditableStatus((record as any)?.status)) {
+            toast.info("当前状态只可查看", {
+              description: "已提交审批、已通过或已支付的报销单不再允许直接编辑",
+            });
+            setEditingRecord(record);
+            setViewMode(true);
+            setFormOpen(true);
+            return;
+          }
           setEditingRecord(record);
+          setViewMode(false);
           setFormOpen(true);
         }}
         onDelete={(record) => deleteMutation.mutate({ id: record.id })}
+        canEditRecord={(record) => isEditableStatus((record as any)?.status)}
+        canDeleteRecord={(record) => isDeletableStatus((record as any)?.status)}
       />
 
-      <DraggableDialog open={formOpen} onOpenChange={setFormOpen} defaultWidth={980} defaultHeight={760} enableSearch={false}>
+      <DraggableDialog open={formOpen} onOpenChange={(open) => {
+        setFormOpen(open);
+        if (!open) {
+          setViewMode(false);
+        }
+      }} defaultWidth={980} defaultHeight={760} enableSearch={false}>
         <DraggableDialogContent>
           <div className="space-y-4">
-            <h3 className="text-2xl font-bold">{editingRecord ? "编辑报销申请" : "新建报销申请"}</h3>
+            <h3 className="text-2xl font-bold">
+              {viewMode ? "查看报销申请" : editingRecord ? "编辑报销申请" : "新建报销申请"}
+            </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>报销人 *</Label>
-                <Select value={form.applicantId || ""} onValueChange={handleApplicantChange}>
+                <Select value={form.applicantId || ""} onValueChange={handleApplicantChange} disabled={viewMode}>
                   <SelectTrigger>
                     <SelectValue placeholder="输入姓名" />
                   </SelectTrigger>
@@ -347,6 +417,7 @@ export default function ExpensePage() {
                 <Label>所属部门</Label>
                 <Select
                   value={form.department || undefined}
+                  disabled={viewMode}
                   onValueChange={(value) => setForm((p) => ({ ...p, department: value }))}
                 >
                   <SelectTrigger>
@@ -367,6 +438,7 @@ export default function ExpensePage() {
                 <Input
                   type="date"
                   value={form.applyDate}
+                  disabled={viewMode}
                   onChange={(e) =>
                     setForm((p) => {
                       const nextDate = e.target.value;
@@ -386,6 +458,7 @@ export default function ExpensePage() {
               <Input
                 value={form.title}
                 placeholder="如：3月出差费用报销"
+                disabled={viewMode}
                 onChange={(e) => {
                   setTitleTouched(true);
                   setForm((p) => ({ ...p, title: e.target.value }));
@@ -395,22 +468,24 @@ export default function ExpensePage() {
 
             <div className="space-y-2">
               <Label>备注说明</Label>
-              <Textarea value={form.note} placeholder="可选填写报销说明" rows={3} onChange={(e) => setForm((p) => ({ ...p, note: e.target.value }))} />
+              <Textarea value={form.note} placeholder="可选填写报销说明" rows={3} disabled={viewMode} onChange={(e) => setForm((p) => ({ ...p, note: e.target.value }))} />
             </div>
 
             <div className="pt-1">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <h4 className="text-xl font-semibold">费用明细（发票列表）</h4>
-                <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={handleBatchUpload}>
-                    <Upload className="h-4 w-4 mr-2" />
-                    批量上传发票（AI识别）
-                  </Button>
-                  <Button type="button" variant="outline" onClick={addLine}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    手动添加一行
-                  </Button>
-                </div>
+                {!viewMode && (
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" onClick={handleBatchUpload}>
+                      <Upload className="h-4 w-4 mr-2" />
+                      批量上传发票（AI识别）
+                    </Button>
+                    <Button type="button" variant="outline" onClick={addLine}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      手动添加一行
+                    </Button>
+                  </div>
+                )}
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
                 支持批量上传多张发票图片，AI自动识别发票信息并填入明细，识别后可手动修正。
@@ -446,10 +521,10 @@ export default function ExpensePage() {
                       <TableRow key={line.id}>
                         <TableCell>{idx + 1}</TableCell>
                         <TableCell>
-                          <Input type="date" value={line.expenseDate} onChange={(e) => upsertLine(line.id, { expenseDate: e.target.value })} />
+                          <Input type="date" value={line.expenseDate} disabled={viewMode} onChange={(e) => upsertLine(line.id, { expenseDate: e.target.value })} />
                         </TableCell>
                         <TableCell>
-                          <Select value={line.expenseType} onValueChange={(value) => upsertLine(line.id, { expenseType: value })}>
+                          <Select value={line.expenseType} onValueChange={(value) => upsertLine(line.id, { expenseType: value })} disabled={viewMode}>
                             <SelectTrigger>
                               <SelectValue placeholder="选择费用类型" />
                             </SelectTrigger>
@@ -463,19 +538,20 @@ export default function ExpensePage() {
                           </Select>
                         </TableCell>
                         <TableCell>
-                          <Input value={line.invoiceType} onChange={(e) => upsertLine(line.id, { invoiceType: e.target.value })} />
+                          <Input value={line.invoiceType} disabled={viewMode} onChange={(e) => upsertLine(line.id, { invoiceType: e.target.value })} />
                         </TableCell>
                         <TableCell>
-                          <Input type="number" value={line.taxRate} onChange={(e) => upsertLine(line.id, { taxRate: e.target.value })} />
+                          <Input type="number" value={line.taxRate} disabled={viewMode} onChange={(e) => upsertLine(line.id, { taxRate: e.target.value })} />
                         </TableCell>
                         <TableCell>
-                          <Input type="number" value={line.amount} onChange={(e) => upsertLine(line.id, { amount: e.target.value })} />
+                          <Input type="number" value={line.amount} disabled={viewMode} onChange={(e) => upsertLine(line.id, { amount: e.target.value })} />
                         </TableCell>
                         <TableCell className="min-w-[220px]">
                           <div className="flex items-center gap-2">
                             <Input
                               type="file"
                               accept=".pdf,image/*"
+                              disabled={viewMode}
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
@@ -491,7 +567,7 @@ export default function ExpensePage() {
                           ) : null}
                         </TableCell>
                         <TableCell>
-                          <Input value={line.remark} onChange={(e) => upsertLine(line.id, { remark: e.target.value })} placeholder="备注" />
+                          <Input value={line.remark} disabled={viewMode} onChange={(e) => upsertLine(line.id, { remark: e.target.value })} placeholder="备注" />
                         </TableCell>
                       </TableRow>
                     ))
@@ -501,12 +577,68 @@ export default function ExpensePage() {
             </div>
 
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">
-                合计金额：¥{totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
+              <div className="flex flex-col gap-1">
+                <span className="text-muted-foreground">
+                  合计金额：¥{formatDisplayNumber(totalAmount)}
+                </span>
+                {viewMode && String(editingRecord?.status || "") === "pending_approval" ? (
+                  <span className="text-xs text-muted-foreground">
+                    当前审批：{(approvalState as any)?.stageLabel || "审批中"}
+                  </span>
+                ) : null}
+              </div>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>取消</Button>
-                <Button type="button" onClick={handleSubmit}>提交报销申请</Button>
+                {viewMode && String(editingRecord?.status || "") === "pending_approval" && Boolean((approvalState as any)?.canApprove) ? (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        rejectMutation.mutate(
+                          { id: Number(editingRecord?.id), remark: "审批驳回" },
+                          {
+                            onSuccess: () => {
+                              refetch();
+                              setFormOpen(false);
+                              toast.success("报销申请已驳回");
+                            },
+                            onError: (error: any) => toast.error(String(error?.message || "驳回失败")),
+                          }
+                        );
+                      }}
+                    >
+                      驳回
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        approveMutation.mutate(
+                          { id: Number(editingRecord?.id) },
+                          {
+                            onSuccess: () => {
+                              refetch();
+                              setFormOpen(false);
+                              toast.success("报销申请审批通过");
+                            },
+                            onError: (error: any) => toast.error(String(error?.message || "审批失败")),
+                          }
+                        );
+                      }}
+                    >
+                      审批通过
+                    </Button>
+                  </>
+                ) : null}
+                {!viewMode && (
+                  <Button type="button" onClick={handleSubmit}>
+                    {editingRecord && String(editingRecord.status) === "rejected"
+                      ? "重新提交报销申请"
+                      : editingRecord
+                        ? "保存报销申请"
+                        : "提交报销申请"}
+                  </Button>
+                )}
               </div>
             </div>
           </div>

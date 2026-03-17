@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { formatDate, formatDateTime as formatStandardDateTime, formatDisplayNumber } from "@/lib/formatters";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -87,15 +88,22 @@ function formatTime(val: string | null | undefined): string {
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffDays = Math.floor(diffMs / 86400000);
-  if (diffDays === 0) return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  if (diffDays === 0) return formatStandardDateTime(d).split(" ")[1] || "";
   if (diffDays < 7) return `${diffDays}天前`;
-  return d.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
+  return formatDate(d);
+}
+
+function formatMailDateTime(val: string | null | undefined): string {
+  if (!val) return "";
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return "";
+  return formatStandardDateTime(d);
 }
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  if (bytes < 1024 * 1024) return `${formatDisplayNumber(bytes / 1024)}KB`;
+  return `${formatDisplayNumber(bytes / 1024 / 1024)}MB`;
 }
 
 function getFileIcon(name: string) {
@@ -123,6 +131,13 @@ export default function MailPage() {
   const [composeBody, setComposeBody] = useState("");
   const [composeDraftId, setComposeDraftId] = useState<number | undefined>();
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [showTranslateComposer, setShowTranslateComposer] = useState(false);
+  const [translateComposerSource, setTranslateComposerSource] = useState("");
+  const [translateComposerResult, setTranslateComposerResult] = useState("");
+  const [translateDialogOffset, setTranslateDialogOffset] = useState({
+    x: 0,
+    y: 0,
+  });
 
   // AI 写作辅助
   const [aiWriteLoading, setAiWriteLoading] = useState(false);
@@ -139,8 +154,22 @@ export default function MailPage() {
   const [translateResult, setTranslateResult] = useState<string | null>(null);
   const [replyDraft, setReplyDraft] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState<"translate" | "reply" | null>(null);
+  const [inlineReplyOpen, setInlineReplyOpen] = useState(false);
+  const [inlineReplyTo, setInlineReplyTo] = useState("");
+  const [inlineReplySubject, setInlineReplySubject] = useState("");
+  const [inlineReplyBody, setInlineReplyBody] = useState("");
+  const [inlineReplyDraftId, setInlineReplyDraftId] = useState<
+    number | undefined
+  >();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const translateDialogDragRef = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    active: boolean;
+  } | null>(null);
 
   // tRPC
   const listQuery = trpc.mail.list.useQuery(
@@ -214,6 +243,25 @@ export default function MailPage() {
     onSuccess: (data) => { setReplyDraft(data.result); setAiLoading(null); },
     onError: (e) => { toast.error(e.message); setAiLoading(null); },
   });
+  const inlineReplyDraftMutation = trpc.mail.saveDraft.useMutation({
+    onSuccess: (data) => {
+      setInlineReplyDraftId(data.id);
+      toast.success("回复草稿已保存");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const inlineReplySendMutation = trpc.mail.send.useMutation({
+    onSuccess: (data) => {
+      if (data.success) {
+        toast.success("回复发送成功");
+        resetInlineReply();
+        if (folder === "sent") listQuery.refetch();
+      } else {
+        toast.error(data.error || "发送失败");
+      }
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const aiWriteMutation = trpc.mail.aiWrite.useMutation({
     onSuccess: (data) => {
@@ -229,6 +277,17 @@ export default function MailPage() {
     },
   });
 
+  const composeTranslateMutation = trpc.mail.aiWrite.useMutation({
+    onSuccess: (data) => {
+      setTranslateComposerResult(data.result);
+      setComposeBody(data.result);
+      toast.success("已翻译为英文并填入正文");
+    },
+    onError: (e) => {
+      toast.error(e.message);
+    },
+  });
+
   function resetCompose() {
     setComposeTo("");
     setComposeCc("");
@@ -238,13 +297,35 @@ export default function MailPage() {
     setAttachments([]);
     setShowAiInstruction(false);
     setAiInstruction("");
+    setShowTranslateComposer(false);
+    setTranslateComposerSource("");
+    setTranslateComposerResult("");
+    setTranslateDialogOffset({ x: 0, y: 0 });
   }
 
-  function openCompose(prefill?: { to?: string; subject?: string; body?: string }) {
+  function resetInlineReply() {
+    setInlineReplyOpen(false);
+    setInlineReplyTo("");
+    setInlineReplySubject("");
+    setInlineReplyBody("");
+    setInlineReplyDraftId(undefined);
+  }
+
+  function openCompose(prefill?: {
+    to?: string;
+    subject?: string;
+    body?: string;
+    quote?: string;
+  }) {
     resetCompose();
     if (prefill?.to) setComposeTo(prefill.to);
     if (prefill?.subject) setComposeSubject(prefill.subject);
-    if (prefill?.body) setComposeBody(prefill.body);
+    const sections = [prefill?.body?.trim(), prefill?.quote?.trim()].filter(
+      Boolean
+    ) as string[];
+    if (sections.length > 0) {
+      setComposeBody(sections.join("\n\n"));
+    }
     setShowCompose(true);
   }
 
@@ -320,6 +401,117 @@ export default function MailPage() {
       setAiWriteLoading(true);
       aiWriteMutation.mutate({ mode: "translate", body: composeBody, targetLang: translateLang });
     }
+  }
+
+  function openTranslateComposer() {
+    setTranslateComposerSource(composeBody.trim());
+    setTranslateComposerResult("");
+    setTranslateDialogOffset({ x: 0, y: 0 });
+    setShowTranslateComposer(true);
+  }
+
+  function handleComposeTranslate() {
+    if (!translateComposerSource.trim()) {
+      toast.error("请先输入中文内容");
+      return;
+    }
+    composeTranslateMutation.mutate({
+      mode: "translate",
+      body: translateComposerSource,
+      targetLang: "英文",
+    });
+  }
+
+  function handleTranslateDialogDragStart(
+    e: React.MouseEvent<HTMLDivElement>
+  ) {
+    if (e.button !== 0) return;
+    translateDialogDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: translateDialogOffset.x,
+      originY: translateDialogOffset.y,
+      active: true,
+    };
+    e.preventDefault();
+  }
+
+  useEffect(() => {
+    if (!showTranslateComposer) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const dragState = translateDialogDragRef.current;
+      if (!dragState?.active) return;
+      setTranslateDialogOffset({
+        x: dragState.originX + event.clientX - dragState.startX,
+        y: dragState.originY + event.clientY - dragState.startY,
+      });
+    };
+
+    const handleMouseUp = () => {
+      if (translateDialogDragRef.current) {
+        translateDialogDragRef.current.active = false;
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [showTranslateComposer]);
+
+  function buildReplyQuote(email: EmailDetail) {
+    const sentTime = formatMailDateTime(email.receivedAt || email.sentAt);
+    const body = String(email.bodyText || "").trim() || "(原邮件正文为空)";
+    const lines = [
+      "----- 原始邮件 -----",
+      `发件人: ${email.fromName || ""} <${email.fromAddress}>`,
+      `发送时间: ${sentTime || "-"}`,
+      `收件人: ${email.toAddress || "-"}`,
+      email.ccAddress ? `抄送: ${email.ccAddress}` : "",
+      `主题: ${email.subject || "(无主题)"}`,
+      "",
+      body,
+    ].filter(Boolean);
+    return lines.join("\n");
+  }
+
+  function openInlineReply(email: EmailDetail, body = "") {
+    const sections = [body.trim(), buildReplyQuote(email)].filter(Boolean);
+    setInlineReplyTo(email.fromAddress || "");
+    setInlineReplySubject(`Re: ${email.subject || ""}`);
+    setInlineReplyBody(sections.join("\n\n"));
+    setInlineReplyOpen(true);
+  }
+
+  function handleInlineReplySaveDraft() {
+    inlineReplyDraftMutation.mutate({
+      id: inlineReplyDraftId,
+      subject: inlineReplySubject,
+      toAddress: inlineReplyTo,
+      bodyHtml: inlineReplyBody,
+      bodyText: inlineReplyBody,
+    });
+  }
+
+  function handleInlineReplySend() {
+    if (!inlineReplyTo.trim()) {
+      toast.error("请填写收件人");
+      return;
+    }
+    if (!inlineReplySubject.trim()) {
+      toast.error("请填写主题");
+      return;
+    }
+    inlineReplySendMutation.mutate({
+      to: inlineReplyTo,
+      subject: inlineReplySubject,
+      bodyHtml: `<div style="font-family:sans-serif;line-height:1.6">${inlineReplyBody.replace(/\n/g, "<br/>")}</div>`,
+      bodyText: inlineReplyBody,
+      draftId: inlineReplyDraftId,
+    });
   }
 
   const emailList: EmailItem[] = (listQuery.data?.list as any) || [];
@@ -496,6 +688,7 @@ export default function MailPage() {
                         setSelectedId(email.id);
                         setTranslateResult(null);
                         setReplyDraft(null);
+                        resetInlineReply();
                         if (!email.isRead) markReadMutation.mutate({ id: email.id, isRead: true });
                       }}
                       className={`w-full text-left px-3 py-3 hover:bg-gray-50 transition-colors ${
@@ -549,10 +742,7 @@ export default function MailPage() {
                             size="sm"
                             variant="outline"
                             className="h-7 text-xs"
-                            onClick={() => openCompose({
-                              to: detail.fromAddress,
-                              subject: `Re: ${detail.subject}`,
-                            })}
+                            onClick={() => openInlineReply(detail)}
                           >
                             <Reply className="w-3.5 h-3.5 mr-1" /> 回复
                           </Button>
@@ -632,11 +822,7 @@ export default function MailPage() {
                               variant="outline"
                               className="h-7 text-xs"
                               onClick={() => {
-                                openCompose({
-                                  to: detail.fromAddress,
-                                  subject: `Re: ${detail.subject}`,
-                                  body: replyDraft,
-                                });
+                                openInlineReply(detail, replyDraft);
                                 setReplyDraft(null);
                               }}
                             >
@@ -652,6 +838,67 @@ export default function MailPage() {
                           onChange={(e) => setReplyDraft(e.target.value)}
                           className="text-sm min-h-[120px] bg-white"
                         />
+                      </div>
+                    )}
+
+                    {inlineReplyOpen && (
+                      <div className="border-b px-4 py-3 bg-amber-50 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-amber-700 flex items-center gap-1">
+                            <Reply className="w-4 h-4" /> 当前页回复
+                          </span>
+                          <button
+                            onClick={resetInlineReply}
+                            className="text-gray-400 hover:text-gray-600"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-2">
+                          <Label className="text-right text-sm">收件人</Label>
+                          <Input
+                            className="col-span-3 bg-white"
+                            value={inlineReplyTo}
+                            onChange={(e) => setInlineReplyTo(e.target.value)}
+                          />
+                        </div>
+                        <div className="grid grid-cols-4 items-center gap-2">
+                          <Label className="text-right text-sm">主题</Label>
+                          <Input
+                            className="col-span-3 bg-white"
+                            value={inlineReplySubject}
+                            onChange={(e) =>
+                              setInlineReplySubject(e.target.value)
+                            }
+                          />
+                        </div>
+                        <div className="grid grid-cols-4 gap-2">
+                          <Label className="text-right text-sm mt-2">正文</Label>
+                          <Textarea
+                            className="col-span-3 min-h-[220px] bg-white"
+                            value={inlineReplyBody}
+                            onChange={(e) => setInlineReplyBody(e.target.value)}
+                          />
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleInlineReplySaveDraft}
+                            disabled={inlineReplyDraftMutation.isPending}
+                          >
+                            保存草稿
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={handleInlineReplySend}
+                            disabled={inlineReplySendMutation.isPending}
+                          >
+                            {inlineReplySendMutation.isPending
+                              ? "发送中..."
+                              : "发送回复"}
+                          </Button>
+                        </div>
                       </div>
                     )}
 
@@ -752,6 +999,16 @@ export default function MailPage() {
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs border-green-200 text-green-700 hover:bg-green-50 gap-1"
+                    onClick={openTranslateComposer}
+                  >
+                    <Languages className="w-3.5 h-3.5" />
+                    翻译工具
+                  </Button>
                   <span className="text-xs text-gray-400">由豆包 AI 驱动</span>
                 </div>
 
@@ -897,6 +1154,66 @@ export default function MailPage() {
             </Button>
             <Button onClick={handleSend} disabled={sendMutation.isPending}>
               {sendMutation.isPending ? "发送中..." : "发送"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showTranslateComposer} onOpenChange={setShowTranslateComposer}>
+        <DialogContent
+          className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
+          style={{
+            transform: `translate(calc(-50% + ${translateDialogOffset.x}px), calc(-50% + ${translateDialogOffset.y}px))`,
+          }}
+        >
+          <DialogHeader
+            className="cursor-move select-none pr-8"
+            onMouseDown={handleTranslateDialogDragStart}
+          >
+            <DialogTitle>中文转英文工具</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">中文内容</Label>
+              <Textarea
+                className="min-h-[260px]"
+                placeholder="输入中文内容，系统会翻译成英文并自动填入邮件正文"
+                value={translateComposerSource}
+                onChange={(e) => setTranslateComposerSource(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">英文结果</Label>
+              <Textarea
+                className="min-h-[260px]"
+                placeholder="翻译结果会显示在这里"
+                value={translateComposerResult}
+                readOnly
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowTranslateComposer(false)}
+            >
+              关闭
+            </Button>
+            <Button
+              type="button"
+              onClick={handleComposeTranslate}
+              disabled={composeTranslateMutation.isPending}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {composeTranslateMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Languages className="mr-2 h-4 w-4" />
+              )}
+              翻译并填入正文
             </Button>
           </DialogFooter>
         </DialogContent>

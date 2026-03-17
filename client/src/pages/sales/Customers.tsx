@@ -6,6 +6,13 @@ import FormDialog, { FormField } from "@/components/FormDialog";
 import { Contact } from "lucide-react";
 import DraftDrawer, { DraftItem } from "@/components/DraftDrawer";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import {
   PAYMENT_CONDITION_OPTIONS,
@@ -16,6 +23,7 @@ interface Customer {
   id: number;
   code: string;
   name: string;
+  shortName?: string;
   type: string;
   contactPerson?: string;
   phone?: string;
@@ -28,6 +36,7 @@ interface Customer {
   paymentTerms?: string;
   needInvoice?: boolean; // 是否开票
   taxNo?: string;
+  taxRate?: string | number;
   bankAccount?: string;
   bankName?: string;
   salesPersonId?: number; // 销售负责人 ID
@@ -123,6 +132,15 @@ const PAYMENT_DAYS_OPTIONS = [
   { label: "60天", value: "60" },
   { label: "90天", value: "90" },
   { label: "120天", value: "120" },
+];
+
+const TAX_RATE_OPTIONS = [
+  { label: "13%", value: "13" },
+  { label: "9%", value: "9" },
+  { label: "6%", value: "6" },
+  { label: "3%", value: "3" },
+  { label: "1%", value: "1" },
+  { label: "0%", value: "0" },
 ];
 
 const cityOptionsByProvince: Record<string, string[]> = {
@@ -300,10 +318,14 @@ export default function CustomersPage() {
     handleDelete(data.find((d) => d.id === item.id)!);
   };
 
+  const matchesQuickFilters = (customer: Customer) =>
+    customerTypeFilter === "all" || customer.type === customerTypeFilter;
+
   const [formOpen, setFormOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<Customer | null>(null);
   const [viewingRecord, setViewingRecord] = useState<Customer | null>(null);
+  const [customerTypeFilter, setCustomerTypeFilter] = useState("all");
   const [createDefaults, setCreateDefaults] = useState<Record<string, any>>({
     status: "active",
     type: "domestic",
@@ -343,7 +365,9 @@ export default function CustomersPage() {
       status: "active",
       type: "domestic",
       paymentTerms: "先款后货",
+      paymentDays: "30",
       needInvoice: "false",
+      taxRate: "13",
     });
     setCustomerType("domestic");
     setPaymentTerms("");
@@ -377,32 +401,36 @@ export default function CustomersPage() {
     });
   };
 
-  const buildCustomerPayload = (formData: Record<string, any>) => ({
-    code: formData.code,
-    name: formData.name,
-    shortName: formData.shortName || undefined,
-    type: formData.type as "hospital" | "dealer" | "domestic" | "overseas",
-    contactPerson: formData.contactPerson || undefined,
-    phone: formData.phone || undefined,
-    email: formData.email || undefined,
-    address: formData.address || undefined,
-    province: formData.province || undefined,
-    city: formData.city || undefined,
-    country: formData.country || undefined,
-    paymentTerms: formData.paymentTerms ? normalizePaymentCondition(formData.paymentTerms) : undefined,
-    currency: formData.currency || undefined,
-    taxNo: formData.taxNo || undefined,
-    bankAccount: formData.bankAccount || undefined,
-    bankName: formData.bankName || undefined,
-    needInvoice: formData.needInvoice === true || formData.needInvoice === "true",
-    salesPersonId: formData.salesPersonId ? Number(formData.salesPersonId) : undefined,
-    status: (formData.status || "active") as "active" | "inactive" | "blacklist",
-    source: mergeSourceWithPaymentDays(
-      editingRecord?.source,
-      formData.paymentTerms,
-      formData.paymentDays
-    ),
-  });
+  const buildCustomerPayload = (formData: Record<string, any>) => {
+    const invoiceNeeded = formData.needInvoice === true || formData.needInvoice === "true";
+    return {
+      code: formData.code,
+      name: formData.name,
+      shortName: formData.shortName || undefined,
+      type: formData.type as "hospital" | "dealer" | "domestic" | "overseas",
+      contactPerson: formData.contactPerson || undefined,
+      phone: formData.phone || undefined,
+      email: formData.email || undefined,
+      address: formData.address || undefined,
+      province: formData.province || undefined,
+      city: formData.city || undefined,
+      country: formData.country || undefined,
+      paymentTerms: formData.paymentTerms ? normalizePaymentCondition(formData.paymentTerms) : undefined,
+      currency: formData.currency || undefined,
+      taxNo: formData.taxNo || undefined,
+      taxRate: invoiceNeeded ? String(formData.taxRate || "13") : undefined,
+      bankAccount: formData.bankAccount || undefined,
+      bankName: formData.bankName || undefined,
+      needInvoice: invoiceNeeded,
+      salesPersonId: formData.salesPersonId ? Number(formData.salesPersonId) : undefined,
+      status: (formData.status || "active") as "active" | "inactive" | "blacklist",
+      source: mergeSourceWithPaymentDays(
+        editingRecord?.source,
+        formData.paymentTerms,
+        formData.paymentDays
+      ),
+    };
+  };
 
   const handleSubmit = (formData: Record<string, any>) => {
     if (editingRecord) {
@@ -479,6 +507,7 @@ export default function CustomersPage() {
         label: "账期天数",
         type: "select",
         required: true,
+        defaultValue: "30",
         options: PAYMENT_DAYS_OPTIONS,
       });
     }
@@ -497,6 +526,14 @@ export default function CustomersPage() {
 
     // 开票时显示税号、开户行、银行账号
     if (needInvoice) {
+      fields.push({
+        name: "taxRate",
+        label: "税率",
+        type: "select",
+        required: true,
+        defaultValue: "13",
+        options: TAX_RATE_OPTIONS,
+      });
       fields.push({ name: "taxNo", label: "税号", type: "text", required: true, placeholder: "请输入统一社会信用代码" });
       fields.push({ name: "bankName", label: "开户银行", type: "text", required: true, placeholder: "请输入开户银行名称" });
       fields.push({ name: "bankAccount", label: "银行账号", type: "text", required: true, placeholder: "请输入银行账号" });
@@ -517,8 +554,16 @@ export default function CustomersPage() {
       setSelectedProvince(String(value || ""));
     } else if (name === "paymentTerms") {
       setPaymentTerms(normalizePaymentCondition(value));
+      if (normalizePaymentCondition(value) === "账期支付") {
+        return {
+          paymentDays: "30",
+        };
+      }
     } else if (name === "needInvoice") {
       setNeedInvoice(value === "true" || value === true);
+      return {
+        taxRate: value === "true" || value === true ? "13" : "",
+      };
     }
   };
 
@@ -557,6 +602,7 @@ export default function CustomersPage() {
     const headers = [
       "客户编码",
       "客户名称",
+      "客户简称",
       "客户类型",
       "状态",
       "联系人",
@@ -569,6 +615,7 @@ export default function CustomersPage() {
       "付款条件",
       "账期天数",
       "是否开票",
+      "税率",
       "税号",
       "开户银行",
       "银行账号",
@@ -581,6 +628,7 @@ export default function CustomersPage() {
       return [
         item.code,
         item.name,
+        item.shortName || "",
         typeMap[item.type] || item.type,
         statusMap[item.status]?.label || item.status,
         item.contactPerson || "",
@@ -593,6 +641,7 @@ export default function CustomersPage() {
         paymentNormalized || "",
         paymentNormalized === "账期支付" ? paymentDays : "",
         item.needInvoice ? "开票" : "不开票",
+        item.needInvoice ? `${item.taxRate || "13"}%` : "",
         item.taxNo || "",
         item.bankName || "",
         item.bankAccount || "",
@@ -639,11 +688,18 @@ export default function CustomersPage() {
       国内客户: "domestic",
       经销商: "dealer",
       医院: "hospital",
+      overseas: "overseas",
+      domestic: "domestic",
+      dealer: "dealer",
+      hospital: "hospital",
     };
     const statusReverseMap: Record<string, string> = {
       正常: "active",
       停用: "inactive",
       黑名单: "blacklist",
+      active: "active",
+      inactive: "inactive",
+      blacklist: "blacklist",
     };
 
     const salesPersonByName = new Map(
@@ -685,10 +741,12 @@ export default function CustomersPage() {
         paymentTermsValue,
         paymentDays
       );
+      const invoiceNeeded = ["开票", "是", "true", "1"].includes(readCol(row, "是否开票").toLowerCase());
 
       const payload = {
         code: readCol(row, "客户编码") || allocNextCode(),
         name,
+        shortName: readCol(row, "客户简称") || undefined,
         type: (typeReverseMap[readCol(row, "客户类型")] || "domestic") as "hospital" | "dealer" | "domestic" | "overseas",
         contactPerson: readCol(row, "联系人") || undefined,
         phone: readCol(row, "联系电话") || undefined,
@@ -698,7 +756,8 @@ export default function CustomersPage() {
         country: readCol(row, "国家") || undefined,
         address: readCol(row, "详细地址") || undefined,
         paymentTerms: paymentTermsValue,
-        needInvoice: ["开票", "是", "true", "1"].includes(readCol(row, "是否开票").toLowerCase()),
+        needInvoice: invoiceNeeded,
+        taxRate: invoiceNeeded ? (readCol(row, "税率").replace("%", "").trim() || "13") : undefined,
         taxNo: readCol(row, "税号") || undefined,
         bankName: readCol(row, "开户银行") || undefined,
         bankAccount: readCol(row, "银行账号") || undefined,
@@ -736,12 +795,45 @@ export default function CustomersPage() {
         icon={Contact}
         columns={columns}
         data={data}
-        searchPlaceholder="搜索客户编码、名称..."
+        searchPlaceholder="搜索客户编码、名称、联系人..."
+        searchFields={[
+          "code",
+          "name",
+          "shortName",
+          "contactPerson",
+          "phone",
+          "salesPersonName",
+        ]}
         addButtonText="新增客户"
         onAdd={handleAdd}
         onEdit={handleEdit}
         onView={handleView}
         onDelete={handleDelete}
+        filterKey="status"
+        filterOptions={[
+          { label: "正常", value: "active" },
+          { label: "停用", value: "inactive" },
+          { label: "黑名单", value: "blacklist" },
+        ]}
+        customFilter={matchesQuickFilters}
+        filterResetKey={customerTypeFilter}
+        toolbarFilters={
+          <Select
+            value={customerTypeFilter}
+            onValueChange={setCustomerTypeFilter}
+          >
+            <SelectTrigger className="w-full md:w-[180px]">
+              <SelectValue placeholder="客户类型" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部类型</SelectItem>
+              <SelectItem value="domestic">国内客户</SelectItem>
+              <SelectItem value="overseas">海外客户</SelectItem>
+              <SelectItem value="dealer">经销商</SelectItem>
+              <SelectItem value="hospital">医院</SelectItem>
+            </SelectContent>
+          </Select>
+        }
         onExport={handleExportCustomers}
         onImport={handleImportCustomers}
         importAccept=".csv"

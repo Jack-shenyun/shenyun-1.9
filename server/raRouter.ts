@@ -124,19 +124,24 @@ export const raRouter = router({
         productData: z.any().optional(),
         classification: z.any().optional(),
         technicalChars: z.any().optional(),
+        requirementContext: z.string().optional(),
+        suggestedHeadings: z.array(z.string()).optional(),
         existingContent: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         const productInfo = input.productData ? JSON.stringify(input.productData, null, 2) : "（产品信息待填写）";
         const classInfo = input.classification ? JSON.stringify(input.classification, null, 2) : "（分类信息待填写）";
         const techInfo = input.technicalChars ? JSON.stringify(input.technicalChars, null, 2) : "（技术特性待填写）";
+        const headingInfo = input.suggestedHeadings?.length
+          ? input.suggestedHeadings.map((heading, index) => `${index + 1}. ${heading}`).join("\n")
+          : "（待根据MDR要求自行整理）";
 
         const result = await invokeLLM({
           messages: [
             {
               role: "system",
               content: `你是一位资深的欧盟医疗器械法规（MDR (EU) 2017/745）合规专家。根据产品信息为CE技术文件的特定章节生成专业合规内容。
-要求：严格遵循MDR法规要求；内容基于提供的产品数据；使用专业法规术语；生成中文内容；数据不完整时用"[待补充：具体需要的信息]"占位；只填充内容，不修改框架结构；内容具体可操作，避免泛泛而谈。`,
+要求：严格遵循MDR法规要求；先根据提供的法规要求整理当前章节应包含的小标题，再围绕这些小标题生成中文内容；内容基于提供的产品数据；使用专业法规术语；数据不完整时优先引用已提供上下文，仍缺失时才用"[待补充：具体需要的信息]"占位；只输出章节正文，不要输出额外解释。`,
             },
             {
               role: "user",
@@ -144,13 +149,19 @@ export const raRouter = router({
 章节：${input.sectionTitle}（${input.sectionTitleEn}）
 文件ID：${input.documentId} / 章节ID：${input.sectionId}
 
+MDR要求与章节范围：
+${input.requirementContext || "（当前章节MDR要求待补充）"}
+
+建议先整理并覆盖以下小标题：
+${headingInfo}
+
 产品分类：${classInfo}
 技术特性：${techInfo}
 产品信息：${productInfo}
 
 ${input.existingContent ? `现有内容（请在此基础上补充完善）：\n${input.existingContent}` : "请从零开始生成该章节的完整内容。"}
 
-直接输出章节内容，不要添加额外标题或说明。`,
+请严格按“MDR要求与章节范围”组织内容，并优先覆盖建议小标题。直接输出章节内容，不要添加额外标题或说明。`,
             },
           ],
         });

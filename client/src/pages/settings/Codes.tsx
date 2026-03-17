@@ -223,13 +223,30 @@ export default function CodesPage() {
   const createMutation = trpc.codeRules.create.useMutation({ onSuccess: () => { refetch(); toast.success("创建成功"); } });
   const updateMutation = trpc.codeRules.update.useMutation({ onSuccess: () => { refetch(); toast.success("更新成功"); } });
   const deleteMutation = trpc.codeRules.delete.useMutation({ onSuccess: () => { refetch(); toast.success("删除成功"); } });
-  const codeRules = (_dbData as any[])
-    .map(normalizeCodeRule)
-    .filter((rule, index, arr) => {
-      const key = `${rule.module}::${rule.prefix}`;
-      return arr.findIndex((item) => `${item.module}::${item.prefix}` === key) === index;
-    })
-    .sort((a, b) => (a.department + a.module).localeCompare(b.department + b.module, "zh-CN"));
+  const syncMutation = trpc.codeRules.resync.useMutation({
+    onSuccess: () => {
+      refetch();
+      toast.success("流水号已重新同步");
+    },
+  });
+  const codeRules = Array.from(
+    (_dbData as any[])
+      .map(normalizeCodeRule)
+      .reduce((map, rule) => {
+        const key = `${rule.module}::${rule.prefix}`;
+        const existing = map.get(key);
+        if (
+          !existing ||
+          Number(rule.currentSerial || 0) > Number(existing.currentSerial || 0) ||
+          (Number(rule.currentSerial || 0) === Number(existing.currentSerial || 0) &&
+            Number(rule.id || 0) > Number(existing.id || 0))
+        ) {
+          map.set(key, rule);
+        }
+        return map;
+      }, new Map<string, CodeRule>())
+      .values()
+  ).sort((a, b) => (a.department + a.module).localeCompare(b.department + b.module, "zh-CN"));
   const [searchTerm, setSearchTerm] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -336,19 +353,16 @@ export default function CodesPage() {
   };
 
   const handleResetSerial = (rule: CodeRule) => {
-    // 记录操作日志
+    syncMutation.mutate({ id: rule.id });
     logOperation({
       module: "code_rule",
-      action: "reset",
+      action: "sync",
       targetType: "编码规则",
       targetId: rule.id,
       targetName: rule.name,
-      description: `重置编码规则流水号：${rule.name}`,
+      description: `重新同步编码规则流水号：${rule.name}`,
       previousData: { currentSerial: rule.currentSerial },
-      newData: { currentSerial: 0 },
     });
-    
-    toast.success("流水号已重置");
   };
 
   const handleCopyExample = (example: string) => {
@@ -479,8 +493,10 @@ export default function CodesPage() {
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">今日生成</p>
-              <p className="text-2xl font-bold text-amber-600">128</p>
+              <p className="text-sm text-muted-foreground">已有流水规则</p>
+              <p className="text-2xl font-bold text-amber-600">
+                {codeRules.filter((rule: any) => Number(rule.currentSerial || 0) > 0).length}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -578,7 +594,7 @@ export default function CodesPage() {
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleResetSerial(rule)}>
                                 <RefreshCw className="h-4 w-4 mr-2" />
-                                重置流水号
+                                重新同步流水号
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => handleDelete(rule)}

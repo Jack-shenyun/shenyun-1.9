@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ERPLayout from "@/components/ERPLayout";
 import { trpc } from "@/lib/trpc";
+import TablePaginationFooter from "@/components/TablePaginationFooter";
+import PrintPreviewButton from "@/components/PrintPreviewButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -22,7 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { formatDateValue, safeLower, toSafeNumber } from "@/lib/formatters";
+import { formatCurrencyValue, formatDateValue, formatDisplayNumber, safeLower, toSafeNumber } from "@/lib/formatters";
 import { toast } from "sonner";
 import { Edit, Eye, Plus, RefreshCw, Save, Trash2, Wallet } from "lucide-react";
 
@@ -43,33 +46,36 @@ type BankAccountForm = {
   openingBalance: string;
   currency: string;
   status: "active" | "frozen" | "closed";
-  address: string;
+  bankAddress: string;
+};
+
+type BalanceAdjustForm = {
+  direction: "increase" | "decrease";
+  amount: string;
+  adjustDate: string;
+  remark: string;
+};
+
+type SettlementForm = {
+  targetAccountId: string;
+  amount: string;
+  rate: string;
+  fee: string;
+  settleDate: string;
+  remark: string;
+};
+
+type TransferForm = {
+  targetAccountId: string;
+  amount: string;
+  transferDate: string;
+  remark: string;
 };
 
 const CURRENCY_OPTIONS = ["USD", "CNY", "EUR", "HKD", "JPY", "GBP"];
 const BANK_CURRENCIES = ["CNY", "USD", "EUR", "HKD", "JPY", "GBP"];
 
 const ACCOUNT_TEMPLATE_ROWS = [
-  {
-    accountCode: "ZH-007",
-    accountName: "微信",
-    status: "active" as const,
-    currency: "CNY",
-    bankName: "15150457575",
-    swiftCode: "-",
-    accountNo: "15150457575",
-    address: "-",
-  },
-  {
-    accountCode: "ZH-006",
-    accountName: "支付宝",
-    status: "active" as const,
-    currency: "CNY",
-    bankName: "浙江网商银行",
-    swiftCode: "-",
-    accountNo: "13812600639",
-    address: "浙江杭州",
-  },
   {
     accountCode: "ZH-005",
     accountName: "国际站",
@@ -78,7 +84,7 @@ const ACCOUNT_TEMPLATE_ROWS = [
     bankName: "CITIBANK N.A. SINGAPORE BRANCH",
     swiftCode: "CITISGSG or CITISGSGXXX",
     accountNo: "10695166385",
-    address: "51 Bras Basah Road 01-21 Singapore, 189554",
+    bankAddress: "51 Bras Basah Road 01-21 Singapore, 189554",
   },
   {
     accountCode: "ZH-004",
@@ -88,7 +94,7 @@ const ACCOUNT_TEMPLATE_ROWS = [
     bankName: "中国农业银行股份有限公司苏州临湖支行",
     swiftCode: "103305054082",
     accountNo: "10540801040026476",
-    address: "苏州市吴中区临湖镇银藏路666号11幢",
+    bankAddress: "苏州市吴中区临湖镇银藏路666号11幢",
   },
   {
     accountCode: "ZH-003",
@@ -98,7 +104,7 @@ const ACCOUNT_TEMPLATE_ROWS = [
     bankName: "JPMorgan Chase Bank N.A., Hong Kong Branch",
     swiftCode: "CHASHKHH",
     accountNo: "63003695928",
-    address: "18/F, 20/F, 22-29/F, CHATER HOUSE, 8 CONNAUGHT ROAD CENTRAL, HONG KONG",
+    bankAddress: "18/F, 20/F, 22-29/F, CHATER HOUSE, 8 CONNAUGHT ROAD CENTRAL, HONG KONG",
   },
   {
     accountCode: "ZH-002",
@@ -108,7 +114,7 @@ const ACCOUNT_TEMPLATE_ROWS = [
     bankName: "China Construction Bank Corporation Suzhou Branch Wuzhong Subbranch",
     swiftCode: "Pcbccnbjjss",
     accountNo: "32250199753600004047",
-    address: "Building 11, No. 666 Yinzang Road, Linhu Town, Wuzhong District, Suzhou, P.R. China",
+    bankAddress: "Building 11, No. 666 Yinzang Road, Linhu Town, Wuzhong District, Suzhou, P.R. China",
   },
   {
     accountCode: "ZH-001",
@@ -118,7 +124,7 @@ const ACCOUNT_TEMPLATE_ROWS = [
     bankName: "中国建设银行股份有限公司苏州滨湖支行",
     swiftCode: "105305007305",
     accountNo: "32250110073000001909",
-    address: "苏州市吴中区临湖镇银藏路666号11幢",
+    bankAddress: "苏州市吴中区临湖镇银藏路666号11幢",
   },
 ];
 
@@ -142,7 +148,36 @@ function buildDefaultBankForm(): BankAccountForm {
     openingBalance: "0",
     currency: "CNY",
     status: "active",
-    address: "",
+    bankAddress: "",
+  };
+}
+
+function buildDefaultBalanceAdjustForm(): BalanceAdjustForm {
+  return {
+    direction: "increase",
+    amount: "",
+    adjustDate: new Date().toISOString().slice(0, 10),
+    remark: "",
+  };
+}
+
+function buildDefaultSettlementForm(): SettlementForm {
+  return {
+    targetAccountId: "",
+    amount: "",
+    rate: "",
+    fee: "",
+    settleDate: new Date().toISOString().slice(0, 10),
+    remark: "",
+  };
+}
+
+function buildDefaultTransferForm(): TransferForm {
+  return {
+    targetAccountId: "",
+    amount: "",
+    transferDate: new Date().toISOString().slice(0, 10),
+    remark: "",
   };
 }
 
@@ -181,13 +216,27 @@ function getCurrencySymbol(currency?: string | null) {
 }
 
 function formatAccountMoney(value: number, currency?: string | null) {
-  return `${getCurrencySymbol(currency)}${toSafeNumber(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  return formatCurrencyValue(value, getCurrencySymbol(currency));
+}
+
+function buildPaymentRelationKeys(relatedType: unknown, relatedId: unknown, relatedNo: unknown) {
+  const type = String(relatedType || "").trim();
+  const keys: string[] = [];
+  const id = Number(relatedId || 0);
+  const no = String(relatedNo || "").trim();
+  if (type && Number.isFinite(id) && id > 0) {
+    keys.push(`${type}:id:${id}`);
+  }
+  if (type && no) {
+    keys.push(`${type}:no:${no}`);
+  }
+  return keys;
 }
 
 export default function FinanceAccountsPage() {
+  const PAGE_SIZE = 10;
+  const accountFormPrintRef = useRef<HTMLDivElement>(null);
+  const accountViewPrintRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [accountSearchTerm, setAccountSearchTerm] = useState("");
   const [accountStatusFilter, setAccountStatusFilter] = useState("all");
@@ -196,13 +245,23 @@ export default function FinanceAccountsPage() {
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [viewingAccount, setViewingAccount] = useState<any | null>(null);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [balanceDialogOpen, setBalanceDialogOpen] = useState(false);
+  const [settlementDialogOpen, setSettlementDialogOpen] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [liveCurrency, setLiveCurrency] = useState("USD");
+  const [currentPage, setCurrentPage] = useState(1);
   const [form, setForm] = useState<ExchangeRateForm>(buildDefaultForm());
   const [bankForm, setBankForm] = useState<BankAccountForm>(buildDefaultBankForm());
+  const [balanceAdjustForm, setBalanceAdjustForm] = useState<BalanceAdjustForm>(buildDefaultBalanceAdjustForm());
+  const [settlementForm, setSettlementForm] = useState<SettlementForm>(buildDefaultSettlementForm());
+  const [transferForm, setTransferForm] = useState<TransferForm>(buildDefaultTransferForm());
 
   const { data: rates = [], refetch, isLoading } = trpc.exchangeRates.list.useQuery({ limit: 300 });
   const { data: bankAccounts = [], refetch: refetchBankAccounts, isLoading: bankLoading } = trpc.bankAccounts.list.useQuery({});
-  const { data: paymentRecords = [] } = trpc.paymentRecords.list.useQuery({ limit: 2000 });
+  const { data: paymentRecords = [], refetch: refetchPaymentRecords } = trpc.paymentRecords.list.useQuery({ limit: 2000 });
+  const { data: receivables = [] } = trpc.accountsReceivable.list.useQuery();
+  const { data: payables = [] } = trpc.accountsPayable.list.useQuery();
+  const { data: expenses = [] } = trpc.expenses.list.useQuery({ limit: 500 });
 
   const createBankMutation = trpc.bankAccounts.create.useMutation({
     onSuccess: async () => {
@@ -228,6 +287,7 @@ export default function FinanceAccountsPage() {
       await refetchBankAccounts();
     },
   });
+  const createPaymentRecordMutation = trpc.paymentRecords.create.useMutation();
 
   const createMutation = trpc.exchangeRates.create.useMutation({
     onSuccess: async () => {
@@ -253,7 +313,7 @@ export default function FinanceAccountsPage() {
   });
   const refreshLiveMutation = trpc.exchangeRates.refreshLive.useMutation({
     onSuccess: async (res) => {
-      toast.success(`实时汇率已同步：1 ${res.fromCurrency} = ${toSafeNumber(res.rate).toFixed(6)} ${res.toCurrency}`);
+      toast.success(`实时汇率已同步：1 ${res.fromCurrency} = ${formatDisplayNumber(res.rate, { maximumFractionDigits: 6 })} ${res.toCurrency}`);
       await refetch();
     },
     onError: (error) => {
@@ -273,22 +333,52 @@ export default function FinanceAccountsPage() {
         safeLower(row.swiftCode).includes(keyword) ||
         safeLower(row.currency).includes(keyword) ||
         safeLower(parseAccountCode(row.remark)).includes(keyword) ||
-        safeLower(parseAddress(row.remark)).includes(keyword)
+        safeLower(String(row.bankAddress || parseAddress(row.remark))).includes(keyword)
       );
     });
   }, [accountSearchTerm, accountStatusFilter, bankAccounts]);
 
   const accountCards = useMemo(() => {
     const records = paymentRecords as any[];
+    const receivableRows = receivables as any[];
+    const payableRows = payables as any[];
+    const expenseRows = expenses as any[];
+    const linkedKeys = new Set<string>();
+    records.forEach((row) => {
+      buildPaymentRelationKeys(row.relatedType, row.relatedId, row.relatedNo).forEach((key) => linkedKeys.add(key));
+    });
     return (bankAccounts as any[]).map((account) => {
       const accountId = Number(account.id);
       const accountRecords = records.filter((row) => Number(row.bankAccountId) === accountId);
-      const income = accountRecords
+      const paymentRecordIncome = accountRecords
         .filter((row) => row.type === "receipt")
         .reduce((sum, row) => sum + toSafeNumber(row.amount), 0);
-      const expense = accountRecords
+      const paymentRecordExpense = accountRecords
         .filter((row) => row.type === "payment")
         .reduce((sum, row) => sum + toSafeNumber(row.amount), 0);
+      const receivableIncome = receivableRows
+        .filter((row) => {
+          if (Number(row.bankAccountId) !== accountId) return false;
+          const keys = buildPaymentRelationKeys("sales_order", row.salesOrderId, row.orderNo || row.invoiceNo);
+          return !keys.some((key) => linkedKeys.has(key));
+        })
+        .reduce((sum, row) => sum + toSafeNumber(row.paidAmount ?? row.receivedAmount), 0);
+      const payableExpense = payableRows
+        .filter((row) => {
+          if (Number(row.bankAccountId) !== accountId) return false;
+          const keys = buildPaymentRelationKeys("purchase_order", row.purchaseOrderId, row.orderNo || row.invoiceNo);
+          return !keys.some((key) => linkedKeys.has(key));
+        })
+        .reduce((sum, row) => sum + toSafeNumber(row.paidAmount), 0);
+      const expensePaid = expenseRows
+        .filter((row) => {
+          if (Number(row.bankAccountId) !== accountId || String(row.status || "") !== "paid") return false;
+          const keys = buildPaymentRelationKeys("expense", row.id, row.reimbursementNo);
+          return !keys.some((key) => linkedKeys.has(key));
+        })
+        .reduce((sum, row) => sum + toSafeNumber(row.totalAmount), 0);
+      const income = paymentRecordIncome + receivableIncome;
+      const expense = paymentRecordExpense + payableExpense + expensePaid;
       const openingBalance = toSafeNumber(account.balance);
       const remaining = openingBalance + income - expense;
       return {
@@ -300,7 +390,125 @@ export default function FinanceAccountsPage() {
         remaining,
       };
     });
-  }, [bankAccounts, paymentRecords]);
+  }, [bankAccounts, paymentRecords, receivables, payables, expenses]);
+
+  const viewingAccountCard = useMemo(
+    () => accountCards.find((item) => Number(item.id) === Number(viewingAccount?.id)),
+    [accountCards, viewingAccount],
+  );
+
+  const viewingAccountRecords = useMemo(() => {
+    const accountId = Number(viewingAccount?.id);
+    if (!Number.isFinite(accountId) || accountId <= 0) return [];
+    const linkedKeys = new Set<string>();
+    (paymentRecords as any[]).forEach((row) => {
+      buildPaymentRelationKeys(row.relatedType, row.relatedId, row.relatedNo).forEach((key) => linkedKeys.add(key));
+    });
+    const rows = [
+      ...(paymentRecords as any[])
+        .filter((row) => Number(row.bankAccountId) === accountId)
+        .map((row) => ({
+          id: `payment-${row.id}`,
+          date: String(row.paymentDate || row.createdAt || ""),
+          typeLabel: row.type === "receipt" ? "收入" : "支出",
+          amount: toSafeNumber(row.amount),
+          currency: row.currency || viewingAccount?.currency,
+          summary: row.remark || row.relatedNo || row.recordNo || "-",
+        })),
+      ...(receivables as any[])
+        .filter((row) => {
+          if (Number(row.bankAccountId) !== accountId || toSafeNumber(row.paidAmount ?? row.receivedAmount) <= 0) return false;
+          const keys = buildPaymentRelationKeys("sales_order", row.salesOrderId, row.orderNo || row.invoiceNo);
+          return !keys.some((key) => linkedKeys.has(key));
+        })
+        .map((row) => ({
+          id: `receivable-${row.id}`,
+          date: String(row.receiptDate || row.updatedAt || row.createdAt || ""),
+          typeLabel: "销售收款",
+          amount: toSafeNumber(row.paidAmount ?? row.receivedAmount),
+          currency: row.currency || viewingAccount?.currency,
+          summary: `${row.invoiceNo || "-"}${row.orderNo ? ` / ${row.orderNo}` : ""}`,
+        })),
+      ...(payables as any[])
+        .filter((row) => {
+          if (Number(row.bankAccountId) !== accountId || toSafeNumber(row.paidAmount) <= 0) return false;
+          const keys = buildPaymentRelationKeys("purchase_order", row.purchaseOrderId, row.orderNo || row.invoiceNo);
+          return !keys.some((key) => linkedKeys.has(key));
+        })
+        .map((row) => ({
+          id: `payable-${row.id}`,
+          date: String(row.paymentDate || row.updatedAt || row.createdAt || ""),
+          typeLabel: "采购付款",
+          amount: toSafeNumber(row.paidAmount),
+          currency: row.currency || viewingAccount?.currency,
+          summary: `${row.invoiceNo || "-"}${row.supplierName ? ` / ${row.supplierName}` : ""}`,
+        })),
+      ...(expenses as any[])
+        .filter((row) => {
+          if (Number(row.bankAccountId) !== accountId || String(row.status || "") !== "paid") return false;
+          const keys = buildPaymentRelationKeys("expense", row.id, row.reimbursementNo);
+          return !keys.some((key) => linkedKeys.has(key));
+        })
+        .map((row) => ({
+          id: `expense-${row.id}`,
+          date: String(row.paidAt || row.updatedAt || row.createdAt || ""),
+          typeLabel: "报销付款",
+          amount: toSafeNumber(row.totalAmount),
+          currency: row.currency || viewingAccount?.currency,
+          summary: `${row.reimbursementNo || "-"}${row.description ? ` / ${row.description}` : ""}`,
+        })),
+    ];
+    return rows
+      .sort(
+        (a, b) =>
+          new Date(String(b.date || "")).getTime() -
+          new Date(String(a.date || "")).getTime(),
+      )
+      .slice(0, 20);
+  }, [paymentRecords, receivables, payables, expenses, viewingAccount]);
+
+  const cnyAccounts = useMemo(
+    () =>
+      (bankAccounts as any[]).filter(
+        (row) =>
+          String(row.currency || "").toUpperCase() === "CNY" &&
+          String(row.status || "") === "active" &&
+          Number(row.id) !== Number(viewingAccount?.id),
+      ),
+    [bankAccounts, viewingAccount],
+  );
+
+  const sameCurrencyAccounts = useMemo(
+    () =>
+      (bankAccounts as any[]).filter(
+        (row) =>
+          String(row.currency || "").toUpperCase() === String(viewingAccount?.currency || "").toUpperCase() &&
+          String(row.status || "") === "active" &&
+          Number(row.id) !== Number(viewingAccount?.id),
+      ),
+    [bankAccounts, viewingAccount],
+  );
+
+  const selectedSettlementTargetCard = useMemo(
+    () => accountCards.find((item) => Number(item.id) === Number(settlementForm.targetAccountId)),
+    [accountCards, settlementForm.targetAccountId],
+  );
+
+  const selectedTransferTargetCard = useMemo(
+    () => accountCards.find((item) => Number(item.id) === Number(transferForm.targetAccountId)),
+    [accountCards, transferForm.targetAccountId],
+  );
+
+  const defaultSettlementRate = useMemo(() => {
+    const fromCurrency = String(viewingAccount?.currency || "").toUpperCase();
+    if (!fromCurrency || fromCurrency === "CNY") return "";
+    const matched = (rates as any[]).find(
+      (row) =>
+        String(row.fromCurrency || "").toUpperCase() === fromCurrency &&
+        String(row.toCurrency || "").toUpperCase() === "CNY",
+    );
+    return matched ? String(matched.rate ?? "") : "";
+  }, [rates, viewingAccount]);
 
   const filteredRates = useMemo(() => {
     return (rates as any[]).filter((row) => {
@@ -313,6 +521,16 @@ export default function FinanceAccountsPage() {
       );
     });
   }, [rates, searchTerm]);
+  const totalPages = Math.max(1, Math.ceil(filteredAccounts.length / PAGE_SIZE));
+  const pagedAccounts = filteredAccounts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [accountSearchTerm, accountStatusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const latestLiveRate = useMemo(() => {
     const target = (rates as any[]).find(
@@ -335,10 +553,7 @@ export default function FinanceAccountsPage() {
       return;
     }
 
-    const remarkParts = [
-      bankForm.accountCode ? `[${bankForm.accountCode}]` : "",
-      bankForm.address ? `地址:${bankForm.address}` : "",
-    ].filter(Boolean);
+    const remarkParts = [bankForm.accountCode ? `[${bankForm.accountCode}]` : ""].filter(Boolean);
     const remark = remarkParts.join(" ");
 
     if (accountEditingId) {
@@ -347,6 +562,7 @@ export default function FinanceAccountsPage() {
         data: {
           accountName: bankForm.accountName,
           bankName: bankForm.bankName,
+          bankAddress: bankForm.bankAddress || undefined,
           accountNo: bankForm.accountNo,
           swiftCode: bankForm.swiftCode || undefined,
           currency: bankForm.currency,
@@ -362,6 +578,7 @@ export default function FinanceAccountsPage() {
     createBankMutation.mutate({
       accountName: bankForm.accountName,
       bankName: bankForm.bankName,
+      bankAddress: bankForm.bankAddress || undefined,
       accountNo: bankForm.accountNo,
       swiftCode: bankForm.swiftCode || undefined,
       currency: bankForm.currency,
@@ -384,9 +601,34 @@ export default function FinanceAccountsPage() {
       openingBalance: String(row.balance ?? "0"),
       currency: String(row.currency || "CNY").toUpperCase(),
       status: String(row.status || "active") as "active" | "frozen" | "closed",
-      address: parseAddress(row.remark),
+      bankAddress: String(row.bankAddress || parseAddress(row.remark) || ""),
     });
     setAccountDialogOpen(true);
+  };
+
+  const handleViewBank = (id: number) => {
+    const row = (bankAccounts as any[]).find((item) => Number(item.id) === id);
+    if (!row) return;
+    setViewingAccount(row);
+    setViewDialogOpen(true);
+  };
+
+  const openBalanceAdjust = () => {
+    setBalanceAdjustForm(buildDefaultBalanceAdjustForm());
+    setBalanceDialogOpen(true);
+  };
+
+  const openSettlement = () => {
+    setSettlementForm({
+      ...buildDefaultSettlementForm(),
+      rate: defaultSettlementRate,
+    });
+    setSettlementDialogOpen(true);
+  };
+
+  const openTransfer = () => {
+    setTransferForm(buildDefaultTransferForm());
+    setTransferDialogOpen(true);
   };
 
   const handleDeleteBank = (id: number) => {
@@ -400,16 +642,186 @@ export default function FinanceAccountsPage() {
     setAccountDialogOpen(false);
   };
 
+  const handleBalanceAdjustSubmit = async () => {
+    const accountId = Number(viewingAccount?.id);
+    const amount = toSafeNumber(balanceAdjustForm.amount);
+    if (!Number.isFinite(accountId) || accountId <= 0) return;
+    if (amount <= 0) {
+      toast.error("请输入有效调整金额");
+      return;
+    }
+    try {
+      await createPaymentRecordMutation.mutateAsync({
+        type: balanceAdjustForm.direction === "increase" ? "receipt" : "payment",
+        relatedType: "other",
+        relatedNo: String(viewingAccount?.accountName || ""),
+        amount: String(amount),
+        currency: String(viewingAccount?.currency || "CNY").toUpperCase(),
+        amountBase: String(amount),
+        exchangeRate: "1",
+        bankAccountId: accountId,
+        paymentDate: balanceAdjustForm.adjustDate,
+        paymentMethod: "余额调整",
+        remark: `${balanceAdjustForm.direction === "increase" ? "余额调增" : "余额调减"}${balanceAdjustForm.remark ? `：${balanceAdjustForm.remark}` : ""}`,
+      });
+      await refetchPaymentRecords();
+      setBalanceDialogOpen(false);
+      toast.success("余额调整已保存");
+    } catch (error: any) {
+      toast.error("余额调整失败", { description: error?.message || "请稍后重试" });
+    }
+  };
+
+  const handleSettlementSubmit = async () => {
+    const sourceAccountId = Number(viewingAccount?.id);
+    const targetAccountId = Number(settlementForm.targetAccountId);
+    const amount = toSafeNumber(settlementForm.amount);
+    const rate = toSafeNumber(settlementForm.rate);
+    const fee = toSafeNumber(settlementForm.fee);
+    const sourceCurrency = String(viewingAccount?.currency || "").toUpperCase();
+    const targetAccount = (bankAccounts as any[]).find((row) => Number(row.id) === targetAccountId);
+    const sourceBalance = toSafeNumber(viewingAccountCard?.remaining);
+    if (!Number.isFinite(sourceAccountId) || sourceAccountId <= 0) return;
+    if (sourceCurrency === "CNY") {
+      toast.error("人民币账户不需要结汇");
+      return;
+    }
+    if (!Number.isFinite(targetAccountId) || targetAccountId <= 0) {
+      toast.error("请选择人民币账户");
+      return;
+    }
+    if (amount <= 0 || rate <= 0) {
+      toast.error("请填写有效的结汇金额和汇率");
+      return;
+    }
+    if (amount > sourceBalance) {
+      toast.error("结汇金额不能超过当前余额");
+      return;
+    }
+    const grossCny = amount * rate;
+    const netCny = grossCny - fee;
+    if (netCny <= 0) {
+      toast.error("手续费不能大于等于结汇金额");
+      return;
+    }
+    try {
+      await createPaymentRecordMutation.mutateAsync({
+        type: "payment",
+        relatedType: "other",
+        relatedNo: String(targetAccount?.accountName || ""),
+        amount: String(amount),
+        currency: sourceCurrency,
+        amountBase: String(grossCny),
+        exchangeRate: String(rate),
+        bankAccountId: sourceAccountId,
+        paymentDate: settlementForm.settleDate,
+        paymentMethod: "结汇",
+        remark: `结汇转出到 ${String(targetAccount?.accountName || "")}${settlementForm.remark ? `：${settlementForm.remark}` : ""}`,
+      });
+      await createPaymentRecordMutation.mutateAsync({
+        type: "receipt",
+        relatedType: "other",
+        relatedNo: String(viewingAccount?.accountName || ""),
+        amount: String(grossCny),
+        currency: "CNY",
+        amountBase: String(grossCny),
+        exchangeRate: "1",
+        bankAccountId: targetAccountId,
+        paymentDate: settlementForm.settleDate,
+        paymentMethod: "结汇",
+        remark: `结汇转入来自 ${String(viewingAccount?.accountName || "")}`,
+      });
+      if (fee > 0) {
+        await createPaymentRecordMutation.mutateAsync({
+          type: "payment",
+          relatedType: "other",
+          relatedNo: String(viewingAccount?.accountName || ""),
+          amount: String(fee),
+          currency: "CNY",
+          amountBase: String(fee),
+          exchangeRate: "1",
+          bankAccountId: targetAccountId,
+          paymentDate: settlementForm.settleDate,
+          paymentMethod: "结汇手续费",
+          remark: `结汇手续费${settlementForm.remark ? `：${settlementForm.remark}` : ""}`,
+        });
+      }
+      await refetchPaymentRecords();
+      setSettlementDialogOpen(false);
+      toast.success("结汇已保存");
+    } catch (error: any) {
+      toast.error("结汇失败", { description: error?.message || "请稍后重试" });
+    }
+  };
+
+  const handleTransferSubmit = async () => {
+    const sourceAccountId = Number(viewingAccount?.id);
+    const targetAccountId = Number(transferForm.targetAccountId);
+    const amount = toSafeNumber(transferForm.amount);
+    const sourceCurrency = String(viewingAccount?.currency || "CNY").toUpperCase();
+    const sourceBalance = toSafeNumber(viewingAccountCard?.remaining);
+    const targetAccount = (bankAccounts as any[]).find((row) => Number(row.id) === targetAccountId);
+
+    if (!Number.isFinite(sourceAccountId) || sourceAccountId <= 0) return;
+    if (!Number.isFinite(targetAccountId) || targetAccountId <= 0) {
+      toast.error("请选择调入账户");
+      return;
+    }
+    if (amount <= 0) {
+      toast.error("请输入有效调拨金额");
+      return;
+    }
+    if (amount > sourceBalance) {
+      toast.error("调拨金额不能超过当前余额");
+      return;
+    }
+
+    try {
+      await createPaymentRecordMutation.mutateAsync({
+        type: "payment",
+        relatedType: "other",
+        relatedNo: String(targetAccount?.accountName || ""),
+        amount: String(amount),
+        currency: sourceCurrency,
+        amountBase: String(amount),
+        exchangeRate: "1",
+        bankAccountId: sourceAccountId,
+        paymentDate: transferForm.transferDate,
+        paymentMethod: "账户调拨",
+        remark: `账户调拨转出到 ${String(targetAccount?.accountName || "")}${transferForm.remark ? `：${transferForm.remark}` : ""}`,
+      });
+      await createPaymentRecordMutation.mutateAsync({
+        type: "receipt",
+        relatedType: "other",
+        relatedNo: String(viewingAccount?.accountName || ""),
+        amount: String(amount),
+        currency: sourceCurrency,
+        amountBase: String(amount),
+        exchangeRate: "1",
+        bankAccountId: targetAccountId,
+        paymentDate: transferForm.transferDate,
+        paymentMethod: "账户调拨",
+        remark: `账户调拨转入来自 ${String(viewingAccount?.accountName || "")}${transferForm.remark ? `：${transferForm.remark}` : ""}`,
+      });
+      await refetchPaymentRecords();
+      setTransferDialogOpen(false);
+      toast.success("账户调拨已保存");
+    } catch (error: any) {
+      toast.error("账户调拨失败", { description: error?.message || "请稍后重试" });
+    }
+  };
+
   const syncTemplateAccounts = async () => {
     try {
       const existingNos = new Set((bankAccounts as any[]).map((row) => String(row.accountNo || "")));
       let created = 0;
       for (const row of ACCOUNT_TEMPLATE_ROWS) {
         if (existingNos.has(row.accountNo)) continue;
-        const remark = `[${row.accountCode}] 地址:${row.address}`;
+        const remark = row.accountCode ? `[${row.accountCode}]` : "";
         await createBankMutation.mutateAsync({
           accountName: row.accountName,
           bankName: row.bankName,
+          bankAddress: row.bankAddress === "-" ? undefined : row.bankAddress,
           accountNo: row.accountNo,
           swiftCode: row.swiftCode === "-" ? undefined : row.swiftCode,
           currency: row.currency,
@@ -532,7 +944,13 @@ export default function FinanceAccountsPage() {
                 <CardContent className="pt-5 pb-5 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-base font-semibold leading-tight line-clamp-2" title={card.accountName}>
-                      {card.accountName}
+                      <button
+                        type="button"
+                        className="text-left hover:text-primary transition-colors"
+                        onClick={() => handleViewBank(card.id)}
+                      >
+                        {card.accountName}
+                      </button>
                     </p>
                     <span className="text-xs text-muted-foreground">{card.currency}</span>
                   </div>
@@ -608,13 +1026,18 @@ export default function FinanceAccountsPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredAccounts.map((row: any) => (
+                    pagedAccounts.map((row: any) => (
                       <TableRow key={row.id}>
                         <TableCell className="text-center">{parseAccountCode(row.remark) || "-"}</TableCell>
                         <TableCell className="text-center">
-                          <div className="mx-auto max-w-[220px] truncate" title={row.accountName || "-"}>
+                          <button
+                            type="button"
+                            className="mx-auto block max-w-[220px] truncate hover:text-primary transition-colors"
+                            title={row.accountName || "-"}
+                            onClick={() => handleViewBank(Number(row.id))}
+                          >
                             {row.accountName || "-"}
-                          </div>
+                          </button>
                         </TableCell>
                         <TableCell className="text-center">{String(row.currency || "CNY").toUpperCase()}</TableCell>
                         <TableCell className="text-center">
@@ -653,6 +1076,7 @@ export default function FinanceAccountsPage() {
             </div>
           </CardContent>
         </Card>
+        <TablePaginationFooter total={filteredAccounts.length} page={currentPage} pageSize={PAGE_SIZE} onPageChange={setCurrentPage} />
 
         <Dialog
           open={accountDialogOpen}
@@ -665,106 +1089,112 @@ export default function FinanceAccountsPage() {
           }}
         >
           <DialogContent className="max-w-5xl">
-            <DialogHeader>
-              <DialogTitle>{accountEditingId ? "编辑账户" : "新增账户"}</DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 py-2">
-              <div className="space-y-2 md:col-span-3">
-                <Label>账户编码</Label>
-                <Input
-                  placeholder="例如：ZH-001"
-                  value={bankForm.accountCode}
-                  onChange={(e) => setBankForm((prev) => ({ ...prev, accountCode: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-3">
-                <Label>账户名称</Label>
-                <Input
-                  placeholder="例如：建设银行（人民币）"
-                  value={bankForm.accountName}
-                  onChange={(e) => setBankForm((prev) => ({ ...prev, accountName: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-3">
-                <Label>币种</Label>
-                <Select
-                  value={bankForm.currency}
-                  onValueChange={(value) => setBankForm((prev) => ({ ...prev, currency: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BANK_CURRENCIES.map((currency) => (
-                      <SelectItem key={currency} value={currency}>
-                        {currency}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2 md:col-span-3">
-                <Label>账户状态</Label>
-                <Select
-                  value={bankForm.status}
-                  onValueChange={(value) =>
-                    setBankForm((prev) => ({ ...prev, status: value as "active" | "frozen" | "closed" }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">启用</SelectItem>
-                    <SelectItem value="frozen">冻结</SelectItem>
-                    <SelectItem value="closed">关闭</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2 md:col-span-3">
-                <Label>期初金额</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  placeholder="请输入期初金额"
-                  value={bankForm.openingBalance}
-                  onChange={(e) => setBankForm((prev) => ({ ...prev, openingBalance: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-6">
-                <Label>开户行</Label>
-                <Input
-                  placeholder="请输入开户行"
-                  value={bankForm.bankName}
-                  onChange={(e) => setBankForm((prev) => ({ ...prev, bankName: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-3">
-                <Label>行号/SWIFT</Label>
-                <Input
-                  placeholder="请输入行号或SWIFT"
-                  value={bankForm.swiftCode}
-                  onChange={(e) => setBankForm((prev) => ({ ...prev, swiftCode: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-3">
-                <Label>银行账号</Label>
-                <Input
-                  placeholder="请输入银行账号"
-                  value={bankForm.accountNo}
-                  onChange={(e) => setBankForm((prev) => ({ ...prev, accountNo: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-12">
-                <Label>地址</Label>
-                <Input
-                  placeholder="请输入开户地址"
-                  value={bankForm.address}
-                  onChange={(e) => setBankForm((prev) => ({ ...prev, address: e.target.value }))}
-                />
+            <div ref={accountFormPrintRef}>
+              <DialogHeader>
+                <DialogTitle>{accountEditingId ? "编辑账户" : "新增账户"}</DialogTitle>
+              </DialogHeader>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 py-2">
+                <div className="space-y-2 md:col-span-3">
+                  <Label>账户编码</Label>
+                  <Input
+                    placeholder="例如：ZH-001"
+                    value={bankForm.accountCode}
+                    onChange={(e) => setBankForm((prev) => ({ ...prev, accountCode: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-3">
+                  <Label>账户名称</Label>
+                  <Input
+                    placeholder="例如：建设银行（人民币）"
+                    value={bankForm.accountName}
+                    onChange={(e) => setBankForm((prev) => ({ ...prev, accountName: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-3">
+                  <Label>币种</Label>
+                  <Select
+                    value={bankForm.currency}
+                    onValueChange={(value) => setBankForm((prev) => ({ ...prev, currency: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {BANK_CURRENCIES.map((currency) => (
+                        <SelectItem key={currency} value={currency}>
+                          {currency}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 md:col-span-3">
+                  <Label>账户状态</Label>
+                  <Select
+                    value={bankForm.status}
+                    onValueChange={(value) =>
+                      setBankForm((prev) => ({ ...prev, status: value as "active" | "frozen" | "closed" }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">启用</SelectItem>
+                      <SelectItem value="frozen">冻结</SelectItem>
+                      <SelectItem value="closed">关闭</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 md:col-span-3">
+                  <Label>期初金额</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="请输入期初金额"
+                    value={bankForm.openingBalance}
+                    onChange={(e) => setBankForm((prev) => ({ ...prev, openingBalance: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-6">
+                  <Label>开户行</Label>
+                  <Input
+                    placeholder="请输入开户行"
+                    value={bankForm.bankName}
+                    onChange={(e) => setBankForm((prev) => ({ ...prev, bankName: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-3">
+                  <Label>行号/SWIFT</Label>
+                  <Input
+                    placeholder="请输入行号或SWIFT"
+                    value={bankForm.swiftCode}
+                    onChange={(e) => setBankForm((prev) => ({ ...prev, swiftCode: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-3">
+                  <Label>银行账号</Label>
+                  <Input
+                    placeholder="请输入银行账号"
+                    value={bankForm.accountNo}
+                    onChange={(e) => setBankForm((prev) => ({ ...prev, accountNo: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-12">
+                  <Label>地址</Label>
+                  <Input
+                    placeholder="请输入开户地址"
+                    value={bankForm.bankAddress}
+                    onChange={(e) => setBankForm((prev) => ({ ...prev, bankAddress: e.target.value }))}
+                  />
+                </div>
               </div>
             </div>
-            <div className="flex items-center justify-end gap-2 border-t pt-3">
+            <div className="flex items-center justify-end gap-2 border-t pt-3" data-print-ignore="true">
+              <PrintPreviewButton
+                title={accountEditingId ? "编辑账户" : "新增账户"}
+                targetRef={accountFormPrintRef}
+              />
               <Button variant="outline" onClick={resetBankForm}>
                 取消
               </Button>
@@ -778,44 +1208,117 @@ export default function FinanceAccountsPage() {
 
         <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
           <DialogContent className="max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>账户详情</DialogTitle>
-            </DialogHeader>
-            {viewingAccount ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm py-2">
-                <div>
-                  <p className="text-muted-foreground mb-1">账户编码</p>
-                  <p className="font-medium">{parseAccountCode(viewingAccount.remark) || "-"}</p>
+            <div ref={accountViewPrintRef}>
+              <DialogHeader>
+                <DialogTitle>账户详情</DialogTitle>
+              </DialogHeader>
+              {viewingAccount ? (
+                <div className="space-y-5 py-2">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div className="rounded-md border p-3">
+                      <p className="text-xs text-muted-foreground">期初余额</p>
+                      <p className="mt-1 font-semibold">{formatAccountMoney(toSafeNumber(viewingAccount.balance), viewingAccount.currency)}</p>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <p className="text-xs text-muted-foreground">累计收入</p>
+                      <p className="mt-1 font-semibold text-emerald-600">{formatAccountMoney(viewingAccountCard?.income || 0, viewingAccount.currency)}</p>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <p className="text-xs text-muted-foreground">累计支出</p>
+                      <p className="mt-1 font-semibold text-orange-500">{formatAccountMoney(viewingAccountCard?.expense || 0, viewingAccount.currency)}</p>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <p className="text-xs text-muted-foreground">当前结余</p>
+                      <p className="mt-1 font-semibold text-blue-600">{formatAccountMoney(viewingAccountCard?.remaining || 0, viewingAccount.currency)}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground mb-1">账户编码</p>
+                    <p className="font-medium">{parseAccountCode(viewingAccount.remark) || "-"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground mb-1">账户名称</p>
+                    <p className="font-medium break-all">{viewingAccount.accountName || "-"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground mb-1">开户行</p>
+                    <p className="font-medium break-words">{viewingAccount.bankName || "-"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground mb-1">行号/SWIFT</p>
+                    <p className="font-medium break-all">
+                      {viewingAccount.swiftCode || parseLineNoFromRemark(viewingAccount.remark) || "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground mb-1">银行账号</p>
+                    <p className="font-medium break-all">{viewingAccount.accountNo || "-"}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground mb-1">币种</p>
+                    <p className="font-medium">{String(viewingAccount.currency || "CNY").toUpperCase()}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-muted-foreground mb-1">地址</p>
+                    <p className="font-medium break-words">{viewingAccount.bankAddress || parseAddress(viewingAccount.remark) || "-"}</p>
+                  </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 no-print">
+                    <Button variant="outline" size="sm" onClick={openBalanceAdjust}>
+                      余额调整
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={openTransfer}>
+                      账户调拨
+                    </Button>
+                    {String(viewingAccount.currency || "").toUpperCase() !== "CNY" && (
+                      <Button variant="outline" size="sm" onClick={openSettlement}>
+                        结汇
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/40">
+                          <TableHead className="text-center">日期</TableHead>
+                          <TableHead className="text-center">类型</TableHead>
+                          <TableHead className="text-center">金额</TableHead>
+                          <TableHead className="text-center">摘要</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {viewingAccountRecords.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                              暂无流水
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          viewingAccountRecords.map((row: any) => (
+                            <TableRow key={row.id}>
+                              <TableCell className="text-center">{formatDateValue(row.date)}</TableCell>
+                              <TableCell className="text-center">{row.typeLabel || "-"}</TableCell>
+                              <TableCell className="text-center">
+                                {formatAccountMoney(toSafeNumber(row.amount), row.currency || viewingAccount.currency)}
+                              </TableCell>
+                              <TableCell className="max-w-[280px] truncate" title={row.summary || "-"}>
+                                {row.summary || "-"}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground mb-1">账户名称</p>
-                  <p className="font-medium break-all">{viewingAccount.accountName || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground mb-1">开户行</p>
-                  <p className="font-medium break-words">{viewingAccount.bankName || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground mb-1">行号/SWIFT</p>
-                  <p className="font-medium break-all">
-                    {viewingAccount.swiftCode || parseLineNoFromRemark(viewingAccount.remark) || "-"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground mb-1">银行账号</p>
-                  <p className="font-medium break-all">{viewingAccount.accountNo || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground mb-1">币种</p>
-                  <p className="font-medium">{String(viewingAccount.currency || "CNY").toUpperCase()}</p>
-                </div>
-                <div className="md:col-span-2">
-                  <p className="text-muted-foreground mb-1">地址</p>
-                  <p className="font-medium break-words">{parseAddress(viewingAccount.remark) || "-"}</p>
-                </div>
-              </div>
-            ) : null}
-            <div className="flex items-center justify-end gap-2 border-t pt-3">
+              ) : null}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t pt-3" data-print-ignore="true">
+              <PrintPreviewButton title="账户详情" targetRef={accountViewPrintRef} />
               <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
                 关闭
               </Button>
@@ -828,6 +1331,272 @@ export default function FinanceAccountsPage() {
                 }}
               >
                 去编辑
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={balanceDialogOpen} onOpenChange={setBalanceDialogOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>余额调整</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>调整方向</Label>
+                  <Select
+                    value={balanceAdjustForm.direction}
+                    onValueChange={(value) =>
+                      setBalanceAdjustForm((prev) => ({ ...prev, direction: value as "increase" | "decrease" }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="increase">调增</SelectItem>
+                      <SelectItem value="decrease">调减</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>调整日期</Label>
+                  <Input
+                    type="date"
+                    value={balanceAdjustForm.adjustDate}
+                    onChange={(e) => setBalanceAdjustForm((prev) => ({ ...prev, adjustDate: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>调整金额</Label>
+                <Input
+                  type="number"
+                  value={balanceAdjustForm.amount}
+                  onChange={(e) => setBalanceAdjustForm((prev) => ({ ...prev, amount: e.target.value }))}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>调整原因</Label>
+                <Textarea
+                  value={balanceAdjustForm.remark}
+                  onChange={(e) => setBalanceAdjustForm((prev) => ({ ...prev, remark: e.target.value }))}
+                  placeholder="例如：补录遗漏流水"
+                  rows={3}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t pt-3">
+              <Button variant="outline" onClick={() => setBalanceDialogOpen(false)}>
+                取消
+              </Button>
+              <Button onClick={handleBalanceAdjustSubmit} disabled={createPaymentRecordMutation.isPending}>
+                保存调整
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={settlementDialogOpen} onOpenChange={setSettlementDialogOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>结汇</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-md border p-3">
+                  <p className="text-xs text-muted-foreground">美元账户当前余额</p>
+                  <p className="mt-1 font-semibold text-blue-600">
+                    {formatAccountMoney(viewingAccountCard?.remaining || 0, viewingAccount?.currency)}
+                  </p>
+                </div>
+                <div className="rounded-md border p-3">
+                  <p className="text-xs text-muted-foreground">人民币账户当前余额</p>
+                  <p className="mt-1 font-semibold text-emerald-600">
+                    {selectedSettlementTargetCard
+                      ? formatAccountMoney(selectedSettlementTargetCard.remaining || 0, selectedSettlementTargetCard.currency)
+                      : "-"}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>美元账户</Label>
+                  <Input value={String(viewingAccount?.accountName || "")} disabled />
+                </div>
+                <div className="space-y-2">
+                  <Label>人民币账户</Label>
+                  <Select
+                    value={settlementForm.targetAccountId}
+                    onValueChange={(value) => setSettlementForm((prev) => ({ ...prev, targetAccountId: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="请选择人民币账户" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cnyAccounts.map((row: any) => (
+                        <SelectItem key={row.id} value={String(row.id)}>
+                          {row.accountName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>结汇金额</Label>
+                  <Input
+                    type="number"
+                    value={settlementForm.amount}
+                    onChange={(e) => setSettlementForm((prev) => ({ ...prev, amount: e.target.value }))}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>结汇汇率</Label>
+                  <Input
+                    type="number"
+                    value={settlementForm.rate}
+                    onChange={(e) => setSettlementForm((prev) => ({ ...prev, rate: e.target.value }))}
+                    placeholder="例如 7.1200"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>手续费</Label>
+                  <Input
+                    type="number"
+                    value={settlementForm.fee}
+                    onChange={(e) => setSettlementForm((prev) => ({ ...prev, fee: e.target.value }))}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>结汇日期</Label>
+                  <Input
+                    type="date"
+                    value={settlementForm.settleDate}
+                    onChange={(e) => setSettlementForm((prev) => ({ ...prev, settleDate: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="rounded-md border p-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">本次结汇人民币到账</span>
+                  <span className="font-semibold text-emerald-600">
+                    {formatAccountMoney(
+                      Math.max(0, toSafeNumber(settlementForm.amount) * toSafeNumber(settlementForm.rate) - toSafeNumber(settlementForm.fee)),
+                      "CNY",
+                    )}
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>备注</Label>
+                <Textarea
+                  value={settlementForm.remark}
+                  onChange={(e) => setSettlementForm((prev) => ({ ...prev, remark: e.target.value }))}
+                  placeholder="结汇说明"
+                  rows={3}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t pt-3">
+              <Button variant="outline" onClick={() => setSettlementDialogOpen(false)}>
+                取消
+              </Button>
+              <Button onClick={handleSettlementSubmit} disabled={createPaymentRecordMutation.isPending}>
+                保存结汇
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>账户调拨</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-2">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-md border p-3">
+                  <p className="text-xs text-muted-foreground">转出账户当前余额</p>
+                  <p className="mt-1 font-semibold text-blue-600">
+                    {formatAccountMoney(viewingAccountCard?.remaining || 0, viewingAccount?.currency)}
+                  </p>
+                </div>
+                <div className="rounded-md border p-3">
+                  <p className="text-xs text-muted-foreground">转入账户当前余额</p>
+                  <p className="mt-1 font-semibold text-emerald-600">
+                    {selectedTransferTargetCard
+                      ? formatAccountMoney(selectedTransferTargetCard.remaining || 0, selectedTransferTargetCard.currency)
+                      : "-"}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>转出账户</Label>
+                  <Input value={String(viewingAccount?.accountName || "")} disabled />
+                </div>
+                <div className="space-y-2">
+                  <Label>调入账户</Label>
+                  <Select
+                    value={transferForm.targetAccountId}
+                    onValueChange={(value) => setTransferForm((prev) => ({ ...prev, targetAccountId: value }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="请选择调入账户" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sameCurrencyAccounts.map((row: any) => (
+                        <SelectItem key={row.id} value={String(row.id)}>
+                          {row.accountName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>调拨金额</Label>
+                  <Input
+                    type="number"
+                    value={transferForm.amount}
+                    onChange={(e) => setTransferForm((prev) => ({ ...prev, amount: e.target.value }))}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>调拨日期</Label>
+                  <Input
+                    type="date"
+                    value={transferForm.transferDate}
+                    onChange={(e) => setTransferForm((prev) => ({ ...prev, transferDate: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>备注</Label>
+                <Textarea
+                  value={transferForm.remark}
+                  onChange={(e) => setTransferForm((prev) => ({ ...prev, remark: e.target.value }))}
+                  placeholder="调拨说明"
+                  rows={3}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t pt-3">
+              <Button variant="outline" onClick={() => setTransferDialogOpen(false)}>
+                取消
+              </Button>
+              <Button onClick={handleTransferSubmit} disabled={createPaymentRecordMutation.isPending}>
+                保存调拨
               </Button>
             </div>
           </DialogContent>
@@ -867,7 +1636,7 @@ export default function FinanceAccountsPage() {
                   <div className="space-y-1">
                     <Badge variant="secondary">最新记录</Badge>
                     <p className="font-medium">
-                      1 {String(latestLiveRate.fromCurrency).toUpperCase()} = {toSafeNumber(latestLiveRate.rate).toFixed(6)}{" "}
+                      1 {String(latestLiveRate.fromCurrency).toUpperCase()} = {formatDisplayNumber(latestLiveRate.rate, { maximumFractionDigits: 6 })}{" "}
                       {String(latestLiveRate.toCurrency).toUpperCase()}
                     </p>
                     <p className="text-muted-foreground">生效日期：{formatDateValue(latestLiveRate.effectiveDate)}</p>
@@ -1000,7 +1769,7 @@ export default function FinanceAccountsPage() {
                         <TableRow key={row.id}>
                           <TableCell className="text-center">{String(row.fromCurrency).toUpperCase()}</TableCell>
                           <TableCell className="text-center">{String(row.toCurrency).toUpperCase()}</TableCell>
-                          <TableCell className="text-center font-medium">{toSafeNumber(row.rate).toFixed(6)}</TableCell>
+                          <TableCell className="text-center font-medium">{formatDisplayNumber(row.rate, { maximumFractionDigits: 6 })}</TableCell>
                           <TableCell className="text-center">{formatDateValue(row.effectiveDate)}</TableCell>
                           <TableCell className="text-center">{row.source || "-"}</TableCell>
                           <TableCell className="text-center">

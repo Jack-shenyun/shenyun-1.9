@@ -18,6 +18,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { QrCode, Plus, Search, Eye, Trash2, MoreHorizontal, Pencil, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -77,6 +78,7 @@ export default function UDIArchivePage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [formOpen, setFormOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [form, setForm] = useState({ ...emptyForm });
@@ -129,8 +131,8 @@ export default function UDIArchivePage() {
       setForm(f => ({
         ...f,
         productId: p.id,
-        productName: p.productName ?? "",
-        productCode: p.productCode ?? "",
+        productName: p.name ?? p.productName ?? "",
+        productCode: p.code ?? p.productCode ?? "",
         specification: p.specification ?? "",
         registrationNo: p.registrationNo ?? "",
         udiDi: (p as any).udiDi ?? f.udiDi,
@@ -319,60 +321,80 @@ export default function UDIArchivePage() {
           </CardContent>
         </Card>
 
-        {/* 新建/编辑弹窗 */}
-        <DraggableDialog open={formOpen} onOpenChange={setFormOpen}>
-          <DraggableDialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editId ? "编辑UDI档案" : "新建UDI档案"}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
+      {/* 新建/编辑弹窗 */}
+      <DraggableDialog open={formOpen} onOpenChange={setFormOpen}>
+        <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editId ? "编辑UDI档案" : "新建UDI档案"}</DialogTitle>
+          </DialogHeader>
+            <div className="space-y-4 py-4 max-h-[65vh] overflow-y-auto pr-1">
               {/* 关联产品 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
+              <div className="grid grid-cols-4 gap-4">
+                <div className="col-span-2 space-y-2">
                   <Label>关联产品（选择后自动填充）</Label>
-                  <Select
-                    value={form.productId ? String(form.productId) : ""}
-                    onValueChange={handleProductSelect}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择产品..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {products.map((p: any) => (
-                        <SelectItem key={p.id} value={String(p.id)}>
-                          {p.productCode} - {p.productName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1 justify-start font-normal"
+                      onClick={() => setProductPickerOpen(true)}
+                    >
+                      {form.productId ? (
+                        <span className="flex items-center gap-2">
+                          <span className="text-green-600">✓</span>
+                          <span className="font-mono text-xs text-muted-foreground">{form.productCode || "-"}</span>
+                          <span className="font-medium">{form.productName || "已选择产品"}</span>
+                          {form.specification ? <span className="text-muted-foreground text-xs">· {form.specification}</span> : null}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">点击选择产品...</span>
+                      )}
+                    </Button>
+                    {form.productId ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setForm((f) => ({
+                          ...f,
+                          productId: "",
+                          productName: "",
+                          productCode: "",
+                          specification: "",
+                          registrationNo: "",
+                        }))}
+                      >
+                        清空
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label>产品名称</Label>
                   <Input value={form.productName} onChange={e => setForm(f => ({ ...f, productName: e.target.value }))} placeholder="产品名称" />
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label>产品编码</Label>
                   <Input value={form.productCode} onChange={e => setForm(f => ({ ...f, productCode: e.target.value }))} placeholder="产品编码" />
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label>规格型号</Label>
                   <Input value={form.specification} onChange={e => setForm(f => ({ ...f, specification: e.target.value }))} placeholder="规格型号" />
                 </div>
-                <div>
+                <div className="space-y-2">
                   <Label>注册证号</Label>
                   <Input value={form.registrationNo} onChange={e => setForm(f => ({ ...f, registrationNo: e.target.value }))} placeholder="注册证号" />
                 </div>
               </div>
 
               {/* UDI信息 */}
-              <div className="border-t pt-4">
-                <h3 className="text-sm font-semibold mb-3 text-muted-foreground">UDI 标识信息</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
+              <div className="border-t pt-4 space-y-4">
+                <h3 className="text-sm font-semibold text-muted-foreground">UDI 标识信息</h3>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="col-span-2 space-y-2">
                     <Label>UDI-DI <span className="text-destructive">*</span></Label>
                     <Input value={form.udiDi} onChange={e => setForm(f => ({ ...f, udiDi: e.target.value }))} placeholder="由发码机构分配的设备标识符" />
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label>发码机构</Label>
                     <Select value={form.issuer} onValueChange={(v: any) => setForm(f => ({ ...f, issuer: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -384,7 +406,7 @@ export default function UDIArchivePage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label>风险等级</Label>
                     <Select value={form.riskLevel} onValueChange={(v: any) => setForm(f => ({ ...f, riskLevel: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -399,22 +421,22 @@ export default function UDIArchivePage() {
               </div>
 
               {/* UDI-PI */}
-              <div className="border-t pt-4">
-                <h3 className="text-sm font-semibold mb-3 text-muted-foreground">UDI-PI 生产标识</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+              <div className="border-t pt-4 space-y-4">
+                <h3 className="text-sm font-semibold text-muted-foreground">UDI-PI 生产标识</h3>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="space-y-2">
                     <Label>批号 (LOT)</Label>
                     <Input value={form.batchNo} onChange={e => setForm(f => ({ ...f, batchNo: e.target.value }))} placeholder="生产批号" />
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label>序列号 (SN)</Label>
                     <Input value={form.serialNo} onChange={e => setForm(f => ({ ...f, serialNo: e.target.value }))} placeholder="序列号（III类必填）" />
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label>生产日期 (MFG)</Label>
                     <Input type="date" value={form.productionDate} onChange={e => setForm(f => ({ ...f, productionDate: e.target.value }))} />
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label>有效期 (EXP)</Label>
                     <Input type="date" value={form.expiryDate} onChange={e => setForm(f => ({ ...f, expiryDate: e.target.value }))} />
                   </div>
@@ -422,10 +444,10 @@ export default function UDIArchivePage() {
               </div>
 
               {/* 标签配置 */}
-              <div className="border-t pt-4">
-                <h3 className="text-sm font-semibold mb-3 text-muted-foreground">标签配置</h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
+              <div className="border-t pt-4 space-y-4">
+                <h3 className="text-sm font-semibold text-muted-foreground">标签配置</h3>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="space-y-2">
                     <Label>数据载体</Label>
                     <Select value={form.carrierType} onValueChange={(v: any) => setForm(f => ({ ...f, carrierType: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -437,7 +459,7 @@ export default function UDIArchivePage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label>标签类型</Label>
                     <Select value={form.labelTemplate} onValueChange={(v: any) => setForm(f => ({ ...f, labelTemplate: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
@@ -449,14 +471,14 @@ export default function UDIArchivePage() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
+                  <div className="space-y-2">
                     <Label>打印数量</Label>
                     <Input type="number" min={1} value={form.printQty} onChange={e => setForm(f => ({ ...f, printQty: Number(e.target.value) }))} />
                   </div>
                 </div>
               </div>
 
-              <div>
+              <div className="space-y-2">
                 <Label>备注</Label>
                 <Textarea value={form.remark} onChange={e => setForm(f => ({ ...f, remark: e.target.value }))} rows={2} placeholder="备注信息" />
               </div>
@@ -470,14 +492,48 @@ export default function UDIArchivePage() {
           </DraggableDialogContent>
         </DraggableDialog>
 
+        <EntityPickerDialog
+          open={productPickerOpen}
+          onOpenChange={setProductPickerOpen}
+          title="选择产品"
+          searchPlaceholder="搜索产品编码、名称、规格..."
+          columns={[
+            { key: "code", title: "产品编码", className: "w-[160px] whitespace-nowrap", render: (row) => <span className="font-mono">{row.code ?? row.productCode ?? "-"}</span> },
+            { key: "name", title: "产品名称", className: "min-w-[180px]", render: (row) => <span className="font-medium">{row.name ?? row.productName ?? "-"}</span> },
+            { key: "specification", title: "规格型号", className: "min-w-[160px]", render: (row) => row.specification || "-" },
+            { key: "registrationNo", title: "注册证号", className: "min-w-[180px]", render: (row) => row.registrationNo || "-" },
+            { key: "riskLevel", title: "风险等级", className: "w-[100px]", render: (row) => row.riskLevel ? `${row.riskLevel}类` : "-" },
+          ]}
+          rows={products as any[]}
+          selectedId={form.productId ? String(form.productId) : ""}
+          defaultWidth={980}
+          filterFn={(row, query) => {
+            const lower = query.toLowerCase();
+            return String(row.code ?? row.productCode ?? "").toLowerCase().includes(lower) ||
+              String(row.name ?? row.productName ?? "").toLowerCase().includes(lower) ||
+              String(row.specification ?? "").toLowerCase().includes(lower) ||
+              String(row.registrationNo ?? "").toLowerCase().includes(lower);
+          }}
+          onSelect={(row) => {
+            handleProductSelect(String(row.id));
+            setProductPickerOpen(false);
+          }}
+        />
+
         {/* 详情弹窗 */}
         <DraggableDialog open={viewOpen} onOpenChange={setViewOpen}>
-          <DraggableDialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>UDI档案详情</DialogTitle>
-            </DialogHeader>
+          <DraggableDialogContent className="w-full max-w-none max-h-[90vh] overflow-y-auto">
             {selectedItem && (
-              <div className="space-y-4 py-2">
+              <div className="space-y-4 py-4">
+                <div className="border-b pb-3">
+                  <h2 className="text-lg font-semibold">UDI档案详情</h2>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="font-mono text-sm text-muted-foreground">{selectedItem.labelNo}</span>
+                    <Badge variant={(STATUS_MAP[selectedItem.status] ?? STATUS_MAP.pending).variant}>
+                      {(STATUS_MAP[selectedItem.status] ?? STATUS_MAP.pending).label}
+                    </Badge>
+                  </div>
+                </div>
                 <div>
                   <h3 className="text-sm font-semibold text-muted-foreground mb-2">基本信息</h3>
                   <FieldRow label="标签编号">{selectedItem.labelNo}</FieldRow>
@@ -519,16 +575,14 @@ export default function UDIArchivePage() {
                     <p className="text-sm">{selectedItem.remark}</p>
                   </div>
                 )}
+                <div className="flex justify-end pt-3 border-t gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setViewOpen(false)}>关闭</Button>
+                  <Button size="sm" onClick={() => { setViewOpen(false); openEdit(selectedItem); }}>
+                    <Pencil className="w-4 h-4 mr-2" /> 编辑
+                  </Button>
+                </div>
               </div>
             )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewOpen(false)}>关闭</Button>
-              {selectedItem && (
-                <Button onClick={() => { setViewOpen(false); openEdit(selectedItem); }}>
-                  <Pencil className="w-4 h-4 mr-2" /> 编辑
-                </Button>
-              )}
-            </DialogFooter>
           </DraggableDialogContent>
         </DraggableDialog>
       </div>
