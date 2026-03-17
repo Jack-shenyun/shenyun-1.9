@@ -21954,6 +21954,11 @@ async function ensureEquipmentSupportTables(
       { name: "lastMaintenanceDate", ddl: "DATE NULL" },
       { name: "maintenanceCycle", ddl: "INT NULL DEFAULT 30" },
       { name: "assetValue", ddl: "DECIMAL(14,2) NULL DEFAULT 0.00" },
+      { name: "certNo", ddl: "VARCHAR(100) NULL" },
+      { name: "equipmentCategory", ddl: "ENUM('equipment','instrument') NOT NULL DEFAULT 'equipment'" },
+      { name: "calibrationCycle", ddl: "VARCHAR(50) NULL" },
+      { name: "lastCalibrationDate", ddl: "DATE NULL" },
+      { name: "nextCalibrationDate", ddl: "DATE NULL" },
     ];
 
     for (const col of columns) {

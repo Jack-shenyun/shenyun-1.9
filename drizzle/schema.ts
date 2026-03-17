@@ -755,6 +755,8 @@ export const equipment = mysqlTable("equipment", {
   model: varchar("model", { length: 100 }), // 型号规格
   manufacturer: varchar("manufacturer", { length: 200 }), // 制造商
   serialNo: varchar("serialNo", { length: 100 }), // 出厂编号
+  certNo: varchar("certNo", { length: 100 }), // 证书编号
+  equipmentCategory: mysqlEnum("equipmentCategory", ["equipment", "instrument"]).default("equipment"), // 设备类型：设备/仪表
   purchaseDate: date("purchaseDate"), // 购置日期
   warrantyDate: date("warrantyDate"), // 保修截止
   installDate: date("installDate"), // 安装日期
@@ -769,6 +771,9 @@ export const equipment = mysqlTable("equipment", {
   lastMaintenanceDate: date("lastMaintenanceDate"), // 上次保养
   nextMaintenanceDate: date("nextMaintenanceDate"), // 下次保养日期
   maintenanceCycle: int("maintenanceCycle").default(30), // 保养周期（天）
+  calibrationCycle: varchar("calibrationCycle", { length: 50 }), // 校准/检定周期
+  lastCalibrationDate: date("lastCalibrationDate"), // 上次校准日期
+  nextCalibrationDate: date("nextCalibrationDate"), // 下次校准日期
   assetValue: decimal("assetValue", { precision: 14, scale: 2 }).default("0"), // 资产价值
   remark: text("remark"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

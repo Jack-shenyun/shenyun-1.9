@@ -57,6 +57,8 @@ export interface Equipment {
   model: string;
   manufacturer: string;
   serialNo: string;
+  certNo?: string;
+  equipmentCategory?: "equipment" | "instrument";
   purchaseDate: string;
   warrantyDate: string;
   location: string;
@@ -68,6 +70,9 @@ export interface Equipment {
   lastMaintenance: string;
   nextMaintenance: string;
   maintenanceCycle: number;
+  calibrationCycle?: string;
+  lastCalibrationDate?: string;
+  nextCalibrationDate?: string;
   assetValue: number;
   remarks: string;
 }
@@ -90,6 +95,11 @@ const assetTypeMap: Record<string, string> = {
   equipment: "设备",
   mold: "模具",
   tooling: "工装",
+};
+
+const equipmentCategoryMap: Record<string, string> = {
+  equipment: "设备",
+  instrument: "仪表",
 };
 
 
@@ -317,6 +327,11 @@ export function normalizeEquipmentRecord(record: any): Equipment {
         ? (formatDateValue(record.nextMaintenanceDate) || "")
         : "",
     maintenanceCycle: Number(record?.maintenanceCycle || 30),
+    calibrationCycle: record?.calibrationCycle ? String(record.calibrationCycle) : undefined,
+    lastCalibrationDate: record?.lastCalibrationDate ? (formatDateValue(record.lastCalibrationDate) || undefined) : undefined,
+    nextCalibrationDate: record?.nextCalibrationDate ? (formatDateValue(record.nextCalibrationDate) || undefined) : undefined,
+    certNo: record?.certNo ? String(record.certNo) : undefined,
+    equipmentCategory: (record?.equipmentCategory === "instrument" ? "instrument" : "equipment") as "equipment" | "instrument",
     assetValue: Number(record?.assetValue || 0),
     remarks: String(record?.remarks || record?.remark || ""),
   };
@@ -373,6 +388,8 @@ export default function EquipmentPage() {
     model: "",
     manufacturer: "",
     serialNo: "",
+    certNo: "",
+    equipmentCategory: "equipment" as "equipment" | "instrument",
     purchaseDate: "",
     warrantyDate: "",
     location: "",
@@ -384,6 +401,9 @@ export default function EquipmentPage() {
     lastMaintenance: "",
     nextMaintenance: "",
     maintenanceCycle: 30,
+    calibrationCycle: "",
+    lastCalibrationDate: "",
+    nextCalibrationDate: "",
     assetValue: 0,
     remarks: "",
   });
@@ -392,14 +412,16 @@ export default function EquipmentPage() {
     () => [
       ...equipments.map((equipment) => ({
         id: `equipment-${equipment.id}`,
-        assetType: "equipment" as const,
+        assetType: (equipment.equipmentCategory === "instrument" ? "instrument" : "equipment") as string,
         code: equipment.code,
         name: equipment.name,
         model: equipment.model,
         location: equipment.location,
         status: equipment.status,
         responsibleField: equipment.department || "-",
-        dateField: formatDateValue(equipment.nextMaintenance),
+        dateField: equipment.equipmentCategory === "instrument"
+          ? (formatDateValue(equipment.nextCalibrationDate) || "-")
+          : formatDateValue(equipment.nextMaintenance),
         raw: equipment,
       })),
       ...moldToolingRecords.map((record) => ({
@@ -471,6 +493,8 @@ export default function EquipmentPage() {
       model: "",
       manufacturer: "",
       serialNo: "",
+      certNo: "",
+      equipmentCategory: "equipment" as "equipment" | "instrument",
       purchaseDate: "",
       warrantyDate: "",
       location: "",
@@ -482,6 +506,9 @@ export default function EquipmentPage() {
       lastMaintenance: "",
       nextMaintenance: "",
       maintenanceCycle: 30,
+      calibrationCycle: "",
+      lastCalibrationDate: "",
+      nextCalibrationDate: "",
       assetValue: 0,
       remarks: "",
     });
@@ -496,6 +523,8 @@ export default function EquipmentPage() {
       model: equipment.model,
       manufacturer: equipment.manufacturer,
       serialNo: equipment.serialNo,
+      certNo: equipment.certNo || "",
+      equipmentCategory: (equipment.equipmentCategory || "equipment") as "equipment" | "instrument",
       purchaseDate: equipment.purchaseDate,
       warrantyDate: equipment.warrantyDate,
       location: equipment.location,
@@ -507,6 +536,9 @@ export default function EquipmentPage() {
       lastMaintenance: equipment.lastMaintenance,
       nextMaintenance: equipment.nextMaintenance,
       maintenanceCycle: equipment.maintenanceCycle,
+      calibrationCycle: equipment.calibrationCycle || "",
+      lastCalibrationDate: equipment.lastCalibrationDate || "",
+      nextCalibrationDate: equipment.nextCalibrationDate || "",
       assetValue: equipment.assetValue,
       remarks: equipment.remarks,
     });
@@ -561,6 +593,11 @@ export default function EquipmentPage() {
           nextMaintenanceDate: formData.nextMaintenance || undefined,
           maintenanceCycle: Number(formData.maintenanceCycle || 30),
           assetValue: Number(formData.assetValue || 0),
+          certNo: formData.certNo || undefined,
+          equipmentCategory: formData.equipmentCategory,
+          calibrationCycle: formData.calibrationCycle || undefined,
+          lastCalibrationDate: formData.lastCalibrationDate || undefined,
+          nextCalibrationDate: formData.nextCalibrationDate || undefined,
           remark: formData.remarks,
         },
       });
@@ -571,6 +608,8 @@ export default function EquipmentPage() {
         model: formData.model,
         manufacturer: formData.manufacturer,
         serialNo: formData.serialNo,
+        certNo: formData.certNo || undefined,
+        equipmentCategory: formData.equipmentCategory,
         purchaseDate: formData.purchaseDate || undefined,
         warrantyDate: formData.warrantyDate || undefined,
         location: formData.location,
@@ -582,6 +621,9 @@ export default function EquipmentPage() {
         lastMaintenanceDate: formData.lastMaintenance || undefined,
         nextMaintenanceDate: formData.nextMaintenance || undefined,
         maintenanceCycle: Number(formData.maintenanceCycle || 30),
+        calibrationCycle: formData.calibrationCycle || undefined,
+        lastCalibrationDate: formData.lastCalibrationDate || undefined,
+        nextCalibrationDate: formData.nextCalibrationDate || undefined,
         assetValue: Number(formData.assetValue || 0),
         remark: formData.remarks,
       });
@@ -666,9 +708,10 @@ export default function EquipmentPage() {
           <CardContent className="p-4">
             <div className="space-y-4">
               <Tabs value={assetTypeFilter} onValueChange={setAssetTypeFilter}>
-                <TabsList className="grid w-full grid-cols-4 md:w-[420px]">
+                <TabsList className="grid w-full grid-cols-5 md:w-[520px]">
                   <TabsTrigger value="all">全部</TabsTrigger>
                   <TabsTrigger value="equipment">设备</TabsTrigger>
+                  <TabsTrigger value="instrument">仪表</TabsTrigger>
                   <TabsTrigger value="mold">模具</TabsTrigger>
                   <TabsTrigger value="tooling">工装</TabsTrigger>
                 </TabsList>
@@ -716,13 +759,13 @@ export default function EquipmentPage() {
                   <TableHead className="w-[110px] text-center font-bold">位置</TableHead>
                   <TableHead className="w-[100px] text-center font-bold">部门/工序</TableHead>
                   <TableHead className="w-[80px] text-center font-bold">状态</TableHead>
-                  <TableHead className="w-[100px] text-center font-bold">保养/点检</TableHead>
+                  <TableHead className="w-[100px] text-center font-bold">下次保养/校准</TableHead>
                   <TableHead className="w-[80px] text-center font-bold">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pagedAssets.map((asset: any) => {
-                  const isEquipment = asset.assetType === "equipment";
+                  const isEquipment = asset.assetType === "equipment" || asset.assetType === "instrument";
                   const equipment = isEquipment ? asset.raw as Equipment : null;
                   const moldTooling = !isEquipment ? asset.raw as MoldToolingRecord : null;
                   const nextDate = isEquipment && equipment?.nextMaintenance ? new Date(equipment.nextMaintenance) : null;
@@ -734,7 +777,13 @@ export default function EquipmentPage() {
                     <TableRow key={asset.id}>
                       <TableCell className="text-center font-medium">{asset.code}</TableCell>
                       <TableCell className="text-center">{asset.name}</TableCell>
-                      <TableCell className="text-center">{assetTypeMap[asset.assetType] || "-"}</TableCell>
+                      <TableCell className="text-center">
+                        {asset.assetType === "instrument" ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">仪表</span>
+                        ) : asset.assetType === "equipment" ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">设备</span>
+                        ) : (assetTypeMap[asset.assetType] || "-")}
+                      </TableCell>
                       <TableCell className="text-center">{asset.model}</TableCell>
                       <TableCell className="text-center">{asset.location}</TableCell>
                       <TableCell className="text-center">{asset.responsibleField}</TableCell>
@@ -867,7 +916,7 @@ export default function EquipmentPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>出厂编号</Label>
                   <Input
@@ -877,7 +926,60 @@ export default function EquipmentPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>资产价值 (元)</Label>
+                  <Label>证书编号</Label>
+                  <Input
+                    value={formData.certNo}
+                    onChange={(e) => setFormData({ ...formData, certNo: e.target.value })}
+                    placeholder="校准/检定证书编号"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>设备类型</Label>
+                  <Select
+                    value={formData.equipmentCategory}
+                    onValueChange={(value) => setFormData({ ...formData, equipmentCategory: value as "equipment" | "instrument" })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="equipment">设备</SelectItem>
+                      <SelectItem value="instrument">仪表</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {formData.equipmentCategory === "instrument" && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-3 bg-purple-50 rounded-lg border border-purple-100">
+                  <div className="space-y-2">
+                    <Label>校准/检定周期</Label>
+                    <Input
+                      value={formData.calibrationCycle}
+                      onChange={(e) => setFormData({ ...formData, calibrationCycle: e.target.value })}
+                      placeholder="如：12个月"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>上次校准日期</Label>
+                    <DateTextInput
+                      value={formData.lastCalibrationDate}
+                      onChange={(value) => setFormData({ ...formData, lastCalibrationDate: value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>下次校准日期</Label>
+                    <DateTextInput
+                      value={formData.nextCalibrationDate}
+                      onChange={(value) => setFormData({ ...formData, nextCalibrationDate: value })}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>资产价値 (元)</Label>
                   <Input
                     type="number"
                     value={formData.assetValue}
@@ -1066,10 +1168,12 @@ export default function EquipmentPage() {
                   <FieldRow label="设备名称">{viewingEquipment.name}</FieldRow>
                   <FieldRow label="型号规格">{viewingEquipment.model}</FieldRow>
                   <FieldRow label="制造商">{viewingEquipment.manufacturer}</FieldRow>
+                  <FieldRow label="设备类型">{equipmentCategoryMap[viewingEquipment.equipmentCategory || "equipment"] || "-"}</FieldRow>
                 </div>
                 <div>
                   <FieldRow label="出厂编号">{viewingEquipment.serialNo}</FieldRow>
-                  <FieldRow label="资产价值">¥{viewingEquipment.assetValue?.toLocaleString?.() ?? "0"}</FieldRow>
+                  <FieldRow label="证书编号">{viewingEquipment.certNo || "-"}</FieldRow>
+                  <FieldRow label="资产价値">¥{viewingEquipment.assetValue?.toLocaleString?.() ?? "0"}</FieldRow>
                 </div>
               </div>
             </div>
@@ -1111,6 +1215,21 @@ export default function EquipmentPage() {
                 </div>
               </div>
             </div>
+
+            {viewingEquipment.equipmentCategory === "instrument" && (
+              <div>
+                <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">校准/检定信息</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                  <div>
+                    <FieldRow label="校准周期">{viewingEquipment.calibrationCycle || "-"}</FieldRow>
+                    <FieldRow label="上次校准">{formatDateValue(viewingEquipment.lastCalibrationDate) || "-"}</FieldRow>
+                  </div>
+                  <div>
+                    <FieldRow label="下次校准">{formatDateValue(viewingEquipment.nextCalibrationDate) || "-"}</FieldRow>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div>
               <h3 className="text-sm font-semibold mb-2 text-muted-foreground uppercase tracking-wide">点检要求</h3>

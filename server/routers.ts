@@ -14302,6 +14302,11 @@ export const appRouter = router({
           maintenanceCycle: z.number().optional(),
           assetValue: z.union([z.number(), z.string()]).optional(),
           remark: z.string().optional(),
+          certNo: z.string().optional(),
+          equipmentCategory: z.enum(["equipment", "instrument"]).optional(),
+          calibrationCycle: z.string().optional(),
+          lastCalibrationDate: z.string().optional(),
+          nextCalibrationDate: z.string().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -14311,6 +14316,8 @@ export const appRouter = router({
           installDate,
           lastMaintenanceDate,
           nextMaintenanceDate,
+          lastCalibrationDate,
+          nextCalibrationDate,
           assetValue,
           ...rest
         } = input;
@@ -14328,6 +14335,12 @@ export const appRouter = router({
             : undefined,
           nextMaintenanceDate: nextMaintenanceDate
             ? (new Date(nextMaintenanceDate) as any)
+            : undefined,
+          lastCalibrationDate: lastCalibrationDate
+            ? (new Date(lastCalibrationDate) as any)
+            : undefined,
+          nextCalibrationDate: nextCalibrationDate
+            ? (new Date(nextCalibrationDate) as any)
             : undefined,
           assetValue:
             assetValue != null && assetValue !== ""
@@ -14363,6 +14376,11 @@ export const appRouter = router({
             maintenanceCycle: z.number().optional(),
             assetValue: z.union([z.number(), z.string()]).optional(),
             remark: z.string().optional(),
+            certNo: z.string().optional(),
+            equipmentCategory: z.enum(["equipment", "instrument"]).optional(),
+            calibrationCycle: z.string().optional(),
+            lastCalibrationDate: z.string().optional(),
+            nextCalibrationDate: z.string().optional(),
           }),
         })
       )
@@ -14373,6 +14391,8 @@ export const appRouter = router({
           installDate,
           lastMaintenanceDate,
           nextMaintenanceDate,
+          lastCalibrationDate,
+          nextCalibrationDate,
           assetValue,
           ...rest
         } = input.data;
@@ -14390,6 +14410,12 @@ export const appRouter = router({
             : undefined,
           nextMaintenanceDate: nextMaintenanceDate
             ? (new Date(nextMaintenanceDate) as any)
+            : undefined,
+          lastCalibrationDate: lastCalibrationDate
+            ? (new Date(lastCalibrationDate) as any)
+            : undefined,
+          nextCalibrationDate: nextCalibrationDate
+            ? (new Date(nextCalibrationDate) as any)
             : undefined,
           assetValue:
             assetValue != null && assetValue !== ""
