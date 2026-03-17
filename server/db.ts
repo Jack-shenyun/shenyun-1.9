@@ -26012,8 +26012,12 @@ export async function getIqcInspections(params?: {
     offset = 0,
   } = params ?? {};
   const conditions: any[] = [];
-  if (result && result !== "all")
+  if (result && result !== "all") {
     conditions.push(eq(iqcInspections.result, result as any));
+  } else if (!result || result === "all") {
+    // 全部状态时排除草稿，草稿需单独筛选
+    conditions.push(ne(iqcInspections.result, "draft" as any));
+  }
   if (goodsReceiptId)
     conditions.push(eq(iqcInspections.goodsReceiptId, goodsReceiptId));
   if (search)

@@ -17659,6 +17659,69 @@ export const appRouter = router({
         await deleteIqcInspection(input.id);
         return { success: true };
       }),
+    saveDraft: protectedProcedure
+      .input(
+        z.object({
+          id: z.number().optional(), // 有 id 则更新，无则新建
+          inspectionNo: z.string(),
+          reportMode: z.enum(["online", "offline"]).optional(),
+          goodsReceiptId: z.number().optional(),
+          goodsReceiptNo: z.string().optional(),
+          goodsReceiptItemId: z.number().optional(),
+          productId: z.number().optional(),
+          productCode: z.string().optional(),
+          productName: z.string(),
+          specification: z.string().optional(),
+          supplierId: z.number().optional(),
+          supplierName: z.string().optional(),
+          supplierCode: z.string().optional(),
+          batchNo: z.string().optional(),
+          sterilizationBatchNo: z.string().optional(),
+          receivedQty: z.string().optional(),
+          sampleQty: z.string().optional(),
+          qualifiedQty: z.string().optional(),
+          unit: z.string().optional(),
+          inspectionRequirementId: z.number().optional(),
+          inspectionDate: z.string().optional(),
+          inspectorId: z.number().optional(),
+          inspectorName: z.string().optional(),
+          remark: z.string().optional(),
+          attachments: z.string().optional(),
+          items: z.array(
+            z.object({
+              requirementItemId: z.number().optional(),
+              itemName: z.string(),
+              itemType: z.enum(["qualitative", "quantitative"]),
+              standard: z.string().optional(),
+              minValue: z.string().optional(),
+              maxValue: z.string().optional(),
+              unit: z.string().optional(),
+              measuredValue: z.string().optional(),
+              sampleValues: z.string().optional(),
+              acceptedValues: z.string().optional(),
+              actualValue: z.string().optional(),
+              conclusion: z.enum(["pass", "fail", "pending"]).optional(),
+              sortOrder: z.number().optional(),
+              remark: z.string().optional(),
+            })
+          ).optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const { id, ...data } = input;
+        const draftPayload = { ...data, result: "draft" as const, signatures: undefined };
+        if (id) {
+          await updateIqcInspection(id, draftPayload);
+          return { id };
+        } else {
+          const newId = await createIqcInspection({
+            ...draftPayload,
+            items: data.items ?? [],
+            createdBy: ctx.user?.id,
+          });
+          return { id: newId };
+        }
+      }),
     getMobileUploadLink: protectedProcedure
       .input(
         z.object({

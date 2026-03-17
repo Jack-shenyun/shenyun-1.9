@@ -3029,6 +3029,7 @@ export const iqcInspections = mysqlTable("iqc_inspections", {
     "passed",
     "failed",
     "conditional_pass",
+    "draft",
   ])
     .default("pending")
     .notNull(),

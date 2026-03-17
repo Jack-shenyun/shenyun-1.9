@@ -107,6 +107,7 @@ const RESULT_MAP: Record<string, { label: string; variant: "default" | "secondar
   passed: { label: "合格", variant: "default", color: "bg-emerald-50 text-emerald-700" },
   failed: { label: "不合格", variant: "destructive", color: "bg-red-50 text-red-700" },
   conditional_pass: { label: "条件合格", variant: "outline", color: "bg-amber-50 text-amber-700" },
+  draft: { label: "草稿", variant: "secondary", color: "bg-gray-100 text-gray-500" },
 };
 
 const CONCLUSION_MAP: Record<string, { label: string; color: string }> = {
@@ -757,6 +758,17 @@ export default function IQCPage() {
     },
     onError: (e: any) => toast.error("删除失败：" + e.message),
   });
+  const saveDraftMutation = trpc.iqcInspections.saveDraft.useMutation({
+    onSuccess: async (data: any) => {
+      toast.success("草稿已保存");
+      await Promise.all([
+        refetch(),
+        trpcUtils.iqcInspections.list.invalidate(),
+      ]);
+      if (!editId && data?.id) setEditId(data.id);
+    },
+    onError: (e: any) => toast.error("草稿保存失败：" + e.message),
+  });
   const deleteReceiptMutation = trpc.goodsReceipts.delete.useMutation({
     onSuccess: () => {
       toast.success("已删除来料到货单");
@@ -1221,13 +1233,16 @@ export default function IQCPage() {
   const paginatedList = list.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // 统计
-  const stats = useMemo(() => ({
-    total: list.length,
-    pending: list.filter((r) => r.result === "pending").length,
-    passed: list.filter((r) => r.result === "passed").length,
-    failed: list.filter((r) => r.result === "failed").length,
-    conditional: list.filter((r) => r.result === "conditional_pass").length,
-  }), [list]);
+  const stats = useMemo(() => {
+    const nonDraft = list.filter((r) => r.result !== "draft");
+    return {
+      total: nonDraft.length,
+      pending: nonDraft.filter((r) => r.result === "pending").length,
+      passed: nonDraft.filter((r) => r.result === "passed").length,
+      failed: nonDraft.filter((r) => r.result === "failed").length,
+      conditional: nonDraft.filter((r) => r.result === "conditional_pass").length,
+    };
+  }, [list]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1324,6 +1339,7 @@ export default function IQCPage() {
                     <SelectItem value="passed">合格</SelectItem>
                     <SelectItem value="failed">不合格</SelectItem>
                     <SelectItem value="conditional_pass">条件合格</SelectItem>
+                    <SelectItem value="draft">草稿</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1709,6 +1725,57 @@ export default function IQCPage() {
                 title={editId ? `来料检验表单 - ${formData.inspectionNo}` : "新建来料检验"}
                 targetRef={formPrintRef}
               />
+              <Button
+                size="sm"
+                variant="ghost"
+                className="gap-1"
+                onClick={() => {
+                  const ctx = buildCurrentSubmitContext();
+                  saveDraftMutation.mutate({
+                    id: editId ?? undefined,
+                    inspectionNo: ctx.formData.inspectionNo,
+                    reportMode: ctx.formData.reportMode as any,
+                    goodsReceiptId: ctx.formData.goodsReceiptId ?? undefined,
+                    goodsReceiptNo: ctx.formData.goodsReceiptNo || undefined,
+                    goodsReceiptItemId: ctx.formData.goodsReceiptItemId ?? undefined,
+                    productId: ctx.formData.productId ?? undefined,
+                    productCode: ctx.formData.productCode || undefined,
+                    productName: ctx.formData.productName,
+                    specification: ctx.formData.specification || undefined,
+                    supplierId: ctx.formData.supplierId ?? undefined,
+                    supplierName: ctx.formData.supplierName || undefined,
+                    supplierCode: ctx.formData.supplierCode || undefined,
+                    batchNo: ctx.formData.batchNo || undefined,
+                    receivedQty: ctx.formData.receivedQty || undefined,
+                    sampleQty: ctx.formData.sampleQty || undefined,
+                    qualifiedQty: ctx.formData.qualifiedQty || undefined,
+                    unit: ctx.formData.unit || undefined,
+                    inspectionDate: ctx.formData.inspectionDate || undefined,
+                    inspectorId: ctx.formData.inspectorId ?? undefined,
+                    inspectorName: ctx.formData.inspectorName || undefined,
+                    remark: ctx.formData.remark || undefined,
+                    items: ctx.items.map((it, idx) => ({
+                      requirementItemId: it.requirementItemId,
+                      itemName: it.itemName,
+                      itemType: it.itemType,
+                      standard: it.standard || undefined,
+                      minValue: it.minVal || undefined,
+                      maxValue: it.maxVal || undefined,
+                      unit: it.unit || undefined,
+                      measuredValue: it.measuredValue || undefined,
+                      sampleValues: it.itemType === "quantitative" ? JSON.stringify(it.sampleValues) : undefined,
+                      acceptedValues: it.acceptedValues || undefined,
+                      actualValue: it.actualValue || undefined,
+                      conclusion: it.conclusion,
+                      sortOrder: idx,
+                      remark: it.remark || undefined,
+                    })),
+                  });
+                }}
+                disabled={saveDraftMutation.isPending}
+              >
+                <Save className="w-3.5 h-3.5" />{saveDraftMutation.isPending ? "保存中..." : "保存草稿"}
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
