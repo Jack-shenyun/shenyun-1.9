@@ -31,6 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { formatDate } from "@/lib/formatters";
@@ -139,7 +140,7 @@ function emptyItem(): RequirementItem {
 export default function InspectionRequirementsPage() {
   const utils = trpc.useUtils();
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("IQC");
   const [currentPage, setCurrentPage] = useState(1);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<any | null>(null);
@@ -173,9 +174,8 @@ export default function InspectionRequirementsPage() {
 
   // ==================== 数据查询 ====================
   const { data: reqList = [], refetch } = trpc.inspectionRequirements.list.useQuery({
-    type: typeFilter === "all" ? undefined : typeFilter,
     search: search || undefined,
-    limit: 200,
+    limit: 500,
   });
 
   const createMutation = trpc.inspectionRequirements.create.useMutation({
@@ -359,16 +359,21 @@ export default function InspectionRequirementsPage() {
     }
   }
 
-  const list = reqList as any[];
+  const allList = reqList as any[];
+  // 按 typeFilter 过滤（Tab 分页）
+  const list = useMemo(() => {
+    if (typeFilter === "all") return allList;
+    return allList.filter((r) => r.type === typeFilter);
+  }, [allList, typeFilter]);
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
   const paginatedList = list.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const stats = useMemo(() => ([
-    { label: "要求总数", count: list.length, color: "text-foreground" },
-    { label: "来料检验(IQC)", count: list.filter((r) => r.type === "IQC").length, color: "text-blue-600" },
-    { label: "过程检验(IPQC)", count: list.filter((r) => r.type === "IPQC").length, color: "text-orange-600" },
-    { label: "成品检验(OQC)", count: list.filter((r) => r.type === "OQC").length, color: "text-green-600" },
-  ]), [list]);
+  const stats = useMemo(() => ({
+    total: allList.length,
+    iqc: allList.filter((r) => r.type === "IQC").length,
+    ipqc: allList.filter((r) => r.type === "IPQC").length,
+    oqc: allList.filter((r) => r.type === "OQC").length,
+  }), [allList]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -417,218 +422,240 @@ export default function InspectionRequirementsPage() {
           </div>
         </div>
 
+        {/* 统计卡片 */}
         <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-          {stats.map((s) => (
-            <Card key={s.label}>
-              <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">{s.label}</p>
-                <p className={`text-2xl font-bold ${s.color}`}>{s.count}</p>
-              </CardContent>
-            </Card>
-          ))}
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">要求总数</p>
+              <p className="text-2xl font-bold text-foreground">{stats.total}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">来料检验(IQC)</p>
+              <p className="text-2xl font-bold text-blue-600">{stats.iqc}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">过程检验(IPQC)</p>
+              <p className="text-2xl font-bold text-orange-600">{stats.ipqc}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">成品检验(OQC)</p>
+              <p className="text-2xl font-bold text-green-600">{stats.oqc}</p>
+            </CardContent>
+          </Card>
         </div>
 
+        {/* 搜索框 */}
         <Card>
           <CardContent className="p-4">
-            <div className="flex flex-col gap-4 md:flex-row">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="搜索产品名称、编号..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-full md:w-[180px]">
-                  <SelectValue placeholder="检验类型" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">全部类型</SelectItem>
-                  <SelectItem value="IQC">来料检验</SelectItem>
-                  <SelectItem value="IPQC">过程检验</SelectItem>
-                  <SelectItem value="OQC">成品检验</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="搜索产品名称、编号..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-8" />
-                    <TableHead>编号</TableHead>
-                    <TableHead>类型</TableHead>
-                    <TableHead>产品编号</TableHead>
-                    <TableHead>产品名称</TableHead>
-                    <TableHead>版本</TableHead>
-                    <TableHead>检验项数</TableHead>
-                    <TableHead>状态</TableHead>
-                    <TableHead>创建日期</TableHead>
-                    <TableHead className="w-16">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedList.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
-                        暂无数据
-                      </TableCell>
-                    </TableRow>
-                  ) : paginatedList.map((req) => ([
-                      <TableRow key={req.id} className="cursor-pointer hover:bg-muted/30">
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => setExpandedId(expandedId === req.id ? null : req.id)}
-                          >
-                            {expandedId === req.id
-                              ? <ChevronUp className="h-3 w-3" />
-                              : <ChevronDown className="h-3 w-3" />}
-                          </Button>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">{req.requirementNo}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{TYPE_MAP[req.type as keyof typeof TYPE_MAP] ?? req.type}</Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{req.productCode ?? "-"}</TableCell>
-                        <TableCell className="font-medium">{req.productName}</TableCell>
-                        <TableCell>{req.version ?? "1.0"}</TableCell>
-                        <TableCell>
-                          {expandedId === req.id && expandedDetail
-                            ? (expandedDetail as any).items?.length ?? "-"
-                            : "-"}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={STATUS_MAP[req.status]?.variant ?? "outline"}>
-                            {STATUS_MAP[req.status]?.label ?? req.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">{formatDate(req.createdAt)}</TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => handleCopy(req)}>
-                                <Copy className="mr-2 h-4 w-4" />复制
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => openEdit(req)}>
-                                <Edit2 className="mr-2 h-4 w-4" />编辑
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="text-destructive"
-                                onClick={() => handleDeleteClick(req)}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />删除
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>,
-                      expandedId === req.id && expandedDetail && (
-                        <TableRow key={`${req.id}-detail`}>
-                          <TableCell colSpan={10} className="bg-muted/20 p-0">
-                            <div className="p-4">
-                              <p className="mb-2 text-sm font-medium text-muted-foreground">检验项目明细</p>
-                              {(expandedDetail as any).items?.length > 0 ? (
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead>序号</TableHead>
-                                      <TableHead>检验项目</TableHead>
-                                      <TableHead>类型</TableHead>
-                                      <TableHead>检验标准</TableHead>
-                                      <TableHead>范围/判定值</TableHead>
-                                      <TableHead>单位</TableHead>
-                                      <TableHead>二级明细</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {(expandedDetail as any).items.map((it: any, idx: number) => (
-                                      <TableRow key={it.id}>
-                                        <TableCell>{idx + 1}</TableCell>
-                                        <TableCell>{it.itemName}</TableCell>
-                                        <TableCell>
-                                          <Badge variant={it.itemType === "quantitative" ? "default" : "secondary"}>
-                                            {it.itemType === "quantitative" ? "定量" : "定性"}
-                                          </Badge>
-                                        </TableCell>
-                                        <TableCell>{it.standard ?? "-"}</TableCell>
-                                        <TableCell>
-                                          {it.itemType === "quantitative"
-                                            ? `${it.minVal ?? ""}～${it.maxVal ?? ""}`
-                                            : it.acceptedValues ?? "-"}
-                                        </TableCell>
-                                        <TableCell>{it.unit ?? "-"}</TableCell>
-                                        <TableCell className="text-sm text-muted-foreground">
-                                          {(() => {
-                                            const parsedRemark = parseRequirementItemRemark(it.remark);
-                                            if (parsedRemark.children.length === 0) return "-";
-                                            return (
-                                              <div className="space-y-1">
-                                                <div>{parsedRemark.children.length} 项</div>
-                                                <div className="text-xs">
-                                                  {parsedRemark.children.map((child) => child.detailName).filter(Boolean).join("、") || "-"}
-                                                </div>
-                                              </div>
-                                            );
-                                          })()}
-                                        </TableCell>
-                                      </TableRow>
-                                    ))}
-                                  </TableBody>
-                                </Table>
-                              ) : (
-                                <p className="text-sm text-muted-foreground">暂无检验项目</p>
-                              )}
-                            </div>
-                          </TableCell>
+        {/* Tab 分页 + 列表 */}
+        <Tabs value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setExpandedId(null); }}>
+          <TabsList className="mb-2">
+            <TabsTrigger value="IQC">来料检验
+              <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-700">{stats.iqc}</span>
+            </TabsTrigger>
+            <TabsTrigger value="IPQC">过程检验
+              <span className="ml-1.5 rounded-full bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-700">{stats.ipqc}</span>
+            </TabsTrigger>
+            <TabsTrigger value="OQC">成品检验
+              <span className="ml-1.5 rounded-full bg-green-100 px-1.5 py-0.5 text-xs font-semibold text-green-700">{stats.oqc}</span>
+            </TabsTrigger>
+          </TabsList>
+
+          {(["IQC", "IPQC", "OQC"] as const).map((tabType) => (
+            <TabsContent key={tabType} value={tabType}>
+              <Card>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-8" />
+                          <TableHead>产品编号</TableHead>
+                          <TableHead>产品名称</TableHead>
+                          <TableHead>规格型号</TableHead>
+                          <TableHead>版本</TableHead>
+                          <TableHead>检验项数</TableHead>
+                          <TableHead>状态</TableHead>
+                          <TableHead>创建时间</TableHead>
+                          <TableHead className="w-16">操作</TableHead>
                         </TableRow>
-                      )
-                    ]))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedList.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                              暂无数据
+                            </TableCell>
+                          </TableRow>
+                        ) : paginatedList.map((req) => ([
+                            <TableRow key={req.id} className="cursor-pointer hover:bg-muted/30">
+                              <TableCell>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  onClick={() => setExpandedId(expandedId === req.id ? null : req.id)}
+                                >
+                                  {expandedId === req.id
+                                    ? <ChevronUp className="h-3 w-3" />
+                                    : <ChevronDown className="h-3 w-3" />}
+                                </Button>
+                              </TableCell>
+                              <TableCell className="font-mono text-sm text-muted-foreground">{req.productCode ?? "-"}</TableCell>
+                              <TableCell className="font-medium">{req.productName}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {products.find((p: any) => p.code === req.productCode)?.specification ?? "-"}
+                              </TableCell>
+                              <TableCell>{req.version ?? "1.0"}</TableCell>
+                              <TableCell>
+                                {expandedId === req.id && expandedDetail
+                                  ? (expandedDetail as any).items?.length ?? "-"
+                                  : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={STATUS_MAP[req.status]?.variant ?? "outline"}>
+                                  {STATUS_MAP[req.status]?.label ?? req.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">{formatDate(req.createdAt)}</TableCell>
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => handleCopy(req)}>
+                                      <Copy className="mr-2 h-4 w-4" />复制
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => openEdit(req)}>
+                                      <Edit2 className="mr-2 h-4 w-4" />编辑
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      className="text-destructive"
+                                      onClick={() => handleDeleteClick(req)}
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />删除
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>,
+                            expandedId === req.id && expandedDetail && (
+                              <TableRow key={`${req.id}-detail`}>
+                                <TableCell colSpan={9} className="bg-muted/20 p-0">
+                                  <div className="p-4">
+                                    <p className="mb-2 text-sm font-medium text-muted-foreground">检验项目明细</p>
+                                    {(expandedDetail as any).items?.length > 0 ? (
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead>序号</TableHead>
+                                            <TableHead>检验项目</TableHead>
+                                            <TableHead>类型</TableHead>
+                                            <TableHead>检验标准</TableHead>
+                                            <TableHead>范围/判定値</TableHead>
+                                            <TableHead>单位</TableHead>
+                                            <TableHead>二级明细</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {(expandedDetail as any).items.map((it: any, idx: number) => (
+                                            <TableRow key={it.id}>
+                                              <TableCell>{idx + 1}</TableCell>
+                                              <TableCell>{it.itemName}</TableCell>
+                                              <TableCell>
+                                                <Badge variant={it.itemType === "quantitative" ? "default" : "secondary"}>
+                                                  {it.itemType === "quantitative" ? "定量" : "定性"}
+                                                </Badge>
+                                              </TableCell>
+                                              <TableCell>{it.standard ?? "-"}</TableCell>
+                                              <TableCell>
+                                                {it.itemType === "quantitative"
+                                                  ? `${it.minVal ?? ""}～${it.maxVal ?? ""}`
+                                                  : it.acceptedValues ?? "-"}
+                                              </TableCell>
+                                              <TableCell>{it.unit ?? "-"}</TableCell>
+                                              <TableCell className="text-sm text-muted-foreground">
+                                                {(() => {
+                                                  const parsedRemark = parseRequirementItemRemark(it.remark);
+                                                  if (parsedRemark.children.length === 0) return "-";
+                                                  return (
+                                                    <div className="space-y-1">
+                                                      <div>{parsedRemark.children.length} 项</div>
+                                                      <div className="text-xs">
+                                                        {parsedRemark.children.map((child) => child.detailName).filter(Boolean).join("、") || "-"}
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })()}
+                                              </TableCell>
+                                            </TableRow>
+                                          ))}
+                                        </TableBody>
+                                      </Table>
+                                    ) : (
+                                      <p className="text-sm text-muted-foreground">暂无检验项目</p>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          ]))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
 
-        {list.length > 0 && (
-          <div className="flex items-center justify-between rounded-lg border bg-card px-4 py-3">
-            <div className="text-sm text-muted-foreground">
-              显示 {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, list.length)} 条，
-              共 {list.length} 条，第 {currentPage} / {totalPages} 页
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                disabled={currentPage === 1}
-              >
-                上一页
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-                disabled={currentPage === totalPages}
-              >
-                下一页
-              </Button>
-            </div>
-          </div>
-        )}
+              {list.length > 0 && (
+                <div className="mt-4 flex items-center justify-between rounded-lg border bg-card px-4 py-3">
+                  <div className="text-sm text-muted-foreground">
+                    显示 {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, list.length)} 条，
+                    共 {list.length} 条，第 {currentPage} / {totalPages} 页
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      上一页
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      下一页
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+          ))}
+        </Tabs>
       </div>
 
       {/* 新建/编辑弹窗 */}
