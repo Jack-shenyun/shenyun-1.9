@@ -60,7 +60,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { usePermission } from "@/hooks/usePermission";
-import { SalesOrderPrint } from "@/components/print";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 import {
   PAYMENT_CONDITION_OPTIONS,
   normalizePaymentCondition,
@@ -528,8 +528,6 @@ export default function SalesQuotesPage() {
   const [selectedRecord, setSelectedRecord] = useState<SalesQuote | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [printOpen, setPrintOpen] = useState(false);
-  const [printPayload, setPrintPayload] = useState<PrintPayload | null>(null);
   const [calcProductId, setCalcProductId] = useState("");
   const [calcDialogOpen, setCalcDialogOpen] = useState(false);
   const [tierPriceDialogOpen, setTierPriceDialogOpen] = useState(false);
@@ -1387,60 +1385,6 @@ export default function SalesQuotesPage() {
   const handleSaveDraft = () => submitQuote("draft");
   const handleSubmit = () => submitQuote(formData.status === "draft" ? "sent" : formData.status);
 
-  const buildPrintPayload = async (record: SalesQuote): Promise<PrintPayload | null> => {
-    try {
-      const detail = await trpcUtils.salesQuotes.getById.fetch({ id: record.id });
-      const quote = (normalizeQuoteRecord(detail?.quote || record) || record) as any;
-      const items = ((detail?.items || []) as any[]).map((rawItem: any) => {
-        const item = normalizeQuoteItemRecord(rawItem);
-        return {
-        productName: item.productName || "",
-        productCode: item.productCode || "",
-        specification: item.specification || "",
-        quantity: parseFloat(String(item.quantity || "0")),
-        unitPrice: parseFloat(String(item.unitPrice || "0")),
-        amount: parseFloat(String(item.amount || "0")),
-        };
-      });
-      return {
-        orderNumber: quote.quoteNo,
-        orderDate: toInputDate(quote.quoteDate),
-        deliveryDate: toInputDate(quote.deliveryDate),
-        customerName: quote.customerName || "",
-        customerCode: quote.customerCode || "",
-        customerType: quote.customerType || "",
-        customerCountry: quote.country || "",
-        shippingAddress: quote.shippingAddress || "",
-        shippingContact: quote.shippingContact || quote.contactPerson || "",
-        shippingPhone: quote.shippingPhone || quote.phone || "",
-        paymentMethod: quote.paymentMethod || "",
-        status: quote.status || "draft",
-        totalAmount: parseFloat(String(quote.totalAmount || "0")),
-        currency: quote.currency || "CNY",
-        items,
-        notes: [
-          `报价口径：${parseTaxIncludedFromRemark(quote.remark) ? "含税" : "未税"}`,
-          stripQuoteMetaFromRemark(quote.remark || ""),
-        ].filter(Boolean).join("\n"),
-        salesPersonName: quote.salesPersonName || "",
-        tradeTerm: quote.tradeTerm || "",
-        shippingFee: 0,
-        paymentAccount: quote.receiptAccountName || "",
-        paymentAccountId: quote.receiptAccountId ?? null,
-      };
-    } catch (error: any) {
-      toast.error(error?.message || "打印数据加载失败");
-      return null;
-    }
-  };
-
-  const handlePrint = (record: SalesQuote) => {
-    void (async () => {
-      const payload = await buildPrintPayload(record);
-      if (!payload) return;
-      setPrintPayload(payload);
-      setPrintOpen(true);
-    })();
   };
 
   const handleExportQuotes = () => {
@@ -1978,10 +1922,7 @@ export default function SalesQuotesPage() {
                               <Edit className="h-4 w-4 mr-2" />
                               编辑
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handlePrint({ ...quote, products: [] })}>
-                              <Printer className="h-4 w-4 mr-2" />
-                              打印预览
-                            </DropdownMenuItem>
+
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleStatusChange({ ...quote, products: [] }, "sent")}>
                               <Send className="h-4 w-4 mr-2" />
@@ -2424,10 +2365,41 @@ export default function SalesQuotesPage() {
           {detailQuote ? (
             <div className="space-y-6">
               <div className="flex flex-wrap gap-2 justify-end">
-                <Button variant="outline" onClick={() => handlePrint({ ...(detailQuote as DbQuote), products: [] })}>
+                <TemplatePrintPreviewButton
+                  templateKey={(
+                    detailQuote?.customerType === "overseas" ||
+                    (detailQuote?.country && detailQuote.country !== "中国")
+                  ) ? "sales_quote_en" : "sales_quote_zh"}
+                  data={{
+                    orderNumber: detailQuote?.quoteNo || "",
+                    orderDate: toInputDate(detailQuote?.quoteDate),
+                    deliveryDate: toInputDate(detailQuote?.deliveryDate),
+                    customerName: detailQuote?.customerName || "",
+                    customerCode: detailQuote?.customerCode || "",
+                    shippingAddress: detailQuote?.shippingAddress || "",
+                    shippingContact: detailQuote?.shippingContact || detailQuote?.contactPerson || "",
+                    shippingPhone: detailQuote?.shippingPhone || detailQuote?.phone || "",
+                    paymentMethod: detailQuote?.paymentMethod || "",
+                    tradeTerm: detailQuote?.tradeTerm || "",
+                    currency: detailQuote?.currency || "CNY",
+                    status: statusMap[String(detailQuote?.status || "")]?.label || detailQuote?.status || "",
+                    totalAmount: parseFloat(String(detailQuote?.totalAmount || "0")),
+                    notes: stripQuoteMetaFromRemark(detailQuote?.remark || ""),
+                    salesPersonName: detailQuote?.salesPersonName || "",
+                    items: detailProducts.map(p => ({
+                      productName: p.name,
+                      productCode: p.code,
+                      specification: p.spec,
+                      quantity: p.quantity,
+                      unitPrice: p.price,
+                      amount: p.amount ?? 0,
+                    })),
+                  }}
+                  title={`报价单打印预览 - ${detailQuote?.quoteNo || ""}`}
+                >
                   <Printer className="h-4 w-4 mr-2" />
                   打印预览
-                </Button>
+                </TemplatePrintPreviewButton>
                 <Button variant="outline" onClick={() => handleEdit({ ...(detailQuote as DbQuote), products: [] })}>
                   <Edit className="h-4 w-4 mr-2" />
                   编辑
@@ -2534,14 +2506,7 @@ export default function SalesQuotesPage() {
         </DialogContent>
       </Dialog>
 
-      {printPayload ? (
-        <SalesOrderPrint
-          open={printOpen}
-          onClose={() => setPrintOpen(false)}
-          documentMode="quote"
-          order={printPayload}
-        />
-      ) : null}
+
     </ERPLayout>
   );
 }

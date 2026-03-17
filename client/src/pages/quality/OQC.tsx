@@ -3,7 +3,7 @@ import { getStatusSemanticClass } from "@/lib/statusStyle";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import PrintPreviewButton from "@/components/PrintPreviewButton";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import ERPLayout from "@/components/ERPLayout";
@@ -1894,7 +1894,31 @@ export default function OQCPage() {
                 <span className="font-semibold">{selectedRecord.inspectionNo}</span>
               </div>
               <div className="flex items-center gap-2">
-                <PrintPreviewButton title={`初始污染菌检测记录 - ${selectedRecord.inspectionNo}`} targetRef={detailPrintRef} />
+                <TemplatePrintPreviewButton
+                  templateKey="oqc_inspection"
+                  data={{
+                    inspectionNo: selectedRecord.inspectionNo,
+                    productName: selectedRecord.productName || "",
+                    productCode: selectedRecord.productCode || "",
+                    batchNo: selectedRecord.batchNo || "",
+                    quantity: selectedRecord.quantity || "",
+                    unit: selectedRecord.unit || "",
+                    inspectionDate: selectedRecord.inspectionDate || "",
+                    inspector: selectedRecord.inspector || "",
+                    result: statusMap[selectedRecord.result]?.label || selectedRecord.result || "",
+                    resultPassed: selectedRecord.result === "qualified",
+                    remarks: selectedRecord.remarks || "",
+                    hasItems: (selectedRecord.inspectionItems || []).length > 0,
+                    inspectionItems: (selectedRecord.inspectionItems || []).map((it: InspectionItem) => ({
+                      itemName: it.name || "",
+                      standard: it.standard || "",
+                      measuredValue: it.result || "",
+                      conclusion: it.conclusion === "qualified" ? "合格" : it.conclusion === "unqualified" ? "不合格" : "待判定",
+                      passed: it.conclusion === "qualified",
+                    })),
+                  }}
+                  title={`初始污染菌检测记录 - ${selectedRecord.inspectionNo}`}
+                />
                 <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(selectedRecord); }}>
                   <Edit className="h-3.5 w-3.5 mr-1.5" />编辑
                 </Button>
@@ -2016,7 +2040,31 @@ export default function OQCPage() {
                 <span className="font-semibold">{selectedRecord.inspectionNo}</span>
               </div>
               <div className="flex items-center gap-2">
-                <PrintPreviewButton title={`无菌检验记录 - ${selectedRecord.inspectionNo}`} targetRef={detailPrintRef} />
+                <TemplatePrintPreviewButton
+                  templateKey="oqc_inspection"
+                  data={{
+                    inspectionNo: selectedRecord.inspectionNo,
+                    productName: selectedRecord.productName || "",
+                    productCode: selectedRecord.productCode || "",
+                    batchNo: selectedRecord.batchNo || "",
+                    quantity: selectedRecord.quantity || "",
+                    unit: selectedRecord.unit || "",
+                    inspectionDate: selectedRecord.inspectionDate || "",
+                    inspector: selectedRecord.inspector || "",
+                    result: statusMap[selectedRecord.result]?.label || selectedRecord.result || "",
+                    resultPassed: selectedRecord.result === "qualified",
+                    remarks: selectedRecord.remarks || "",
+                    hasItems: (selectedRecord.inspectionItems || []).length > 0,
+                    inspectionItems: (selectedRecord.inspectionItems || []).map((it: InspectionItem) => ({
+                      itemName: it.name || "",
+                      standard: it.standard || "",
+                      measuredValue: it.result || "",
+                      conclusion: it.conclusion === "qualified" ? "合格" : it.conclusion === "unqualified" ? "不合格" : "待判定",
+                      passed: it.conclusion === "qualified",
+                    })),
+                  }}
+                  title={`无菌检验记录 - ${selectedRecord.inspectionNo}`}
+                />
                 <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(selectedRecord); }}>
                   <Edit className="h-3.5 w-3.5 mr-1.5" />编辑
                 </Button>
@@ -2146,7 +2194,31 @@ export default function OQCPage() {
                 <span className="font-semibold">{selectedRecord.inspectionNo}</span>
               </div>
               <div className="flex items-center gap-2">
-                <PrintPreviewButton title={`成品检验详情 - ${selectedRecord.inspectionNo}`} targetRef={detailPrintRef} />
+                <TemplatePrintPreviewButton
+                  templateKey="oqc_inspection"
+                  data={{
+                    inspectionNo: selectedRecord.inspectionNo,
+                    productName: selectedRecord.productName || "",
+                    productCode: selectedRecord.productCode || "",
+                    batchNo: selectedRecord.batchNo || "",
+                    quantity: selectedRecord.quantity || "",
+                    unit: selectedRecord.unit || "",
+                    inspectionDate: selectedRecord.inspectionDate || "",
+                    inspector: selectedRecord.inspector || "",
+                    result: statusMap[selectedRecord.result]?.label || selectedRecord.result || "",
+                    resultPassed: selectedRecord.result === "qualified",
+                    remarks: selectedRecord.remarks || "",
+                    hasItems: (selectedRecord.inspectionItems || []).length > 0,
+                    inspectionItems: (selectedRecord.inspectionItems || []).map((it: InspectionItem) => ({
+                      itemName: it.name || "",
+                      standard: it.standard || "",
+                      measuredValue: it.result || "",
+                      conclusion: it.conclusion === "qualified" ? "合格" : it.conclusion === "unqualified" ? "不合格" : "待判定",
+                      passed: it.conclusion === "qualified",
+                    })),
+                  }}
+                  title={`成品检验详情 - ${selectedRecord.inspectionNo}`}
+                />
                 <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(selectedRecord); }}>
                   <Edit className="h-3.5 w-3.5 mr-1.5" />编辑
                 </Button>
@@ -2545,9 +2617,30 @@ export default function OQCPage() {
                 <span className="font-semibold">{isEditing && selectedRecord ? selectedRecord.inspectionNo : "初始污染菌检测记录"}</span>
               </div>
               <div className="flex items-center gap-2">
-                <PrintPreviewButton
+                <TemplatePrintPreviewButton
+                  templateKey="oqc_inspection"
+                  data={{
+                    inspectionNo: isEditing && selectedRecord ? selectedRecord.inspectionNo : "",
+                    productName: formData.productName || "",
+                    productCode: formData.productCode || "",
+                    batchNo: formData.batchNo || "",
+                    quantity: formData.quantity || "",
+                    unit: formData.unit || "",
+                    inspectionDate: formData.inspectionDate || "",
+                    inspector: formData.inspector || "",
+                    result: statusMap[formData.result]?.label || formData.result || "",
+                    resultPassed: formData.result === "qualified",
+                    remarks: formData.remarks || "",
+                    hasItems: formData.inspectionItems.length > 0,
+                    inspectionItems: formData.inspectionItems.map((it: InspectionItem) => ({
+                      itemName: it.name || "",
+                      standard: it.standard || "",
+                      measuredValue: it.result || "",
+                      conclusion: it.conclusion === "qualified" ? "合格" : it.conclusion === "unqualified" ? "不合格" : "待判定",
+                      passed: it.conclusion === "qualified",
+                    })),
+                  }}
                   title={isEditing && selectedRecord ? `初始污染菌检测记录 - ${selectedRecord.inspectionNo}` : "初始污染菌检测记录"}
-                  targetRef={formPrintRef}
                 />
                 <Button
                   size="sm"
@@ -2827,9 +2920,30 @@ export default function OQCPage() {
                 <span className="font-semibold">{isEditing && selectedRecord ? selectedRecord.inspectionNo : "无菌检验记录"}</span>
               </div>
               <div className="flex items-center gap-2">
-                <PrintPreviewButton
+                <TemplatePrintPreviewButton
+                  templateKey="oqc_inspection"
+                  data={{
+                    inspectionNo: isEditing && selectedRecord ? selectedRecord.inspectionNo : "",
+                    productName: formData.productName || "",
+                    productCode: formData.productCode || "",
+                    batchNo: formData.batchNo || "",
+                    quantity: formData.quantity || "",
+                    unit: formData.unit || "",
+                    inspectionDate: formData.inspectionDate || "",
+                    inspector: formData.inspector || "",
+                    result: statusMap[formData.result]?.label || formData.result || "",
+                    resultPassed: formData.result === "qualified",
+                    remarks: formData.remarks || "",
+                    hasItems: formData.inspectionItems.length > 0,
+                    inspectionItems: formData.inspectionItems.map((it: InspectionItem) => ({
+                      itemName: it.name || "",
+                      standard: it.standard || "",
+                      measuredValue: it.result || "",
+                      conclusion: it.conclusion === "qualified" ? "合格" : it.conclusion === "unqualified" ? "不合格" : "待判定",
+                      passed: it.conclusion === "qualified",
+                    })),
+                  }}
                   title={isEditing && selectedRecord ? `无菌检验记录 - ${selectedRecord.inspectionNo}` : "无菌检验记录"}
-                  targetRef={formPrintRef}
                 />
                 <Button
                   size="sm"
@@ -3131,9 +3245,30 @@ export default function OQCPage() {
                 <span className="font-semibold">{isEditing && selectedRecord ? selectedRecord.inspectionNo : "新建"}</span>
               </div>
               <div className="flex items-center gap-2">
-                <PrintPreviewButton
+                <TemplatePrintPreviewButton
+                  templateKey="oqc_inspection"
+                  data={{
+                    inspectionNo: isEditing && selectedRecord ? selectedRecord.inspectionNo : "",
+                    productName: formData.productName || "",
+                    productCode: formData.productCode || "",
+                    batchNo: formData.batchNo || "",
+                    quantity: formData.quantity || "",
+                    unit: formData.unit || "",
+                    inspectionDate: formData.inspectionDate || "",
+                    inspector: formData.inspector || "",
+                    result: statusMap[formData.result]?.label || formData.result || "",
+                    resultPassed: formData.result === "qualified",
+                    remarks: formData.remarks || "",
+                    hasItems: formData.inspectionItems.length > 0,
+                    inspectionItems: formData.inspectionItems.map((it: InspectionItem) => ({
+                      itemName: it.name || "",
+                      standard: it.standard || "",
+                      measuredValue: it.result || "",
+                      conclusion: it.conclusion === "qualified" ? "合格" : it.conclusion === "unqualified" ? "不合格" : "待判定",
+                      passed: it.conclusion === "qualified",
+                    })),
+                  }}
                   title={isEditing && selectedRecord ? `成品检验表单 - ${selectedRecord.inspectionNo}` : "新建成品检验"}
-                  targetRef={formPrintRef}
                 />
                 <Button
                   size="sm"

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import ERPLayout from "@/components/ERPLayout";
-import PrintPreviewButton from "@/components/PrintPreviewButton";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 import {
   PackagePlus, Plus, Search, Eye, Edit, Trash2, MoreHorizontal, X,
 } from "lucide-react";
@@ -1218,7 +1218,27 @@ export default function InboundPage() {
               </div>
             </div>
             <DialogFooter data-print-ignore="true">
-              <PrintPreviewButton title="入库单详情" targetRef={detailPrintRef} />
+              <TemplatePrintPreviewButton
+                templateKey="warehouse_in"
+                data={{
+                  inboundNo: viewingRecord.documentNo || `IN-${viewingRecord.id}`,
+                  inboundDate: viewingRecord.createdAt ? new Date(viewingRecord.createdAt).toISOString().split("T")[0] : "",
+                  sourceNo: viewingRecord.relatedOrderId ? `#${viewingRecord.relatedOrderId}` : "",
+                  inboundType: typeMap[viewingRecord.type] || viewingRecord.type || "",
+                  handlerName: "",
+                  warehouseName: getWarehouseName(viewingRecord.warehouseId),
+                  items: [{
+                    materialCode: viewingRecord.productId ? (productsById.get(Number(viewingRecord.productId))?.code || "") : "",
+                    materialName: viewingRecord.itemName || "",
+                    specification: viewingRecord.productId ? (productsById.get(Number(viewingRecord.productId))?.specification || "") : "",
+                    quantity: Number(viewingRecord.quantity || 0),
+                    unit: viewingRecord.unit || "",
+                    batchNo: viewingRecord.batchNo || "",
+                    location: getWarehouseName(viewingRecord.warehouseId),
+                  }],
+                }}
+                title={`入库单详情 - ${viewingRecord.documentNo || viewingRecord.id}`}
+              />
               <Button variant="outline" onClick={() => { setDetailOpen(false); handleEdit(viewingRecord); }}>
                 编辑入库单
               </Button>

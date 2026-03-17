@@ -44,7 +44,7 @@ import { trpc } from "@/lib/trpc";
 import { usePermission } from "@/hooks/usePermission";
 import { formatDateValue, formatDateTime, formatDisplayNumber } from "@/lib/formatters";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import { DeliveryNotePrint } from "@/components/print";
+
 import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 
 // ==================== 常量 ====================
@@ -140,7 +140,7 @@ export default function OutboundPage() {
   const [detailOpen, setDetailOpen]           = useState(false);
   const [editingRecord, setEditingRecord]     = useState<OutboundRecord | null>(null);
   const [viewingRecord, setViewingRecord]     = useState<OutboundRecord | null>(null);
-  const [printDeliveryOpen, setPrintDeliveryOpen] = useState(false);
+
 
   // ---- 搜索 & 筛选 ----
   const [searchText, setSearchText] = useState("");
@@ -1414,13 +1414,30 @@ export default function OutboundPage() {
                         data={outboundPrintData}
                         title={`出库单打印预览 - ${viewingRecord.documentNo || `#${viewingRecord.id}`}`}
                       />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPrintDeliveryOpen(true)}
+                      <TemplatePrintPreviewButton
+                        templateKey="delivery_note"
+                        data={{
+                          orderNumber: viewingRecord.documentNo || `OUT-${viewingRecord.id}`,
+                          deliveryDate: viewingRecord.createdAt
+                            ? new Date(viewingRecord.createdAt).toISOString().split("T")[0]
+                            : new Date().toISOString().split("T")[0],
+                          customerName: (() => { const o = getRelatedOrder(viewingRecord.relatedOrderId); return o?.customerName || "-"; })(),
+                          shippingAddress: (() => { const o = getRelatedOrder(viewingRecord.relatedOrderId); return o?.shippingAddress || ""; })(),
+                          shippingContact: (() => { const o = getRelatedOrder(viewingRecord.relatedOrderId); return o?.shippingContact || ""; })(),
+                          shippingPhone: (() => { const o = getRelatedOrder(viewingRecord.relatedOrderId); return o?.shippingPhone || ""; })(),
+                          items: [{
+                            productName: viewingRecord.itemName || "",
+                            productCode: viewingRecord.productId ? (productsById.get(Number(viewingRecord.productId))?.code || "") : "",
+                            specification: viewingRecord.productId ? (productsById.get(Number(viewingRecord.productId))?.specification || "") : "",
+                            quantity: parseFloat(String(viewingRecord.quantity || 0)),
+                            unit: viewingRecord.unit || "件",
+                          }],
+                          notes: viewingRecord.remark || "",
+                        }}
+                        title={`发货单打印预览 - ${viewingRecord.documentNo || `OUT-${viewingRecord.id}`}`}
                       >
-                        <Printer className="h-4 w-4 mr-1.5" />打印发货单
-                      </Button>
+                        打印发货单
+                      </TemplatePrintPreviewButton>
                     </div>
                     <div className="flex gap-2 flex-wrap justify-end">
                       <Button
@@ -1449,44 +1466,7 @@ export default function OutboundPage() {
           })()}
       </DraggableDialog>
 
-      {/* ==================== 打印发货单 ==================== */}
-      {viewingRecord && (
-        <DeliveryNotePrint
-          open={printDeliveryOpen}
-          onClose={() => setPrintDeliveryOpen(false)}
-          order={{
-            orderNumber: viewingRecord.documentNo || `OUT-${viewingRecord.id}`,
-            deliveryDate: viewingRecord.createdAt
-              ? new Date(viewingRecord.createdAt).toISOString().split("T")[0]
-              : new Date().toISOString().split("T")[0],
-            customerName: (() => {
-              const o = getRelatedOrder(viewingRecord.relatedOrderId);
-              return o?.customerName || "-";
-            })(),
-            shippingAddress: (() => {
-              const o = getRelatedOrder(viewingRecord.relatedOrderId);
-              return o?.shippingAddress || "";
-            })(),
-            shippingContact: (() => {
-              const o = getRelatedOrder(viewingRecord.relatedOrderId);
-              return o?.shippingContact || "";
-            })(),
-            shippingPhone: (() => {
-              const o = getRelatedOrder(viewingRecord.relatedOrderId);
-              return o?.shippingPhone || "";
-            })(),
-            items: [
-              {
-                productName: viewingRecord.itemName,
-                quantity: parseFloat(String(viewingRecord.quantity || 0)),
-                unit: viewingRecord.unit || "件",
-                batchNumber: viewingRecord.batchNo || undefined,
-              },
-            ],
-            notes: viewingRecord.remark || "",
-          }}
-        />
-      )}
+
     </ERPLayout>
   );
 }

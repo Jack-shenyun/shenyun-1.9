@@ -20,6 +20,7 @@ import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/co
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import { EntityPickerDialog } from "@/components/EntityPickerDialog";
 import { ClipboardCheck, Plus, Search } from "lucide-react";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 import { toast } from "sonner";
 import { formatDateValue, formatDisplayNumber, formatNumber, safeLower, toSafeNumber } from "@/lib/formatters";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
@@ -809,108 +810,36 @@ export default function SalesReconciliationPage() {
     setLocation(`/finance/invoice${params.toString() ? `?${params.toString()}` : ""}`);
   };
 
-  const handlePrintPreview = () => {
-    if (!detailCustomerId || detailShipmentRows.length === 0) {
-      toast.error("当前没有可打印的对账明细");
-      return;
-    }
-
+  const reconciliationPrintData = useMemo(() => {
+    if (!detailCustomerId || detailShipmentRows.length === 0) return null;
     const customerName = selectedCustomerOption?.name || selectedCustomerSummary?.customerName || "";
-    const noteText = reconcileData.remarks?.trim() || "-";
-    const rowsHtml = detailShipmentRows
-      .map(
-        (transaction: any) => `
-          <tr>
-            <td>${escapeHtml(transaction.documentNo || "-")}</td>
-            <td>${escapeHtml(transaction.orderNo || "-")}</td>
-            <td>${escapeHtml(transaction.itemName || "-")}</td>
-            <td>${escapeHtml(transaction.batchNo || "-")}</td>
-            <td style="text-align:right;">${escapeHtml(formatNumber(Math.abs(toSafeNumber(transaction.quantity))))}</td>
-            <td>${escapeHtml(transaction.unit || "-")}</td>
-            <td style="text-align:right;">${escapeHtml(formatMoneyByCurrency(detailCurrency, transaction.unitPrice || 0))}</td>
-            <td style="text-align:right;">${escapeHtml(formatMoneyByCurrency(detailCurrency, transaction.lineAmount || 0))}</td>
-            <td>${escapeHtml(formatDateValue(transaction.createdAt))}</td>
-          </tr>
-        `,
-      )
-      .join("");
+    return {
+      customerName,
+      startDate: detailStartDate,
+      endDate: detailEndDate,
+      reconciledMonth: reconcileData.reconciledMonth || "",
+      shipmentCount: detailShipmentDocumentCount,
+      currency: detailCurrency,
+      baseAmount: formatMoneyByCurrency(detailCurrency, detailBaseAmount),
+      adjustmentValue: formatMoneyByCurrency(detailCurrency, adjustmentValue),
+      adjustedTotal: formatMoneyByCurrency(detailCurrency, detailAdjustedTotal),
+      receivedAmount: formatMoneyByCurrency(detailCurrency, detailReceivedAmount),
+      pendingAfterAdjust: formatMoneyByCurrency(detailCurrency, detailPendingAfterAdjust),
+      remarks: reconcileData.remarks?.trim() || "",
+      items: detailShipmentRows.map((transaction: any) => ({
+        documentNo: transaction.documentNo || "-",
+        orderNo: transaction.orderNo || "-",
+        itemName: transaction.itemName || "-",
+        batchNo: transaction.batchNo || "-",
+        quantity: formatNumber(Math.abs(toSafeNumber(transaction.quantity))),
+        unit: transaction.unit || "-",
+        unitPrice: formatMoneyByCurrency(detailCurrency, transaction.unitPrice || 0),
+        lineAmount: formatMoneyByCurrency(detailCurrency, transaction.lineAmount || 0),
+        createdAt: formatDateValue(transaction.createdAt),
+      })),
+    };
+  }, [detailCustomerId, detailShipmentRows, selectedCustomerOption, selectedCustomerSummary, detailStartDate, detailEndDate, reconcileData, detailShipmentDocumentCount, detailCurrency, detailBaseAmount, adjustmentValue, detailAdjustedTotal, detailReceivedAmount, detailPendingAfterAdjust]);
 
-    const previewHtml = `
-      <!doctype html>
-      <html lang="zh-CN">
-        <head>
-          <meta charset="UTF-8" />
-          <title>对账明细打印预览</title>
-          <style>
-            body { font-family: Arial, \"PingFang SC\", \"Microsoft YaHei\", sans-serif; margin: 24px; color: #111827; }
-            h1 { font-size: 24px; margin: 0 0 8px; }
-            .sub { color: #6b7280; margin-bottom: 20px; font-size: 13px; }
-            .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-            .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; }
-            .label { color: #6b7280; font-size: 12px; margin-bottom: 6px; }
-            .value { font-size: 24px; font-weight: 700; }
-            .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-            .meta-item { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; }
-            .meta-value { font-size: 14px; font-weight: 600; margin-top: 4px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-            th, td { border: 1px solid #e5e7eb; padding: 8px 10px; font-size: 12px; }
-            th { background: #f8fafc; text-align: center; }
-            .note { margin-top: 16px; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; white-space: pre-wrap; }
-            @media print { body { margin: 12px; } }
-          </style>
-        </head>
-        <body>
-          <h1>客户对账明细</h1>
-          <div class="sub">客户：${escapeHtml(customerName)} ｜ 时间范围：${escapeHtml(detailStartDate)} 至 ${escapeHtml(detailEndDate)}</div>
-
-          <div class="summary">
-            <div class="card"><div class="label">发货单数</div><div class="value">${escapeHtml(detailShipmentDocumentCount)}</div></div>
-            <div class="card"><div class="label">默认对账总额</div><div class="value">${escapeHtml(formatMoneyByCurrency(detailCurrency, detailBaseAmount))}</div></div>
-            <div class="card"><div class="label">已收金额</div><div class="value">${escapeHtml(formatMoneyByCurrency(detailCurrency, detailReceivedAmount))}</div></div>
-            <div class="card"><div class="label">调整后待收</div><div class="value">${escapeHtml(formatMoneyByCurrency(detailCurrency, detailPendingAfterAdjust))}</div></div>
-          </div>
-
-          <div class="meta">
-            <div class="meta-item"><div class="label">对账月份</div><div class="meta-value">${escapeHtml(reconcileData.reconciledMonth || "-")}</div></div>
-            <div class="meta-item"><div class="label">调整值</div><div class="meta-value">${escapeHtml(formatMoneyByCurrency(detailCurrency, adjustmentValue))}</div></div>
-            <div class="meta-item"><div class="label">调整后总额</div><div class="meta-value">${escapeHtml(formatMoneyByCurrency(detailCurrency, detailAdjustedTotal))}</div></div>
-            <div class="meta-item"><div class="label">关联账期记录</div><div class="meta-value">${escapeHtml(`${detailReceivableRows.length} 笔`)}</div></div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>发货单号</th>
-                <th>订单号</th>
-                <th>产品名称</th>
-                <th>批次号</th>
-                <th>数量</th>
-                <th>单位</th>
-                <th>单价</th>
-                <th>出库金额</th>
-                <th>发货日期</th>
-              </tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
-
-          <div class="note">
-            <div class="label">备注</div>
-            <div class="meta-value">${escapeHtml(noteText)}</div>
-          </div>
-        </body>
-      </html>
-    `;
-
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) {
-      toast.error("浏览器拦截了打印预览窗口");
-      return;
-    }
-    printWindow.document.write(previewHtml);
-    printWindow.document.close();
-    printWindow.focus();
-  };
 
   return (
     <ERPLayout>
@@ -1248,12 +1177,13 @@ export default function SalesReconciliationPage() {
                   编辑
                 </Button>
               )}
-              <Button
-                onClick={handlePrintPreview}
-                disabled={detailShipmentRows.length === 0}
-              >
-                打印预览
-              </Button>
+              {reconciliationPrintData ? (
+                <TemplatePrintPreviewButton
+                  templateKey="sales_reconciliation"
+                  data={reconciliationPrintData}
+                  title={`对账明细打印预览 - ${reconciliationPrintData.customerName}`}
+                />
+              ) : null}
             </DialogFooter>
           </DraggableDialogContent>
         </DraggableDialog>

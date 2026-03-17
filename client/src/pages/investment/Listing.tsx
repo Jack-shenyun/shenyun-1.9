@@ -43,13 +43,13 @@ import {
   Globe,
   PlayCircle,
   Plus,
-  Printer,
   Search,
   Send,
   ShieldCheck,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 
 type ListingStatus =
   | "draft"
@@ -813,83 +813,32 @@ export default function ListingPage() {
     toast.success("挂网记录已导出");
   };
 
-  const handlePrint = (platform: ListingPlatform) => {
-    const records = getListingSnapshot(platform.id).productDetails;
-    if (records.length === 0) {
-      toast.warning("暂无可打印挂网数据");
-      return;
-    }
+  const listingPrintData = useMemo(() => {
+    if (!viewingPlatform) return null;
+    const records = getListingSnapshot(viewingPlatform.id).productDetails;
+    if (records.length === 0) return null;
+    return {
+      platformName: viewingPlatform.platformName,
+      province: viewingPlatform.province,
+      platformType: viewingPlatform.platformType,
+      totalCount: records.length,
+      enabledCount: records.filter((r) => r.status === "enabled").length,
+      publicityCount: records.filter((r) => r.status === "publicity").length,
+      verificationStatus: verificationMap[viewingPlatform.verificationStatus]?.label ?? viewingPlatform.verificationStatus,
+      items: records.map((record) => ({
+        code: record.code || "",
+        name: record.name || "",
+        specification: record.specification || "",
+        unit: record.unit || "",
+        listedPrice: formatCurrency(Number(record.listedPrice || 0)),
+        statusLabel: statusMap[record.status]?.label ?? record.status,
+        publicityStartAt: record.publicityStartAt ? formatDate(record.publicityStartAt) : "-",
+        publicityEndAt: record.publicityEndAt ? formatDate(record.publicityEndAt) : "-",
+        handlerName: record.handlerName || "-",
+      })),
+    };
+  }, [viewingPlatform, platforms]);
 
-    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=1280,height=900");
-    if (!printWindow) {
-      toast.error("打印窗口打开失败");
-      return;
-    }
-
-    const tableRows = records
-      .map(
-        (record, index) => `
-          <tr>
-            <td>${index + 1}</td>
-            <td>${record.code || ""}</td>
-            <td>${record.name || ""}</td>
-            <td>${record.specification || ""}</td>
-            <td>${record.unit || ""}</td>
-            <td>${formatDisplayNumber(record.listedPrice)}</td>
-            <td>${statusMap[record.status].label}</td>
-            <td>${formatDateTime(record.publicityStartAt)}</td>
-            <td>${formatDateTime(record.publicityEndAt)}</td>
-            <td>${record.handlerName || "-"}</td>
-          </tr>
-        `,
-      )
-      .join("");
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>${platform.platformName} 挂网记录</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #111827; }
-            h1 { font-size: 22px; margin-bottom: 8px; }
-            .meta { margin-bottom: 16px; font-size: 14px; line-height: 1.8; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; vertical-align: top; }
-            th { background: #f3f4f6; }
-          </style>
-        </head>
-        <body>
-          <h1>${platform.platformName} 挂网记录</h1>
-          <div class="meta">
-            <div>区域：${platform.province}</div>
-            <div>平台类型：${platform.platformType}</div>
-            <div>挂网记录数：${records.length}</div>
-            <div>公示中：${records.filter((record) => record.status === "publicity").length}</div>
-            <div>正式挂网：${records.filter((record) => record.status === "enabled").length}</div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>序号</th>
-                <th>产品编码</th>
-                <th>产品名称</th>
-                <th>规格</th>
-                <th>单位</th>
-                <th>挂网价格</th>
-                <th>状态</th>
-                <th>公示开始</th>
-                <th>公示结束</th>
-                <th>经办人</th>
-              </tr>
-            </thead>
-            <tbody>${tableRows}</tbody>
-          </table>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    setTimeout(() => printWindow.print(), 400);
-  };
 
   const getPlatformCounts = (platform: ListingPlatform) => {
     const records = getListingSnapshot(platform.id).productDetails;
@@ -1513,10 +1462,13 @@ export default function ListingPage() {
                   ) : null}
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => handlePrint(viewingPlatform)}>
-                    <Printer className="h-4 w-4 mr-1" />
-                    打印
-                  </Button>
+                  {listingPrintData ? (
+                    <TemplatePrintPreviewButton
+                      templateKey="listing_detail"
+                      data={listingPrintData}
+                      title={`挂网记录打印预览 - ${listingPrintData.platformName}`}
+                    />
+                  ) : null}
                   <Button
                     variant="outline"
                     onClick={() => {

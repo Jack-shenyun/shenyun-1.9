@@ -2983,3 +2983,244 @@ TEMPLATE_DEFINITIONS.push(
     defaultCss: CUSTOMS_PRINT_TEMPLATE_DEFAULTS.customs_declaration_form.css,
   },
 );
+
+// ============================================================
+// 新增模板：销售对账单
+// ============================================================
+const reconciliationHtml = `<div class="doc-header">
+  <div class="doc-header-left">
+    {{#if company.logoUrl}}<img src="{{company.logoUrl}}" alt="logo" />{{/if}}
+    <div>
+      <div class="company-name">{{company.name}}</div>
+      {{#if company.nameEn}}<div class="company-name-en">{{company.nameEn}}</div>{{/if}}
+    </div>
+  </div>
+  <div>
+    <div class="doc-title">客户对账明细</div>
+    <div class="doc-meta">
+      <div>打印时间：{{printTime}}</div>
+    </div>
+  </div>
+</div>
+<div class="section">
+  <div class="section-title">对账信息</div>
+  <table class="info-table">
+    <tr>
+      <td class="label">客户名称</td><td colspan="3">{{customerName}}</td>
+    </tr>
+    <tr>
+      <td class="label">对账区间</td><td>{{startDate}} 至 {{endDate}}</td>
+      <td class="label">对账月份</td><td>{{reconciledMonth}}</td>
+    </tr>
+    <tr>
+      <td class="label">发货单数</td><td>{{shipmentCount}}</td>
+      <td class="label">货币</td><td>{{currency}}</td>
+    </tr>
+    <tr>
+      <td class="label">对账总额</td><td>{{baseAmount}}</td>
+      <td class="label">调整值</td><td>{{adjustmentValue}}</td>
+    </tr>
+    <tr>
+      <td class="label">调整后总额</td><td>{{adjustedTotal}}</td>
+      <td class="label">已收金额</td><td>{{receivedAmount}}</td>
+    </tr>
+    <tr>
+      <td class="label">调整后待收</td><td colspan="3" style="font-weight:bold;color:#dc2626;">{{pendingAfterAdjust}}</td>
+    </tr>
+  </table>
+</div>
+<div class="section">
+  <div class="section-title">发货明细</div>
+  <table class="detail-table">
+    <thead>
+      <tr>
+        <th style="width:30px">序号</th>
+        <th>发货单号</th>
+        <th>订单号</th>
+        <th>产品名称</th>
+        <th>批次号</th>
+        <th>数量</th>
+        <th>单位</th>
+        <th>单价</th>
+        <th>出库金额</th>
+        <th>发货日期</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each items}}
+      <tr>
+        <td>{{@number}}</td>
+        <td>{{documentNo}}</td>
+        <td>{{orderNo}}</td>
+        <td class="text-left">{{itemName}}</td>
+        <td>{{batchNo}}</td>
+        <td style="text-align:right;">{{quantity}}</td>
+        <td>{{unit}}</td>
+        <td style="text-align:right;">{{unitPrice}}</td>
+        <td style="text-align:right;">{{lineAmount}}</td>
+        <td>{{createdAt}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>
+{{#if remarks}}
+<div class="section">
+  <div class="section-title">备注</div>
+  <div class="remark-box">{{remarks}}</div>
+</div>
+{{/if}}
+`;
+
+const reconciliationVariables: TemplateVariable[] = [
+  ...companyVariables,
+  { key: "customerName", label: "客户名称", type: "string", example: "XX医院" },
+  { key: "startDate", label: "对账开始日期", type: "string", example: "2026-01-01" },
+  { key: "endDate", label: "对账结束日期", type: "string", example: "2026-03-31" },
+  { key: "reconciledMonth", label: "对账月份", type: "string", example: "2026-03" },
+  { key: "shipmentCount", label: "发货单数", type: "number", example: 5 },
+  { key: "currency", label: "货币", type: "string", example: "CNY" },
+  { key: "baseAmount", label: "对账总额", type: "string", example: "¥100,000.00" },
+  { key: "adjustmentValue", label: "调整值", type: "string", example: "¥0.00" },
+  { key: "adjustedTotal", label: "调整后总额", type: "string", example: "¥100,000.00" },
+  { key: "receivedAmount", label: "已收金额", type: "string", example: "¥80,000.00" },
+  { key: "pendingAfterAdjust", label: "调整后待收", type: "string", example: "¥20,000.00" },
+  { key: "remarks", label: "备注", type: "string", example: "" },
+  {
+    key: "items", label: "发货明细", type: "array",
+    example: [],
+    children: [
+      { key: "documentNo", label: "发货单号", type: "string" },
+      { key: "orderNo", label: "订单号", type: "string" },
+      { key: "itemName", label: "产品名称", type: "string" },
+      { key: "batchNo", label: "批次号", type: "string" },
+      { key: "quantity", label: "数量", type: "string" },
+      { key: "unit", label: "单位", type: "string" },
+      { key: "unitPrice", label: "单价", type: "string" },
+      { key: "lineAmount", label: "出库金额", type: "string" },
+      { key: "createdAt", label: "发货日期", type: "string" },
+    ],
+  },
+];
+
+// ============================================================
+// 新增模板：平台挂网详情
+// ============================================================
+const listingDetailHtml = `<div class="doc-header">
+  <div class="doc-header-left">
+    {{#if company.logoUrl}}<img src="{{company.logoUrl}}" alt="logo" />{{/if}}
+    <div>
+      <div class="company-name">{{company.name}}</div>
+      {{#if company.nameEn}}<div class="company-name-en">{{company.nameEn}}</div>{{/if}}
+    </div>
+  </div>
+  <div>
+    <div class="doc-title">平台挂网记录</div>
+    <div class="doc-meta">
+      <div>打印时间：{{printTime}}</div>
+    </div>
+  </div>
+</div>
+<div class="section">
+  <div class="section-title">平台信息</div>
+  <table class="info-table">
+    <tr>
+      <td class="label">平台名称</td><td colspan="3">{{platformName}}</td>
+    </tr>
+    <tr>
+      <td class="label">区域</td><td>{{province}}</td>
+      <td class="label">平台类型</td><td>{{platformType}}</td>
+    </tr>
+    <tr>
+      <td class="label">挂网总数</td><td>{{totalCount}}</td>
+      <td class="label">正式挂网</td><td>{{enabledCount}}</td>
+    </tr>
+    <tr>
+      <td class="label">公示中</td><td>{{publicityCount}}</td>
+      <td class="label">核验状态</td><td>{{verificationStatus}}</td>
+    </tr>
+  </table>
+</div>
+<div class="section">
+  <div class="section-title">挂网产品明细</div>
+  <table class="detail-table">
+    <thead>
+      <tr>
+        <th style="width:30px">序号</th>
+        <th>产品编码</th>
+        <th>产品名称</th>
+        <th>规格型号</th>
+        <th>单位</th>
+        <th>挂网价格</th>
+        <th>状态</th>
+        <th>公示开始</th>
+        <th>公示结束</th>
+        <th>经办人</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each items}}
+      <tr>
+        <td>{{@number}}</td>
+        <td>{{code}}</td>
+        <td class="text-left">{{name}}</td>
+        <td>{{specification}}</td>
+        <td>{{unit}}</td>
+        <td style="text-align:right;">{{listedPrice}}</td>
+        <td>{{statusLabel}}</td>
+        <td>{{publicityStartAt}}</td>
+        <td>{{publicityEndAt}}</td>
+        <td>{{handlerName}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>
+`;
+
+const listingDetailVariables: TemplateVariable[] = [
+  ...companyVariables,
+  { key: "platformName", label: "平台名称", type: "string", example: "浙江省医保服务平台" },
+  { key: "province", label: "区域", type: "string", example: "浙江省" },
+  { key: "platformType", label: "平台类型", type: "string", example: "医保服务平台" },
+  { key: "totalCount", label: "挂网总数", type: "number", example: 10 },
+  { key: "enabledCount", label: "正式挂网数", type: "number", example: 8 },
+  { key: "publicityCount", label: "公示中数量", type: "number", example: 2 },
+  { key: "verificationStatus", label: "核验状态", type: "string", example: "已核验" },
+  {
+    key: "items", label: "挂网产品列表", type: "array",
+    example: [],
+    children: [
+      { key: "code", label: "产品编码", type: "string" },
+      { key: "name", label: "产品名称", type: "string" },
+      { key: "specification", label: "规格型号", type: "string" },
+      { key: "unit", label: "单位", type: "string" },
+      { key: "listedPrice", label: "挂网价格", type: "string" },
+      { key: "statusLabel", label: "状态", type: "string" },
+      { key: "publicityStartAt", label: "公示开始", type: "string" },
+      { key: "publicityEndAt", label: "公示结束", type: "string" },
+      { key: "handlerName", label: "经办人", type: "string" },
+    ],
+  },
+];
+
+TEMPLATE_DEFINITIONS.push(
+  {
+    templateKey: "sales_reconciliation",
+    name: "客户对账明细",
+    module: "sales",
+    description: "销售对账单打印模板，包含对账汇总和发货明细",
+    variables: reconciliationVariables,
+    defaultHtml: reconciliationHtml,
+    defaultCss: commonCss,
+  },
+  {
+    templateKey: "listing_detail",
+    name: "平台挂网记录",
+    module: "investment",
+    description: "招商平台挂网产品明细打印模板",
+    variables: listingDetailVariables,
+    defaultHtml: listingDetailHtml,
+    defaultCss: commonCss,
+  },
+);

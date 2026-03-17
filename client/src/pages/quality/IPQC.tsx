@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getStatusSemanticClass } from "@/lib/statusStyle";
-import PrintPreviewButton from "@/components/PrintPreviewButton";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { SignatureRecord } from "@/components/ElectronicSignature";
@@ -480,7 +480,32 @@ export default function IPQCPage() {
                 <span className="font-semibold">{selectedRecord.inspectionNo}</span>
               </div>
               <div className="flex items-center gap-2">
-                <PrintPreviewButton title={`过程检验详情 - ${selectedRecord.inspectionNo}`} targetRef={detailPrintRef} />
+                <TemplatePrintPreviewButton
+                  templateKey="ipqc_inspection"
+                  data={{
+                    inspectionNo: selectedRecord.inspectionNo,
+                    productName: selectedRecord.productName || "",
+                    productCode: selectedRecord.productCode || "",
+                    batchNo: selectedRecord.batchNo || "",
+                    process: selectedRecord.process || "",
+                    inspectionType: inspectionTypeMap[selectedRecord.inspectionType] || selectedRecord.inspectionType || "",
+                    inspectionDate: selectedRecord.inspectionDate || "",
+                    inspector: selectedRecord.inspector || "",
+                    workstation: selectedRecord.workstation || "",
+                    result: statusMap[selectedRecord.result]?.label || selectedRecord.result || "",
+                    resultPassed: selectedRecord.result === "qualified",
+                    remarks: selectedRecord.remarks || "",
+                    hasItems: (selectedRecord.inspectionItems || []).length > 0,
+                    inspectionItems: (selectedRecord.inspectionItems || []).map((it: InspectionItem) => ({
+                      itemName: it.name || "",
+                      standard: it.standard || "",
+                      measuredValue: it.result || "",
+                      conclusion: it.conclusion === "qualified" ? "合格" : it.conclusion === "unqualified" ? "不合格" : "待判定",
+                      passed: it.conclusion === "qualified",
+                    })),
+                  }}
+                  title={`过程检验详情 - ${selectedRecord.inspectionNo}`}
+                />
                 {selectedRecord.sourceType !== "production" ? (
                   <Button variant="outline" size="sm" onClick={() => { setViewDialogOpen(false); handleEdit(selectedRecord); }}>
                     <Edit className="h-3.5 w-3.5 mr-1.5" />编辑
@@ -615,9 +640,31 @@ export default function IPQCPage() {
                 <span className="font-semibold">{isEditing && selectedRecord ? selectedRecord.inspectionNo : "新建"}</span>
               </div>
               <div className="flex items-center gap-2">
-                <PrintPreviewButton
+                <TemplatePrintPreviewButton
+                  templateKey="ipqc_inspection"
+                  data={{
+                    inspectionNo: isEditing && selectedRecord ? selectedRecord.inspectionNo : "",
+                    productName: formData.productName || "",
+                    productCode: formData.productCode || "",
+                    batchNo: formData.batchNo || "",
+                    process: formData.process || "",
+                    inspectionType: inspectionTypeMap[formData.inspectionType] || formData.inspectionType || "",
+                    inspectionDate: formData.inspectionDate || "",
+                    inspector: formData.inspector || "",
+                    workstation: formData.workstation || "",
+                    result: statusMap[formData.result]?.label || formData.result || "",
+                    resultPassed: formData.result === "qualified",
+                    remarks: formData.remarks || "",
+                    hasItems: formData.inspectionItems.length > 0,
+                    inspectionItems: formData.inspectionItems.map((it: InspectionItem) => ({
+                      itemName: it.name || "",
+                      standard: it.standard || "",
+                      measuredValue: it.result || "",
+                      conclusion: it.conclusion === "qualified" ? "合格" : it.conclusion === "unqualified" ? "不合格" : "待判定",
+                      passed: it.conclusion === "qualified",
+                    })),
+                  }}
                   title={isEditing && selectedRecord ? `过程检验表单 - ${selectedRecord.inspectionNo}` : "新建过程检验"}
-                  targetRef={formPrintRef}
                 />
                 <Button
                   size="sm"

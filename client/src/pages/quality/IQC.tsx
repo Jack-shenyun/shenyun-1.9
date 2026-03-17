@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { trpc } from "@/lib/trpc";
 import { formatDisplayNumber } from "@/lib/formatters";
 import { useAuth } from "@/_core/hooks/useAuth";
-import PrintPreviewButton from "@/components/PrintPreviewButton";
+import TemplatePrintPreviewButton from "@/components/TemplatePrintPreviewButton";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { SignatureRecord } from "@/components/ElectronicSignature";
@@ -1534,9 +1534,34 @@ export default function IQCPage() {
                 <span className="font-semibold">{d.inspectionNo}</span>
               </div>
               <div className="flex items-center gap-2">
-                <PrintPreviewButton
+                <TemplatePrintPreviewButton
+                  templateKey="iqc_inspection"
+                  data={{
+                    inspectionNo: d.inspectionNo,
+                    goodsReceiptNo: d.goodsReceiptNo || "",
+                    productName: d.productName || "",
+                    productCode: d.productCode || "",
+                    specification: d.specification || "",
+                    supplierName: d.supplierName || "",
+                    batchNo: d.batchNo || "",
+                    receivedQty: d.receivedQty || "",
+                    sampleQty: d.sampleQty || "",
+                    unit: d.unit || "",
+                    inspectionDate: d.inspectionDate || "",
+                    inspectorName: d.inspectorName || "",
+                    result: RESULT_MAP[d.result]?.label || d.result || "",
+                    resultPassed: d.result === "passed",
+                    remark: d.remark || "",
+                    hasItems: Array.isArray(d.items) && d.items.length > 0,
+                    inspectionItems: (d.items || []).map((it: any, idx: number) => ({
+                      itemName: it.itemName || "",
+                      standard: it.standard || "",
+                      measuredValue: it.measuredValue || it.actualValue || "",
+                      conclusion: CONCLUSION_MAP[it.conclusion]?.label || it.conclusion || "",
+                      passed: it.conclusion === "pass",
+                    })),
+                  }}
                   title={`来料检验详情 - ${d.inspectionNo}`}
-                  targetRef={detailPrintRef}
                 />
                 {detailReviewMode ? (
                   <>
@@ -1729,9 +1754,34 @@ export default function IQCPage() {
               <span className="font-semibold">{editId ? formData.inspectionNo : "新建"}</span>
             </div>
             <div className="flex items-center gap-2">
-              <PrintPreviewButton
+              <TemplatePrintPreviewButton
+                templateKey="iqc_inspection"
+                data={{
+                  inspectionNo: formData.inspectionNo,
+                  goodsReceiptNo: formData.goodsReceiptNo || "",
+                  productName: formData.productName || "",
+                  productCode: formData.productCode || "",
+                  specification: formData.specification || "",
+                  supplierName: formData.supplierName || "",
+                  batchNo: formData.batchNo || "",
+                  receivedQty: formData.receivedQty || "",
+                  sampleQty: formData.sampleQty || "",
+                  unit: formData.unit || "",
+                  inspectionDate: formData.inspectionDate || "",
+                  inspectorName: formData.inspectorName || "",
+                  result: RESULT_MAP[formData.result]?.label || formData.result || "",
+                  resultPassed: formData.result === "passed",
+                  remark: formData.remark || "",
+                  hasItems: items.length > 0,
+                  inspectionItems: items.map((it) => ({
+                    itemName: it.itemName || "",
+                    standard: it.standard || "",
+                    measuredValue: it.measuredValue || it.actualValue || "",
+                    conclusion: CONCLUSION_MAP[it.conclusion]?.label || it.conclusion || "",
+                    passed: it.conclusion === "pass",
+                  })),
+                }}
                 title={editId ? `来料检验表单 - ${formData.inspectionNo}` : "新建来料检验"}
-                targetRef={formPrintRef}
               />
               <Button
                 size="sm"
