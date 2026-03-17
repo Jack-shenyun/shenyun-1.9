@@ -1218,7 +1218,7 @@ export default function ProductionOrdersPage() {
                     onChange={(value) => setFormData({ ...formData, plannedEndDate: value })}
                   />
                   {formData.deliveryDate && (
-                    <p className="text-xs text-amber-600">交期 {formData.deliveryDate} 前</p>
+                    <p className="text-xs text-amber-600">交期 {formatDate(formData.deliveryDate)} 前</p>
                   )}
                   {formData.deliveryDate && formData.plannedEndDate && formData.plannedEndDate > formData.deliveryDate && (
                     <p className="text-xs text-destructive">警告：计划完成日期超过交期</p>

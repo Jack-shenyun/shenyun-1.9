@@ -549,8 +549,8 @@ export default function UDIArchivePage() {
                   <FieldRow label="发码机构">{selectedItem.issuer}</FieldRow>
                   <FieldRow label="批号 (LOT)">{selectedItem.batchNo}</FieldRow>
                   <FieldRow label="序列号 (SN)">{selectedItem.serialNo}</FieldRow>
-                  <FieldRow label="生产日期">{selectedItem.productionDate}</FieldRow>
-                  <FieldRow label="有效期">{selectedItem.expiryDate}</FieldRow>
+                  <FieldRow label="生产日期">{formatDate(selectedItem.productionDate)}</FieldRow>
+                  <FieldRow label="有效期">{formatDate(selectedItem.expiryDate)}</FieldRow>
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold text-muted-foreground mb-2">标签配置</h3>

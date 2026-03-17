@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatDate } from "@/lib/formatters";
 import { DraggableDialog, DraggableDialogContent } from "@/components/DraggableDialog";
 import ERPLayout from "@/components/ERPLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -189,7 +190,7 @@ export default function ReportsPage() {
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <span className="text-muted-foreground">当前报表期间:</span>
-                <span className="font-medium">{globalPeriod.startDate} 至 {globalPeriod.endDate}</span>
+                <span className="font-medium">{formatDate(globalPeriod.startDate)} 至 {formatDate(globalPeriod.endDate)}</span>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setPeriodDialogOpen(true)}>
                 修改
